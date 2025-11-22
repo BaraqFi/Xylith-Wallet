@@ -22,9 +22,36 @@ import { useApp } from "../app/AppContext";
 import { shortenAddress } from "./utils";
 import { TokenDetailsModal } from "./TokenDetailsModal";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 // Web3Icons for token and network logos
 import * as Web3Icons from "@web3icons/react";
+
+// Hexagonal Avatar Component
+function HexagonalAvatar({ 
+  children, 
+  className = "" 
+}: { 
+  children: React.ReactNode; 
+  className?: string;
+}) {
+  return (
+    <div className={`relative ${className}`} style={{ width: '40px', height: '40px' }}>
+      <svg
+        className="absolute inset-0"
+        viewBox="0 0 40 40"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <polygon
+          points="20,2 35,10 35,30 20,38 5,30 5,10"
+          fill="currentColor"
+          className="text-[color:var(--color-accent)]/20"
+        />
+      </svg>
+      <div className="absolute inset-0 flex items-center justify-center">
+        {children}
+      </div>
+    </div>
+  );
+}
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -391,18 +418,25 @@ export default function ManualWallet() {
     setCurrentView("receive");
   };
 
+  const handleSettingsClick = () => {
+    setCurrentView("settings");
+  };
+
   return (
-    <div className="mx-auto max-w-7xl w-full flex flex-col gap-4 p-4 md:p-6 text-[color:var(--color-depth)]">
+    <div className="mx-auto w-full flex flex-col gap-4 p-4 md:p-6 text-[color:var(--color-depth)]">
       {/* Top Header: Wallet Name + Address + QR */}
       <div className="wallet-card flex items-center justify-between p-4 gap-4">
-        <div className="flex items-center gap-3">
-          <Avatar className="h-10 w-10">
-            <AvatarFallback className="bg-[color:var(--color-accent)]/20 text-[color:var(--color-accent)] text-lg font-bold">
+        <button
+          onClick={handleSettingsClick}
+          className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+        >
+          <HexagonalAvatar>
+            <span className="text-lg font-bold text-[color:var(--color-accent)]">
               {accountName[0]}
-            </AvatarFallback>
-          </Avatar>
-          <h1 className="text-lg font-semibold">{accountName}</h1>
-        </div>
+            </span>
+          </HexagonalAvatar>
+          <h1 className="text-lg font-semibold hidden md:block">{accountName}</h1>
+        </button>
         <div className="flex items-center gap-2">
           <button
             onClick={handleCopyAddress}

@@ -12,7 +12,7 @@ interface AppState {
   setShowAiAlert: (show: boolean) => void;
   dontShowAiAlert: boolean;
   setDontShowAiAlert: (dont: boolean) => void;
-  currentView: "wallet" | "send" | "receive" | "history" | "receipt" | "swap";
+  currentView: "wallet" | "send" | "receive" | "history" | "receipt" | "swap" | "settings";
   setCurrentView: (view: AppState["currentView"]) => void;
   selectedTransactionId: string | null;
   setSelectedTransactionId: (id: string | null) => void;

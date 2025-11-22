@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { AppProvider, useApp } from "@/components/app/AppContext";
 import { ModeToggle } from "@/components/app/ModeToggle";
-import { DarkModeToggle } from "@/components/app/DarkModeToggle";
 import { AiModeAlert } from "@/components/app/AiModeAlert";
 import { SplashScreen } from "@/components/app/SplashScreen";
 import ManualWallet from "@/components/manual-wallet/ManualWallet";
@@ -13,6 +12,7 @@ import { ReceiveModal } from "@/components/manual-wallet/ReceiveModal";
 import { HistoryScreen } from "@/components/manual-wallet/HistoryScreen";
 import { TransactionReceipt } from "@/components/manual-wallet/TransactionReceipt";
 import { AiModePage } from "@/components/manual-wallet/AiModePage";
+import { WalletSettingsModal } from "@/components/manual-wallet/WalletSettingsModal";
 
 function WalletContent() {
   const { mode, currentView } = useApp();
@@ -48,6 +48,14 @@ function ReceiveModalWrapper() {
   return null;
 }
 
+function SettingsModalWrapper() {
+  const { currentView } = useApp();
+  if (currentView === "settings") {
+    return <WalletSettingsModal />;
+  }
+  return null;
+}
+
 function Header() {
   const { currentView } = useApp();
   const showToggles = currentView === "wallet";
@@ -58,7 +66,6 @@ function Header() {
     <div className="mb-6 flex items-center justify-end">
       <div className="flex items-center gap-3">
         <ModeToggle />
-        <DarkModeToggle />
       </div>
     </div>
   );
@@ -86,10 +93,11 @@ function HomeContent() {
 
   return (
     <div className="min-h-screen bg-[color:var(--color-surface)] px-4 py-6 sm:px-8 sm:py-10">
-      <main className="mx-auto max-w-5xl">
+      <main className="mx-auto w-full">
         <Header />
         <WalletContent />
         <ReceiveModalWrapper />
+        <SettingsModalWrapper />
         <AiModeAlert />
       </main>
     </div>

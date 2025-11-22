@@ -1,14 +1,14 @@
 /**
- * Shortens an address to show first 5 and last 5 characters
+ * Shortens an address to show first 4 and last 4 characters
  * @param address - The full address
- * @returns Shortened address (e.g., "0x1234...5678a")
+ * @returns Shortened address (e.g., "0x12...5678")
  */
 export function shortenAddress(address: string): string {
-  if (!address || address.length <= 10) return address;
+  if (!address || address.length <= 8) return address;
   if (address.startsWith("0x")) {
-    return `${address.slice(0, 7)}...${address.slice(-5)}`;
+    return `${address.slice(0, 6)}...${address.slice(-4)}`;
   }
-  return `${address.slice(0, 5)}...${address.slice(-5)}`;
+  return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 
 /**
