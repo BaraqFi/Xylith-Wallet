@@ -287,14 +287,7 @@ export function SendFlow() {
                       name={firstToken.name}
                     />
                     <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold">{firstToken.name}</p>
-                        {tokens.length > 1 && (
-                          <span className="rounded-full bg-[color:var(--color-depth)]/10 px-2 py-0.5 text-xs font-semibold text-[color:var(--color-depth)]/70">
-                            {tokens.length} chains
-                          </span>
-                        )}
-                      </div>
+                      <p className="font-semibold">{firstToken.name}</p>
                       <p className="text-sm text-[color:var(--color-depth)]/60">
                         {totalAmount.toLocaleString(undefined, {
                           maximumFractionDigits: 6,

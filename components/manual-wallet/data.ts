@@ -29,6 +29,7 @@ export interface WalletTransaction {
   timestampLabel: string;
   direction: "in" | "out" | "swap";
   chain: Chain;
+  evmChain?: EVMChain;
   status: "pending" | "confirmed" | "failed";
   blockHash?: string;
   blockNumber?: number;
@@ -342,6 +343,7 @@ export const manualWalletState: ManualWalletState = {
       timestampLabel: "2h ago",
       direction: "out",
       chain: "EVM",
+      evmChain: "ethereum",
       status: "confirmed",
       blockHash: "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2",
       blockNumber: 19876543,
@@ -364,6 +366,7 @@ export const manualWalletState: ManualWalletState = {
       timestampLabel: "1 day ago",
       direction: "swap",
       chain: "EVM",
+      evmChain: "ethereum",
       status: "confirmed",
       blockHash: "0x2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3",
       blockNumber: 19872000,
@@ -408,6 +411,7 @@ export const manualWalletState: ManualWalletState = {
       timestampLabel: "3 days ago",
       direction: "out",
       chain: "EVM",
+      evmChain: "arbitrum",
       status: "confirmed",
       blockHash: "0x3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4",
       blockNumber: 19865000,
@@ -430,6 +434,7 @@ export const manualWalletState: ManualWalletState = {
       timestampLabel: "Pending",
       direction: "swap",
       chain: "EVM",
+      evmChain: "bsc",
       status: "pending",
       txHash: "0x6c5b4a392817263544332211009f8e7d6c5b4a392817263544332211009f8e7",
       timestamp: Date.now(),

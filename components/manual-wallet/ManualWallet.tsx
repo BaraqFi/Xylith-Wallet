@@ -157,8 +157,8 @@ export function ChainLogo({ chain }: { chain: EVMChain | "solana" }) {
 
   if (IconComponent) {
     return (
-      <div className="flex h-4 w-4 items-center justify-center" title={chain}>
-        <IconComponent variant="branded" size={16} />
+      <div className="flex h-4 w-4 items-center justify-center overflow-hidden" title={chain}>
+        <IconComponent variant="branded" size={16} className="h-4 w-4" />
       </div>
     );
   }
@@ -356,11 +356,16 @@ function TransactionList({
                       <Icon className="h-5 w-5" />
                     </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <p className="font-semibold">{tx.token}</p>
-                    <p className="text-sm text-[color:var(--color-depth)]/60">
-                      {shortenAddress(tx.counterparty)}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    {(tx.direction === "in" || tx.direction === "out") && (
+                      <TokenLogo symbol={tx.tokenSymbol} name={tx.token} />
+                    )}
+                    <div>
+                      <p className="font-semibold">{tx.token}</p>
+                      <p className="text-sm text-[color:var(--color-depth)]/60">
+                        {shortenAddress(tx.counterparty)}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">

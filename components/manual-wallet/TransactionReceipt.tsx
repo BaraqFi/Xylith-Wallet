@@ -2,6 +2,7 @@
 
 import { useApp } from "../app/AppContext";
 import { manualWalletState, WalletTransaction } from "./data";
+import { ChainLogo, TokenLogo } from "./ManualWallet";
 
 export function TransactionReceipt() {
   const { setCurrentView, selectedTransactionId } = useApp();
@@ -73,7 +74,10 @@ export function TransactionReceipt() {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-2xl border border-[color:var(--color-depth)]/10 p-4">
             <p className="text-sm text-[color:var(--color-depth)]/60">Token</p>
-            <p className="mt-1 font-semibold">{transaction.token}</p>
+            <div className="mt-1 flex items-center gap-2">
+              <TokenLogo symbol={transaction.tokenSymbol} name={transaction.token} />
+              <p className="font-semibold">{transaction.token}</p>
+            </div>
           </div>
 
           <div className="rounded-2xl border border-[color:var(--color-depth)]/10 p-4">
@@ -83,7 +87,18 @@ export function TransactionReceipt() {
 
           <div className="rounded-2xl border border-[color:var(--color-depth)]/10 p-4">
             <p className="text-sm text-[color:var(--color-depth)]/60">Network</p>
-            <p className="mt-1 font-semibold">{transaction.chain}</p>
+            <div className="mt-1 flex items-center gap-2">
+              {transaction.evmChain && (
+                <ChainLogo chain={transaction.evmChain} />
+              )}
+              {transaction.chain === "Solana" && <ChainLogo chain="solana" />}
+              <p className="font-semibold">
+                {transaction.evmChain
+                  ? transaction.evmChain.charAt(0).toUpperCase() +
+                    transaction.evmChain.slice(1)
+                  : transaction.chain}
+              </p>
+            </div>
           </div>
 
           <div className="rounded-2xl border border-[color:var(--color-depth)]/10 p-4">

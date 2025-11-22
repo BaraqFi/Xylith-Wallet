@@ -3,6 +3,7 @@
 import { useApp } from "../app/AppContext";
 import { manualWalletState, WalletTransaction } from "./data";
 import { shortenAddress } from "./utils";
+import { TokenLogo } from "./ManualWallet";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ArrowLeft, ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
@@ -102,11 +103,16 @@ export function HistoryScreen() {
                       {directionIcons[tx.direction]}
                     </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <p className="font-semibold">{tx.action}</p>
-                    <p className="text-sm text-[color:var(--color-depth)]/60">
-                      {tx.token}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    {(tx.direction === "in" || tx.direction === "out") && (
+                      <TokenLogo symbol={tx.tokenSymbol} name={tx.token} />
+                    )}
+                    <div>
+                      <p className="font-semibold">{tx.action}</p>
+                      <p className="text-sm text-[color:var(--color-depth)]/60">
+                        {tx.token}
+                      </p>
+                    </div>
                   </div>
                 </div>
                 <div className="hidden md:block text-center">
