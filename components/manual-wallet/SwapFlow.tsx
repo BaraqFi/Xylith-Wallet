@@ -106,8 +106,9 @@ function TokenSelectCard({
                 ? `${token.chain}-${token.evmChain}`
                 : token.chain;
               const chainLabel =
-                token.evmChain?.charAt(0).toUpperCase() +
-                  token.evmChain?.slice(1) || "Solana";
+                token.evmChain
+                  ? token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1)
+                  : "Solana";
               return (
                 <SelectItem key={chainKey} value={chainKey}>
                   <div className="flex items-center gap-2">
