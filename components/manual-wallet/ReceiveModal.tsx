@@ -39,17 +39,20 @@ function QRCodeGrid({ address }: { address: string }) {
 }
 
 export function ReceiveModal() {
-  const { currentView, setCurrentView } = useApp();
-  const [selectedChain, setSelectedChain] = useState<Chain>(
-    manualWalletState.activeChain
-  );
+  const { currentView, setCurrentView, activeChain, setActiveChain } = useApp();
+  const [selectedChain, setSelectedChain] = useState<Chain>(activeChain);
+
+  const handleChainChange = (chain: Chain) => {
+    setSelectedChain(chain);
+    setActiveChain(chain);
+  };
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
 
   const address =
     selectedChain === "EVM"
       ? manualWalletState.address
-      : "Abc123456789012345678901234567890123456789012345678901234567";
+      : manualWalletState.solanaAddress;
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(address);
@@ -83,7 +86,7 @@ export function ReceiveModal() {
                 <Button
                   key={chain}
                   variant={selectedChain === chain ? "secondary" : "ghost"}
-                  onClick={() => setSelectedChain(chain)}
+                  onClick={() => handleChainChange(chain)}
                 >
                   {chain}
                 </Button>

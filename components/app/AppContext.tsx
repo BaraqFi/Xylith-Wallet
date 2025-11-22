@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, ReactNode } from "react";
-import { TokenBalance } from "@/components/manual-wallet/data";
+import { TokenBalance, Chain } from "@/components/manual-wallet/data";
 
 export type WalletMode = "manual" | "ai";
 
@@ -22,6 +22,8 @@ interface AppState {
   setPreselectedToken: (token: TokenBalance | null) => void;
   slippage: number;
   setSlippage: (slippage: number) => void;
+  activeChain: Chain;
+  setActiveChain: (chain: Chain) => void;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -35,6 +37,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [darkMode, setDarkMode] = useState(true);
   const [preselectedToken, setPreselectedToken] = useState<TokenBalance | null>(null);
   const [slippage, setSlippage] = useState<number>(0.5);
+  const [activeChain, setActiveChain] = useState<Chain>("EVM");
 
   return (
     <AppContext.Provider
@@ -55,6 +58,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setPreselectedToken,
         slippage,
         setSlippage,
+        activeChain,
+        setActiveChain,
       }}
     >
       {children}

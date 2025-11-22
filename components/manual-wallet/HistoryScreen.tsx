@@ -93,19 +93,18 @@ export function HistoryScreen() {
                 className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
               >
                 <div className="flex items-center gap-4">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${directionColors[tx.direction].bg}`}>
-                    {directionIcons[tx.direction]}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {(tx.direction === "in" || tx.direction === "out") && (
-                      <TokenLogo symbol={tx.tokenSymbol} name={tx.token} />
-                    )}
-                    <div>
-                      <p className="font-semibold">{tx.action}</p>
-                      <p className="text-sm text-[color:var(--color-depth)]/60">
-                        {tx.token}
-                      </p>
+                  {tx.direction === "swap" ? (
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${directionColors[tx.direction].bg}`}>
+                      {directionIcons[tx.direction]}
                     </div>
+                  ) : (
+                    <TokenLogo symbol={tx.tokenSymbol} name={tx.token} />
+                  )}
+                  <div>
+                    <p className="font-semibold">{tx.action}</p>
+                    <p className="text-sm text-[color:var(--color-depth)]/60">
+                      {tx.token}
+                    </p>
                   </div>
                 </div>
                 <div className="hidden md:block text-center">

@@ -58,11 +58,11 @@ export function TokenSelectModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--color-depth)]/40 p-4">
-      <div className="wallet-card w-full max-w-md max-h-[80vh] flex flex-col">
-        <div className="flex items-center justify-between mb-4 pb-4 border-b border-[color:var(--color-border)]">
+      <div className="wallet-card w-full max-w-md max-h-[80vh] flex flex-col p-4 sm:p-6">
+        <div className="flex items-center justify-between mb-4 pb-4 border-b border-[color:var(--color-border)] px-1">
           <button
             onClick={onClose}
-            className="text-[color:var(--color-depth)]/60 hover:text-[color:var(--color-depth)]"
+            className="text-[color:var(--color-depth)]/60 hover:text-[color:var(--color-depth)] p-1"
           >
             <X className="h-5 w-5" />
           </button>
@@ -72,7 +72,7 @@ export function TokenSelectModal({
           <div className="w-5" /> {/* Spacer for centering */}
         </div>
 
-        <div className="mb-4">
+        <div className="mb-4 px-1">
           <Input
             type="text"
             placeholder="Search tokens..."
@@ -82,7 +82,7 @@ export function TokenSelectModal({
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-1">
+        <div className="flex-1 overflow-y-auto space-y-1 px-1">
           {filteredTokens.length === 0 ? (
             <div className="py-8 text-center text-sm text-[color:var(--color-depth)]/60">
               No tokens found
@@ -97,7 +97,7 @@ export function TokenSelectModal({
                 <button
                   key={firstToken.symbol}
                   onClick={() => handleTokenClick(tokenGroup)}
-                  className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-[color:var(--color-depth)]/5 transition-colors text-left"
+                  className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-[color:var(--color-depth)]/5 transition-colors text-left mx-1"
                 >
                   <div className="flex items-center gap-3">
                     <TokenLogo symbol={firstToken.symbol} name={firstToken.name} size="sm" />

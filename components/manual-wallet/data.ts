@@ -47,6 +47,7 @@ export interface WalletTransaction {
 export interface ManualWalletState {
   accountName: string;
   address: string;
+  solanaAddress: string;
   mode: "Manual";
   chains: ChainBalance[];
   activeChain: Chain;
@@ -329,6 +330,7 @@ export const tokens: TokenBalance[] = [
 export const manualWalletState: ManualWalletState = {
   accountName: "0xReghas",
   address: "0xAbc1234567890123456789012345678901234567",
+  solanaAddress: "Abc123456789012345678901234567890123456789012345678901234567",
   mode: "Manual",
   activeChain: "EVM",
   tokens,

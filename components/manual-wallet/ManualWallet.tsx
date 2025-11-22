@@ -2,11 +2,13 @@
 
 import { useState, type ElementType } from "react";
 import {
+  Copy,
+  QrCode,
+  Check,
   ArrowUp,
   ArrowDown,
   ArrowRightLeft,
   History,
-  Copy,
 } from "lucide-react";
 import {
   manualWalletState,
@@ -30,12 +32,6 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
 });
 
-const actionButtons = [
-  { label: "Send", icon: ArrowUp, action: "send" },
-  { label: "Receive", icon: ArrowDown, action: "receive" },
-  { label: "Swap", icon: ArrowRightLeft, action: "swap" },
-  { label: "History", icon: History, action: "history" },
-] as const;
 
 function tokenAmountLabel(token: TokenBalance) {
   if (token.symbol === "USDC") {
@@ -204,41 +200,6 @@ export function ChainLogo({ chain }: { chain: EVMChain | "solana" }) {
   );
 }
 
-function ManualActionButton({
-  label,
-  Icon,
-  action,
-}: {
-  label: string;
-  Icon: ElementType;
-  action: string;
-}) {
-  const { setCurrentView } = useApp();
-
-  const handleClick = () => {
-    if (action === "send") {
-      setCurrentView("send");
-    } else if (action === "receive") {
-      setCurrentView("receive");
-    } else if (action === "history") {
-      setCurrentView("history");
-    } else if (action === "swap") {
-      setCurrentView("swap");
-    }
-  };
-
-  return (
-    <Button
-      variant="outline"
-      size="lg"
-      onClick={handleClick}
-      className="flex-1 justify-center gap-2"
-    >
-      <Icon className="h-4 w-4 text-[color:var(--color-accent)]" />
-      <span>{label}</span>
-    </Button>
-  );
-}
 
 function TokenList({
   tokens,
@@ -249,8 +210,11 @@ function TokenList({
   activeChain: Chain;
   allTokens: ManualWalletState["tokens"];
 }) {
+  const { setCurrentView } = useApp();
   const [selectedToken, setSelectedToken] = useState<TokenBalance | null>(null);
   const filteredTokens = tokens.filter((token) => token.chain === activeChain);
+  const displayTokens = filteredTokens.slice(0, 7);
+  const hasMore = filteredTokens.length > 7;
 
   return (
     <>
@@ -258,13 +222,21 @@ function TokenList({
         <h2 className="text-sm font-semibold uppercase tracking-wide text-[color:var(--color-depth)]/65 px-2">
           Token List
         </h2>
-        <div className="flex flex-col gap-2">
-          {filteredTokens.length === 0 ? (
-            <div className="py-8 text-center text-sm text-[color:var(--color-depth)]/60">
-              No tokens on {activeChain}
-            </div>
-          ) : (
-            filteredTokens.map((token) => (
+        {filteredTokens.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 gap-4 px-2">
+            <p className="text-sm text-[color:var(--color-depth)]/60 text-center">
+              No tokens found. Make a Deposit
+            </p>
+            <Button
+              onClick={() => setCurrentView("receive")}
+              className="bg-[color:var(--color-accent)] text-white hover:bg-[color:var(--color-accent)]/90"
+            >
+              Deposit
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto px-2">
+            {displayTokens.map((token) => (
               <button
                 key={`${token.symbol}-${token.chain}${token.evmChain ? `-${token.evmChain}` : ""}`}
                 onClick={() => setSelectedToken(token)}
@@ -298,9 +270,14 @@ function TokenList({
                   )}
                 </div>
               </button>
-            ))
-          )}
-        </div>
+            ))}
+            {hasMore && (
+              <p className="text-xs text-center text-[color:var(--color-depth)]/60 py-2">
+                Scroll to view more tokens
+              </p>
+            )}
+          </div>
+        )}
       </div>
       {selectedToken && (
         <TokenDetailsModal
@@ -339,7 +316,7 @@ function TransactionList({
           View All
         </Button>
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-2 px-2">
         {filteredTransactions.length === 0 ? (
           <div className="py-8 text-center text-sm text-[color:var(--color-depth)]/60">
             No transactions on {activeChain}
@@ -357,19 +334,18 @@ function TransactionList({
                 className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
               >
                 <div className="flex items-center gap-3">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${directionMap[tx.direction].colorClass}`}>
-                    <Icon className="h-5 w-5" />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {(tx.direction === "in" || tx.direction === "out") && (
-                      <TokenLogo symbol={tx.tokenSymbol} name={tx.token} />
-                    )}
-                    <div>
-                      <p className="font-semibold">{tx.token}</p>
-                      <p className="text-sm text-[color:var(--color-depth)]/60">
-                        {shortenAddress(tx.counterparty)}
-                      </p>
+                  {tx.direction === "swap" ? (
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${directionMap[tx.direction].colorClass}`}>
+                      <Icon className="h-5 w-5" />
                     </div>
+                  ) : (
+                    <TokenLogo symbol={tx.tokenSymbol} name={tx.token} />
+                  )}
+                  <div>
+                    <p className="font-semibold">{tx.token}</p>
+                    <p className="text-sm text-[color:var(--color-depth)]/60">
+                      {shortenAddress(tx.counterparty)}
+                    </p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -388,81 +364,129 @@ function TransactionList({
 }
 
 export default function ManualWallet() {
+  const { setCurrentView, activeChain, setActiveChain } = useApp();
   const {
     accountName,
     address,
+    solanaAddress,
     chains,
     tokens,
     transactions,
   } = manualWalletState;
-
-  const [activeChain, setActiveChain] = useState<Chain>(manualWalletState.activeChain);
+  const [copied, setCopied] = useState(false);
 
   const activeChainBalance = chains.find(
     (chain) => chain.label === activeChain,
   );
 
-  const handleCopyAddress = () => {
-    navigator.clipboard.writeText(manualWalletState.address);
-    // Add a toast notification here
+  const currentAddress = activeChain === "EVM" ? address : solanaAddress;
+
+  const handleCopyAddress = async () => {
+    await navigator.clipboard.writeText(currentAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleQrClick = () => {
+    setCurrentView("receive");
   };
 
   return (
-    <div className="mx-auto max-w-7xl w-full flex flex-col gap-6 p-4 md:p-6 text-[color:var(--color-depth)]">
-      <section className="wallet-card flex flex-col gap-6 p-6 md:p-8">
-        <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-          <div className="flex items-center gap-4">
-            <Avatar className="h-12 w-12">
-              <AvatarFallback className="bg-[color:var(--color-accent)]/20 text-[color:var(--color-accent)] text-xl font-bold">
-                {accountName[0]}
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex flex-col gap-1">
-              <h1 className="text-2xl font-semibold">{accountName}</h1>
-              <div className="flex items-center gap-2">
-                <p className="text-sm text-[color:var(--color-depth)]/60">
-                  {shortenAddress(address)}
-                </p>
-                <Button variant="ghost" size="icon" onClick={handleCopyAddress} className="h-6 w-6">
-                  <Copy className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </div>
-          <div className="shrink-0">
-            <ChainToggle chains={chains} activeChain={activeChain} onChainChange={setActiveChain} />
-          </div>
-        </header>
+    <div className="mx-auto max-w-7xl w-full flex flex-col gap-4 p-4 md:p-6 text-[color:var(--color-depth)]">
+      {/* Top Header: Wallet Name + Address + QR */}
+      <div className="wallet-card flex items-center justify-between p-4 gap-4">
+        <div className="flex items-center gap-3">
+          <Avatar className="h-10 w-10">
+            <AvatarFallback className="bg-[color:var(--color-accent)]/20 text-[color:var(--color-accent)] text-lg font-bold">
+              {accountName[0]}
+            </AvatarFallback>
+          </Avatar>
+          <h1 className="text-lg font-semibold">{accountName}</h1>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCopyAddress}
+            className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[color:var(--color-depth)]/5 transition-colors"
+          >
+            <p className="text-sm text-[color:var(--color-depth)]/80 font-mono">
+              {shortenAddress(currentAddress)}
+            </p>
+            {copied ? (
+              <Check className="h-4 w-4 text-green-500" />
+            ) : (
+              <Copy className="h-4 w-4 text-[color:var(--color-depth)]/60" />
+            )}
+          </button>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleQrClick}
+            className="h-8 w-8"
+          >
+            <QrCode className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
-        <div className="rounded-3xl bg-[color:var(--color-depth)]/5 p-6">
-          <p className="text-sm text-[color:var(--color-depth)]/60">
+      {/* Balance Container: EVM/Solana Toggle + Balance */}
+      <div className="wallet-card flex flex-col gap-4 p-4">
+        <ChainToggle chains={chains} activeChain={activeChain} onChainChange={setActiveChain} />
+        <div>
+          <p className="text-sm text-[color:var(--color-depth)]/60 mb-1">
             Available balance
           </p>
-          <div className="mt-3">
-            <p className="text-4xl font-semibold">
-              {currencyFormatter.format(activeChainBalance?.currencyValue ?? 0)}
-            </p>
-            <p className="text-sm text-[color:var(--color-depth)]/60">
-              {activeChainBalance?.nativeLabel}
-            </p>
-          </div>
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {actionButtons.map((btn) => (
-              <ManualActionButton
-                key={btn.label}
-                label={btn.label}
-                Icon={btn.icon}
-                action={btn.action}
-              />
-            ))}
-          </div>
+          <p className="text-3xl font-semibold">
+            {currencyFormatter.format(activeChainBalance?.currencyValue ?? 0)}
+          </p>
+          <p className="text-sm text-[color:var(--color-depth)]/60 mt-1">
+            {activeChainBalance?.nativeLabel}
+          </p>
         </div>
-      </section>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <TokenList tokens={tokens} activeChain={activeChain} allTokens={tokens} />
-        <TransactionList transactions={transactions} activeChain={activeChain} />
       </div>
+
+      {/* Action Buttons: Send, Receive, Swap, History */}
+      <div className="wallet-card p-4">
+        <div className="grid grid-cols-4 gap-2 sm:gap-3">
+          <Button
+            variant="ghost"
+            onClick={() => setCurrentView("send")}
+            className="flex flex-col items-center justify-center gap-2 h-20 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
+          >
+            <ArrowUp className="h-5 w-5 text-[color:var(--color-accent)]" />
+            <span className="text-sm font-medium text-[color:var(--color-depth)]">Send</span>
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setCurrentView("receive")}
+            className="flex flex-col items-center justify-center gap-2 h-20 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
+          >
+            <ArrowDown className="h-5 w-5 text-[color:var(--color-accent)]" />
+            <span className="text-sm font-medium text-[color:var(--color-depth)]">Receive</span>
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setCurrentView("swap")}
+            className="flex flex-col items-center justify-center gap-2 h-20 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
+          >
+            <ArrowRightLeft className="h-5 w-5 text-[color:var(--color-accent)]" />
+            <span className="text-sm font-medium text-[color:var(--color-depth)]">Swap</span>
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setCurrentView("history")}
+            className="flex flex-col items-center justify-center gap-2 h-20 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
+          >
+            <History className="h-5 w-5 text-[color:var(--color-accent)]" />
+            <span className="text-sm font-medium text-[color:var(--color-depth)]">History</span>
+          </Button>
+        </div>
+      </div>
+
+      {/* Token List Container */}
+      <TokenList tokens={tokens} activeChain={activeChain} allTokens={tokens} />
+
+      {/* Recent Transactions Container */}
+      <TransactionList transactions={transactions} activeChain={activeChain} />
     </div>
   );
 }
