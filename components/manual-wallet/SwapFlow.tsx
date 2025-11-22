@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useApp } from "../app/AppContext";
 import { manualWalletState, TokenBalance } from "./data";
 import { ChainLogo, TokenLogo } from "./ManualWallet";
+import { TokenSelectModal } from "./TokenSelectModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,119 +15,96 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Check,
   X,
   Loader2,
   ArrowLeft,
   ArrowUpDown,
+  Settings,
 } from "lucide-react";
 
 type SwapStep = "form" | "confirm" | "loading" | "success" | "error";
 
-function TokenSelectCard({
-  label,
-  selectedToken,
-  onTokenSelect,
-  onChainSelect,
-  amount,
-  onAmountChange,
-  isFrom,
+function SlippageSettings({
+  slippage,
+  onSlippageChange,
+  onClose,
 }: {
-  label: string;
-  selectedToken: TokenBalance | null;
-  onTokenSelect: (symbol: string) => void;
-  onChainSelect: (chainKey: string) => void;
-  amount?: string;
-  onAmountChange?: (value: string) => void;
-  isFrom?: boolean;
+  slippage: number;
+  onSlippageChange: (value: number) => void;
+  onClose: () => void;
 }) {
-  const groupedTokens = manualWalletState.tokens.reduce((acc, token) => {
-    const key = token.symbol;
-    if (!acc[key]) {
-      acc[key] = [];
-    }
-    acc[key].push(token);
-    return acc;
-  }, {} as Record<string, TokenBalance[]>);
+  const [customSlippage, setCustomSlippage] = useState("");
+  const [useCustom, setUseCustom] = useState(false);
 
-  const tokenChains = selectedToken
-    ? groupedTokens[selectedToken.symbol] || []
-    : [];
+  const defaultSlippages = [0.1, 0.5, 1.0];
+
+  const handleDefaultSelect = (value: number) => {
+    onSlippageChange(value);
+    setUseCustom(false);
+    setCustomSlippage("");
+  };
+
+  const handleCustomChange = (value: string) => {
+    setCustomSlippage(value);
+    const numValue = parseFloat(value);
+    if (!isNaN(numValue) && numValue >= 0) {
+      onSlippageChange(numValue);
+      setUseCustom(true);
+    }
+  };
 
   return (
-    <div className="rounded-xl border border-[color:var(--color-border)] p-4 space-y-4">
-      <div className="flex justify-between items-center">
-        <span className="text-sm text-[color:var(--color-depth)]/60">{label}</span>
-        {isFrom && selectedToken && (
-          <span className="text-sm text-[color:var(--color-depth)]/60">
-            Balance: {selectedToken.amount.toLocaleString()}
-          </span>
-        )}
+    <DialogContent>
+      <DialogHeader>
+        <DialogTitle>Slippage Tolerance</DialogTitle>
+      </DialogHeader>
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          {defaultSlippages.map((value) => (
+            <Button
+              key={value}
+              variant={!useCustom && slippage === value ? "default" : "outline"}
+              onClick={() => handleDefaultSelect(value)}
+              className="flex-1"
+            >
+              {value}%
+            </Button>
+          ))}
+        </div>
+        <div>
+          <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
+            Custom
+          </label>
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              value={customSlippage}
+              onChange={(e) => handleCustomChange(e.target.value)}
+              placeholder="0.0"
+              step="0.1"
+              min="0"
+              className="flex-1"
+            />
+            <span className="text-sm text-[color:var(--color-depth)]/60">%</span>
+          </div>
+        </div>
+        <Button onClick={onClose} className="w-full">
+          Done
+        </Button>
       </div>
-      <div className="flex gap-4">
-        <Select onValueChange={onTokenSelect} value={selectedToken?.symbol}>
-          <SelectTrigger className="w-48">
-            <SelectValue placeholder="Select Token" />
-          </SelectTrigger>
-          <SelectContent>
-            {Object.keys(groupedTokens).map((symbol) => (
-              <SelectItem key={symbol} value={symbol}>
-                <div className="flex items-center gap-2">
-                  <TokenLogo symbol={symbol} name={symbol} />
-                  {symbol}
-                </div>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Input
-          type="number"
-          value={amount}
-          onChange={(e) => onAmountChange?.(e.target.value)}
-          placeholder="0.00"
-          className="text-right"
-          readOnly={!isFrom}
-        />
-      </div>
-      {selectedToken && tokenChains.length > 1 && (
-        <Select
-          onValueChange={onChainSelect}
-          value={
-            selectedToken.evmChain
-              ? `${selectedToken.chain}-${selectedToken.evmChain}`
-              : selectedToken.chain
-          }
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select Chain" />
-          </SelectTrigger>
-          <SelectContent>
-            {tokenChains.map((token) => {
-              const chainKey = token.evmChain
-                ? `${token.chain}-${token.evmChain}`
-                : token.chain;
-              const chainLabel =
-                token.evmChain
-                  ? token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1)
-                  : "Solana";
-              return (
-                <SelectItem key={chainKey} value={chainKey}>
-                  <div className="flex items-center gap-2">
-                    <ChainLogo chain={token.evmChain || "solana"} />
-                    {chainLabel}
-                  </div>
-                </SelectItem>
-              );
-            })}
-          </SelectContent>
-        </Select>
-      )}
-    </div>
+    </DialogContent>
   );
 }
 
 export function SwapFlow() {
-  const { setCurrentView, preselectedToken, setPreselectedToken } = useApp();
+  const { setCurrentView, preselectedToken, setPreselectedToken, slippage, setSlippage } = useApp();
   const [step, setStep] = useState<SwapStep>("form");
   const [fromToken, setFromToken] = useState<TokenBalance | null>(
     preselectedToken
@@ -144,6 +122,10 @@ export function SwapFlow() {
   const [amount, setAmount] = useState("");
   const [estimatedAmount, setEstimatedAmount] = useState("");
   const [error, setError] = useState("");
+  const [showFromTokenModal, setShowFromTokenModal] = useState(false);
+  const [showToTokenModal, setShowToTokenModal] = useState(false);
+  const [showSlippageSettings, setShowSlippageSettings] = useState(false);
+  const [percentage, setPercentage] = useState(0);
 
   const groupedTokens = manualWalletState.tokens.reduce((acc, token) => {
     const key = token.symbol;
@@ -169,10 +151,27 @@ export function SwapFlow() {
     setAmount(newAmount);
     setEstimatedAmount(newEstimatedAmount);
     setError("");
+    // Reset percentage when swapping
+    if (toToken) {
+      const newPercentage = newAmount && toToken.amount > 0
+        ? (parseFloat(newAmount) / toToken.amount) * 100
+        : 0;
+      setPercentage(Math.min(100, Math.max(0, newPercentage)));
+    } else {
+      setPercentage(0);
+    }
   };
 
   const handleAmountChange = (value: string) => {
     setAmount(value);
+    // Update percentage based on amount
+    if (fromToken && value && parseFloat(value) > 0) {
+      const newPercentage = (parseFloat(value) / fromToken.amount) * 100;
+      setPercentage(Math.min(100, Math.max(0, Math.round(newPercentage))));
+    } else {
+      setPercentage(0);
+    }
+
     if (
       fromToken &&
       toToken &&
@@ -189,38 +188,44 @@ export function SwapFlow() {
     }
   };
 
-  const handleFromTokenSelect = (symbol: string) => {
-    const tokens = groupedTokens[symbol];
-    if (tokens && tokens.length > 0) {
-      const bestToken = tokens.reduce((best, current) =>
-        current.usdValue > best.usdValue ? current : best
-      );
-      setFromToken(bestToken);
-      const chainKey = bestToken.evmChain
-        ? `${bestToken.chain}-${bestToken.evmChain}`
-        : bestToken.chain;
-      setFromTokenChain(chainKey);
+  const handlePercentageChange = (value: number) => {
+    setPercentage(value);
+    if (fromToken && value > 0) {
+      const newAmount = (fromToken.amount * value) / 100;
+      setAmount(newAmount.toFixed(6));
+      
+      if (toToken && fromToken.pricePerToken && toToken.pricePerToken) {
+        const fromValue = newAmount * fromToken.pricePerToken;
+        const estimated = fromValue / toToken.pricePerToken;
+        setEstimatedAmount(estimated.toFixed(6));
+      }
+    } else {
       setAmount("");
       setEstimatedAmount("");
-      setError("");
-      setPreselectedToken(null);
     }
   };
 
-  const handleToTokenSelect = (symbol: string) => {
-    const tokens = groupedTokens[symbol];
-    if (tokens && tokens.length > 0) {
-      const bestToken = tokens.reduce((best, current) =>
-        current.usdValue > best.usdValue ? current : best
-      );
-      setToToken(bestToken);
-      const chainKey = bestToken.evmChain
-        ? `${bestToken.chain}-${bestToken.evmChain}`
-        : bestToken.chain;
-      setToTokenChain(chainKey);
-      setEstimatedAmount("");
-      setError("");
-    }
+  const handleFromTokenSelect = (token: TokenBalance) => {
+    setFromToken(token);
+    const chainKey = token.evmChain
+      ? `${token.chain}-${token.evmChain}`
+      : token.chain;
+    setFromTokenChain(chainKey);
+    setAmount("");
+    setEstimatedAmount("");
+    setPercentage(0);
+    setError("");
+    setPreselectedToken(null);
+  };
+
+  const handleToTokenSelect = (token: TokenBalance) => {
+    setToToken(token);
+    const chainKey = token.evmChain
+      ? `${token.chain}-${token.evmChain}`
+      : token.chain;
+    setToTokenChain(chainKey);
+    setEstimatedAmount("");
+    setError("");
   };
 
   const handleFromChainSelect = (chainKey: string) => {
@@ -232,6 +237,11 @@ export function SwapFlow() {
     if (tokenOnChain) {
       setFromToken(tokenOnChain);
       setFromTokenChain(chainKey);
+      // Recalculate amount and percentage if amount is set
+      if (amount && parseFloat(amount) > 0) {
+        const newPercentage = (parseFloat(amount) / tokenOnChain.amount) * 100;
+        setPercentage(Math.min(100, Math.max(0, Math.round(newPercentage))));
+      }
       if (
         amount &&
         toToken &&
@@ -312,6 +322,7 @@ export function SwapFlow() {
     setPreselectedToken(null);
     setAmount("");
     setEstimatedAmount("");
+    setPercentage(0);
     setError("");
   };
 
@@ -340,9 +351,21 @@ export function SwapFlow() {
       <h2 className="text-2xl font-semibold text-[color:var(--color-depth)]">
         {title}
       </h2>
-      <Button variant="ghost" size="icon" onClick={handleClose}>
-        <X className="h-6 w-6" />
-      </Button>
+      <div className="flex items-center gap-2">
+        {title === "Swap" && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setShowSlippageSettings(true)}
+            className="h-8 w-8"
+          >
+            <Settings className="h-4 w-4" />
+          </Button>
+        )}
+        <Button variant="ghost" size="icon" onClick={handleClose}>
+          <X className="h-6 w-6" />
+        </Button>
+      </div>
     </div>
   );
 
@@ -437,18 +460,19 @@ export function SwapFlow() {
               <TokenLogo
                 symbol={fromToken!.symbol}
                 name={fromToken!.name}
+                size="sm"
               />
               <div className="flex-1">
-                <p className="font-semibold">{fromToken!.name}</p>
-                <p className="text-sm text-[color:var(--color-depth)]/60">
+                <p className="font-semibold text-sm">{fromToken!.name}</p>
+                <p className="text-xs text-[color:var(--color-depth)]/60">
                   {getChainLabel(fromToken!)}
                 </p>
               </div>
               <div className="text-right">
-                <p className="font-semibold">
+                <p className="font-semibold text-sm">
                   {amount} {fromToken!.symbol}
                 </p>
-                <p className="text-sm text-[color:var(--color-depth)]/60">
+                <p className="text-xs text-[color:var(--color-depth)]/60">
                   ≈ ${fromValue.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                   })}
@@ -467,18 +491,19 @@ export function SwapFlow() {
               <TokenLogo
                 symbol={toToken!.symbol}
                 name={toToken!.name}
+                size="sm"
               />
               <div className="flex-1">
-                <p className="font-semibold">{toToken!.name}</p>
-                <p className="text-sm text-[color:var(--color-depth)]/60">
+                <p className="font-semibold text-sm">{toToken!.name}</p>
+                <p className="text-xs text-[color:var(--color-depth)]/60">
                   {getChainLabel(toToken!)}
                 </p>
               </div>
               <div className="text-right">
-                <p className="font-semibold">
+                <p className="font-semibold text-sm">
                   {estimatedAmount} {toToken!.symbol}
                 </p>
-                <p className="text-sm text-[color:var(--color-depth)]/60">
+                <p className="text-xs text-[color:var(--color-depth)]/60">
                   ≈ ${toValue.toLocaleString(undefined, {
                     minimumFractionDigits: 2,
                   })}
@@ -499,12 +524,16 @@ export function SwapFlow() {
                 label: "Route",
                 value: isCrossChain ? "Rubic/Jupiter" : "Uniswap/Curve",
               },
+              {
+                label: "Slippage Tolerance",
+                value: `${slippage}%`,
+              },
             ].map(({ label, value }) => (
               <div key={label} className="flex items-center justify-between">
                 <p className="text-sm text-[color:var(--color-depth)]/60">
                   {label}
                 </p>
-                <p className="font-semibold">{value}</p>
+                <p className="font-semibold text-sm">{value}</p>
               </div>
             ))}
           </div>
@@ -530,16 +559,106 @@ export function SwapFlow() {
     <div className="wallet-card p-6 md:p-8">
       {renderHeader("Swap")}
       <div className="space-y-4">
-        <TokenSelectCard
-          label="From"
-          selectedToken={fromToken}
-          onTokenSelect={handleFromTokenSelect}
-          onChainSelect={handleFromChainSelect}
-          amount={amount}
-          onAmountChange={handleAmountChange}
-          isFrom
-        />
+        {/* From Section */}
+        <div className="rounded-xl border border-[color:var(--color-border)] p-4 space-y-4">
+          <div className="flex justify-between items-center">
+            <span className="text-sm text-[color:var(--color-depth)]/60">From</span>
+            {fromToken && (
+              <span className="text-sm text-[color:var(--color-depth)]/60">
+                Balance: {fromToken.amount.toLocaleString(undefined, {
+                  maximumFractionDigits: 6,
+                })}
+              </span>
+            )}
+          </div>
+          
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowFromTokenModal(true)}
+              className="flex items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 hover:bg-[color:var(--color-depth)]/5 transition flex-1 justify-between"
+            >
+              <div className="flex items-center gap-2">
+                {fromToken ? (
+                  <>
+                    <TokenLogo symbol={fromToken.symbol} name={fromToken.name} size="sm" />
+                    <span className="font-semibold text-sm">{fromToken.symbol}</span>
+                  </>
+                ) : (
+                  <span className="text-sm text-[color:var(--color-depth)]/60">Select Token</span>
+                )}
+              </div>
+              <svg className="h-4 w-4 text-[color:var(--color-depth)]/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <Input
+              type="number"
+              value={amount}
+              onChange={(e) => handleAmountChange(e.target.value)}
+              placeholder="0.00"
+              className="flex-1 text-right text-sm"
+            />
+          </div>
 
+          {/* Percentage Slider */}
+          {fromToken && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-[color:var(--color-depth)]/60">
+                <span>0%</span>
+                <span className="font-semibold">{percentage}%</span>
+                <span>100%</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={percentage}
+                onChange={(e) => handlePercentageChange(parseInt(e.target.value))}
+                className="w-full h-2 bg-[color:var(--color-depth)]/10 rounded-lg appearance-none cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, #62d7dd 0%, #62d7dd ${percentage}%, rgba(112, 111, 110, 0.1) ${percentage}%, rgba(112, 111, 110, 0.1) 100%)`
+                }}
+              />
+            </div>
+          )}
+
+          {/* Chain Selector for Multi-chain tokens */}
+          {fromToken && fromTokenChains.length > 1 && (
+            <Select
+              onValueChange={handleFromChainSelect}
+              value={
+                fromToken.evmChain
+                  ? `${fromToken.chain}-${fromToken.evmChain}`
+                  : fromToken.chain
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Chain" />
+              </SelectTrigger>
+              <SelectContent>
+                {fromTokenChains.map((token) => {
+                  const chainKey = token.evmChain
+                    ? `${token.chain}-${token.evmChain}`
+                    : token.chain;
+                  const chainLabel =
+                    token.evmChain
+                      ? token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1)
+                      : "Solana";
+                  return (
+                    <SelectItem key={chainKey} value={chainKey}>
+                      <div className="flex items-center gap-2">
+                        <ChainLogo chain={token.evmChain || "solana"} />
+                        {chainLabel}
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
+
+        {/* Swap Button */}
         <div className="flex justify-center">
           <Button
             variant="outline"
@@ -551,13 +670,73 @@ export function SwapFlow() {
           </Button>
         </div>
 
-        <TokenSelectCard
-          label="To (estimated)"
-          selectedToken={toToken}
-          onTokenSelect={handleToTokenSelect}
-          onChainSelect={handleToChainSelect}
-          amount={estimatedAmount}
-        />
+        {/* To Section */}
+        <div className="rounded-xl border border-[color:var(--color-border)] p-4 space-y-4">
+          <span className="text-sm text-[color:var(--color-depth)]/60">To (estimated)</span>
+          
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowToTokenModal(true)}
+              className="flex items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 hover:bg-[color:var(--color-depth)]/5 transition flex-1 justify-between"
+            >
+              <div className="flex items-center gap-2">
+                {toToken ? (
+                  <>
+                    <TokenLogo symbol={toToken.symbol} name={toToken.name} size="sm" />
+                    <span className="font-semibold text-sm">{toToken.symbol}</span>
+                  </>
+                ) : (
+                  <span className="text-sm text-[color:var(--color-depth)]/60">Select Token</span>
+                )}
+              </div>
+              <svg className="h-4 w-4 text-[color:var(--color-depth)]/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            <Input
+              type="number"
+              value={estimatedAmount}
+              placeholder="0.00"
+              className="flex-1 text-right text-sm"
+              readOnly
+            />
+          </div>
+
+          {/* Chain Selector for Multi-chain tokens */}
+          {toToken && toTokenChains.length > 1 && (
+            <Select
+              onValueChange={handleToChainSelect}
+              value={
+                toToken.evmChain
+                  ? `${toToken.chain}-${toToken.evmChain}`
+                  : toToken.chain
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select Chain" />
+              </SelectTrigger>
+              <SelectContent>
+                {toTokenChains.map((token) => {
+                  const chainKey = token.evmChain
+                    ? `${token.chain}-${token.evmChain}`
+                    : token.chain;
+                  const chainLabel =
+                    token.evmChain
+                      ? token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1)
+                      : "Solana";
+                  return (
+                    <SelectItem key={chainKey} value={chainKey}>
+                      <div className="flex items-center gap-2">
+                        <ChainLogo chain={token.evmChain || "solana"} />
+                        {chainLabel}
+                      </div>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          )}
+        </div>
 
         {error && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
@@ -574,6 +753,34 @@ export function SwapFlow() {
           Continue
         </Button>
       </div>
+
+      {/* Token Select Modals */}
+      {showFromTokenModal && (
+        <TokenSelectModal
+          tokens={manualWalletState.tokens}
+          onSelect={handleFromTokenSelect}
+          onClose={() => setShowFromTokenModal(false)}
+          excludeSymbol={toToken?.symbol}
+        />
+      )}
+
+      {showToTokenModal && (
+        <TokenSelectModal
+          tokens={manualWalletState.tokens}
+          onSelect={handleToTokenSelect}
+          onClose={() => setShowToTokenModal(false)}
+          excludeSymbol={fromToken?.symbol}
+        />
+      )}
+
+      {/* Slippage Settings Dialog */}
+      <Dialog open={showSlippageSettings} onOpenChange={setShowSlippageSettings}>
+        <SlippageSettings
+          slippage={slippage}
+          onSlippageChange={setSlippage}
+          onClose={() => setShowSlippageSettings(false)}
+        />
+      </Dialog>
     </div>
   );
 }

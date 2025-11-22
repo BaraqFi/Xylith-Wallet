@@ -20,6 +20,8 @@ interface AppState {
   setDarkMode: (dark: boolean) => void;
   preselectedToken: TokenBalance | null;
   setPreselectedToken: (token: TokenBalance | null) => void;
+  slippage: number;
+  setSlippage: (slippage: number) => void;
 }
 
 const AppContext = createContext<AppState | undefined>(undefined);
@@ -30,8 +32,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [dontShowAiAlert, setDontShowAiAlert] = useState(false);
   const [currentView, setCurrentView] = useState<AppState["currentView"]>("wallet");
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(true);
   const [preselectedToken, setPreselectedToken] = useState<TokenBalance | null>(null);
+  const [slippage, setSlippage] = useState<number>(0.5);
 
   return (
     <AppContext.Provider
@@ -50,6 +53,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setDarkMode,
         preselectedToken,
         setPreselectedToken,
+        slippage,
+        setSlippage,
       }}
     >
       {children}

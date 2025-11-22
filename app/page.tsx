@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { AppProvider, useApp } from "@/components/app/AppContext";
 import { ModeToggle } from "@/components/app/ModeToggle";
 import { DarkModeToggle } from "@/components/app/DarkModeToggle";
@@ -65,7 +65,20 @@ function Header() {
 }
 
 function HomeContent() {
+  const { darkMode } = useApp();
   const [showSplash, setShowSplash] = useState(true);
+
+  // Initialize dark mode on mount
+  useEffect(() => {
+    const root = document.documentElement;
+    if (darkMode) {
+      root.classList.add("dark");
+      root.setAttribute("data-theme", "dark");
+    } else {
+      root.classList.remove("dark");
+      root.setAttribute("data-theme", "light");
+    }
+  }, [darkMode]);
 
   if (showSplash) {
     return <SplashScreen onComplete={() => setShowSplash(false)} />;

@@ -10,15 +10,15 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
       setIsVisible(false);
       setTimeout(() => {
         onComplete();
-      }, 500); // Wait for fade out animation
-    }, 2500); // Show for 2.5 seconds
+      }, 300); // Wait for fade out animation
+    }, 1500); // Show for 1.5 seconds
 
     return () => clearTimeout(timer);
   }, [onComplete]);
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--color-surface)] transition-opacity duration-500 ${
+      className={`fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--color-surface)] transition-opacity duration-300 ${
         isVisible ? "opacity-100" : "opacity-0"
       }`}
     >

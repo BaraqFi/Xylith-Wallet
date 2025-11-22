@@ -9,8 +9,10 @@ export function DarkModeToggle() {
   useEffect(() => {
     const root = document.documentElement;
     if (darkMode) {
+      root.classList.add("dark");
       root.setAttribute("data-theme", "dark");
     } else {
+      root.classList.remove("dark");
       root.setAttribute("data-theme", "light");
     }
   }, [darkMode]);

@@ -5,7 +5,6 @@ import { manualWalletState, WalletTransaction } from "./data";
 import { shortenAddress } from "./utils";
 import { TokenLogo } from "./ManualWallet";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { ArrowLeft, ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
 
 const statusColors: Record<
@@ -30,9 +29,9 @@ const statusColors: Record<
 };
 
 const directionIcons: Record<WalletTransaction["direction"], React.ReactNode> = {
-  in: <ArrowDown className="h-5 w-5" />,
-  out: <ArrowUp className="h-5 w-5" />,
-  swap: <ArrowRightLeft className="h-5 w-5" />,
+  in: <ArrowDown className="h-5 w-5 text-green-500" />,
+  out: <ArrowUp className="h-5 w-5 text-red-500" />,
+  swap: <ArrowRightLeft className="h-5 w-5 text-blue-500" />,
 };
 
 const directionColors: Record<
@@ -94,15 +93,9 @@ export function HistoryScreen() {
                 className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
               >
                 <div className="flex items-center gap-4">
-                  <Avatar
-                    className={`rounded-lg ${directionColors[tx.direction].bg}`}
-                  >
-                    <AvatarFallback
-                      className={`bg-transparent ${directionColors[tx.direction].text}`}
-                    >
-                      {directionIcons[tx.direction]}
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${directionColors[tx.direction].bg}`}>
+                    {directionIcons[tx.direction]}
+                  </div>
                   <div className="flex items-center gap-2">
                     {(tx.direction === "in" || tx.direction === "out") && (
                       <TokenLogo symbol={tx.tokenSymbol} name={tx.token} />

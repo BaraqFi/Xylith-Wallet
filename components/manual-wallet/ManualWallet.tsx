@@ -77,7 +77,7 @@ function ChainToggle({
   onChainChange: (chain: Chain) => void;
 }) {
   return (
-    <div className="flex items-center gap-2 rounded-full border border-[color:var(--color-border)] p-1">
+    <div className="flex items-center gap-1 rounded-full border border-[color:var(--color-border)] p-1">
       {chains.map((chain) => {
         const isActive = chain.label === activeChain;
         return (
@@ -86,7 +86,7 @@ function ChainToggle({
             variant={isActive ? "default" : "ghost"}
             size="sm"
             onClick={() => onChainChange(chain.label)}
-            className="rounded-full"
+            className="flex-1 rounded-full"
           >
             {chain.label}
           </Button>
@@ -99,9 +99,11 @@ function ChainToggle({
 export function TokenLogo({
   symbol,
   name,
+  size = "md",
 }: {
   symbol: string;
   name: string;
+  size?: "sm" | "md" | "lg";
 }) {
   // Map token symbols to Web3Icons component names
   const tokenIconMap: Record<string, string> = {
@@ -119,21 +121,29 @@ export function TokenLogo({
     JUP: "TokenJUP",
   };
 
+  const sizeMap = {
+    sm: { container: "h-6 w-6", icon: 24, text: "text-xs" },
+    md: { container: "h-10 w-10", icon: 40, text: "text-sm" },
+    lg: { container: "h-12 w-12", icon: 48, text: "text-base" },
+  };
+
+  const sizes = sizeMap[size];
+
   const iconName = tokenIconMap[symbol];
   // @ts-expect-error - Dynamic access to Web3Icons
   const IconComponent = iconName ? Web3Icons[iconName] : null;
 
   if (IconComponent) {
     return (
-      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12">
-        <IconComponent variant="branded" size={40} />
+      <div className={`flex ${sizes.container} items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12`}>
+        <IconComponent variant="branded" size={sizes.icon} />
       </div>
     );
   }
 
   // Fallback to initial letter if icon not found
   return (
-    <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 font-semibold text-[color:var(--color-accent)]">
+    <div className={`flex ${sizes.container} items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 font-semibold ${sizes.text} text-[color:var(--color-accent)]`}>
       {symbol[0] || name[0] || "?"}
     </div>
   );
@@ -347,15 +357,9 @@ function TransactionList({
                 className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
               >
                 <div className="flex items-center gap-3">
-                  <Avatar className="h-10 w-10 rounded-lg">
-                    <AvatarFallback
-                      className={`rounded-lg text-sm font-semibold ${
-                        directionMap[tx.direction].colorClass
-                      }`}
-                    >
-                      <Icon className="h-5 w-5" />
-                    </AvatarFallback>
-                  </Avatar>
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${directionMap[tx.direction].colorClass}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
                   <div className="flex items-center gap-2">
                     {(tx.direction === "in" || tx.direction === "out") && (
                       <TokenLogo symbol={tx.tokenSymbol} name={tx.token} />
