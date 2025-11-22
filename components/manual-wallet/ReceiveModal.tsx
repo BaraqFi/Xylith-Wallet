@@ -3,22 +3,33 @@
 import { useState, useMemo } from "react";
 import { useApp } from "../app/AppContext";
 import { manualWalletState, Chain } from "./data";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogClose,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Copy, Check, X, AlertTriangle } from "lucide-react";
 
 function QRCodeGrid({ address }: { address: string }) {
   const grid = useMemo(() => {
-    const seed = address.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return Array.from({ length: 64 }).map((_, i) => {
-      const hash = (seed + i) % 100;
-      return hash > 50;
+    const seed = address
+      .split("")
+      .reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    return Array.from({ length: 144 }).map((_, i) => {
+      const hash = (seed + i) * (i % 10);
+      return hash % 3 === 0;
     });
   }, [address]);
 
   return (
-    <div className="grid grid-cols-8 gap-1 p-4">
+    <div className="grid grid-cols-12 gap-0.5">
       {grid.map((isDark, i) => (
         <div
           key={i}
-          className={`aspect-square rounded ${
+          className={`aspect-square ${
             isDark ? "bg-[color:var(--color-depth)]" : "bg-transparent"
           }`}
         />
@@ -28,7 +39,7 @@ function QRCodeGrid({ address }: { address: string }) {
 }
 
 export function ReceiveModal() {
-  const { setCurrentView } = useApp();
+  const { currentView, setCurrentView } = useApp();
   const [selectedChain, setSelectedChain] = useState<Chain>(
     manualWalletState.activeChain
   );
@@ -46,106 +57,95 @@ export function ReceiveModal() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--color-depth)]/40 p-4">
-      <div className="wallet-card max-w-md w-full p-8">
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-2xl font-semibold text-[color:var(--color-depth)]">Receive</h2>
-          <button
-            onClick={() => setCurrentView("wallet")}
-            className="text-[color:var(--color-depth)]/60 hover:text-[color:var(--color-depth)]"
-          >
-            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor">
-              <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
+  const handleClose = () => {
+    setCurrentView("wallet");
+  };
 
-        <div className="space-y-6">
+  return (
+    <Dialog open={currentView === "receive"} onOpenChange={handleClose}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Receive</DialogTitle>
+          <DialogClose asChild>
+            <Button variant="ghost" size="icon" className="absolute top-4 right-4">
+              <X className="h-4 w-4" />
+            </Button>
+          </DialogClose>
+        </DialogHeader>
+
+        <div className="space-y-6 pt-4">
           <div>
             <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
-              Select Network
+              Network
             </label>
-            <div className="flex gap-2 rounded-full border border-[color:var(--color-depth)]/10 p-1">
+            <div className="grid grid-cols-2 gap-2 rounded-lg border border-[color:var(--color-border)] p-1">
               {(["EVM", "Solana"] as Chain[]).map((chain) => (
-                <button
+                <Button
                   key={chain}
-                  type="button"
+                  variant={selectedChain === chain ? "secondary" : "ghost"}
                   onClick={() => setSelectedChain(chain)}
-                  className={`flex-1 rounded-full px-4 py-2 text-sm font-medium transition ${
-                    selectedChain === chain
-                      ? "bg-[color:var(--color-accent)] text-white"
-                      : "text-[color:var(--color-depth)]/60"
-                  }`}
                 >
                   {chain}
-                </button>
+                </Button>
               ))}
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <button
-              type="button"
+          <div className="grid grid-cols-2 gap-2 rounded-lg border border-[color:var(--color-border)] p-1">
+            <Button
+              variant={!showQr ? "secondary" : "ghost"}
               onClick={() => setShowQr(false)}
-              className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                !showQr
-                  ? "bg-[color:var(--color-accent)] text-white"
-                  : "border border-[color:var(--color-depth)]/10 text-[color:var(--color-depth)]"
-              }`}
             >
               Address
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              variant={showQr ? "secondary" : "ghost"}
               onClick={() => setShowQr(true)}
-              className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition ${
-                showQr
-                  ? "bg-[color:var(--color-accent)] text-white"
-                  : "border border-[color:var(--color-depth)]/10 text-[color:var(--color-depth)]"
-              }`}
             >
               QR Code
-            </button>
+            </Button>
           </div>
 
           {showQr ? (
-            <div className="flex flex-col items-center gap-4 rounded-2xl border border-[color:var(--color-depth)]/10 p-8">
-              <div className="flex h-64 w-64 items-center justify-center rounded-2xl border-4 border-[color:var(--color-depth)]/10 bg-white">
-                <div className="flex h-full w-full items-center justify-center">
+            <div className="flex flex-col items-center gap-4 rounded-lg border border-[color:var(--color-border)] p-6">
+              <div className="flex items-center justify-center rounded-lg bg-white p-2">
+                <div className="h-48 w-48">
                   <QRCodeGrid address={address} />
                 </div>
               </div>
-              <p className="text-sm text-[color:var(--color-depth)]/60">
+              <p className="text-center text-sm text-[color:var(--color-depth)]/60">
                 Scan this QR code to receive {selectedChain} assets
               </p>
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="rounded-2xl border border-[color:var(--color-depth)]/10 bg-[color:var(--color-depth)]/5 p-4">
+              <div className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-depth)]/5 p-4">
                 <p className="mb-2 text-sm text-[color:var(--color-depth)]/60">
                   Your {selectedChain} address
                 </p>
                 <p className="break-all font-mono text-sm">{address}</p>
               </div>
-              <button
-                onClick={handleCopy}
-                className="w-full rounded-xl border border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/10 px-4 py-3 text-sm font-semibold text-[color:var(--color-accent)] transition hover:bg-[color:var(--color-accent)]/20"
-              >
+              <Button onClick={handleCopy} className="w-full">
+                {copied ? (
+                  <Check className="mr-2 h-4 w-4" />
+                ) : (
+                  <Copy className="mr-2 h-4 w-4" />
+                )}
                 {copied ? "Copied!" : "Copy Address"}
-              </button>
+              </Button>
             </div>
           )}
 
-          <div className="rounded-2xl border border-yellow-200 bg-yellow-50 p-4">
-            <p className="text-sm text-yellow-800">
-              Only send {selectedChain} assets to this address. Sending other assets may result in
-              permanent loss.
+          <div className="flex items-start gap-3 rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/20">
+            <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+            <p className="text-sm text-yellow-800 dark:text-yellow-300">
+              Only send {selectedChain} assets to this address. Sending other
+              assets may result in permanent loss.
             </p>
           </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

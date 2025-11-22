@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, type ReactElement } from "react";
+import { useState, type ElementType } from "react";
+import {
+  ArrowUp,
+  ArrowDown,
+  ArrowRightLeft,
+  History,
+  Copy,
+} from "lucide-react";
 import {
   manualWalletState,
   Chain,
@@ -12,6 +19,8 @@ import {
 import { useApp } from "../app/AppContext";
 import { shortenAddress } from "./utils";
 import { TokenDetailsModal } from "./TokenDetailsModal";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -20,16 +29,11 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 });
 
 const actionButtons = [
-  { label: "Send", icon: "north", action: "send" },
-  { label: "Receive", icon: "south", action: "receive" },
-  { label: "Swap", icon: "swap", action: "swap" },
-  { label: "History", icon: "clock", action: "history" },
+  { label: "Send", icon: ArrowUp, action: "send" },
+  { label: "Receive", icon: ArrowDown, action: "receive" },
+  { label: "Swap", icon: ArrowRightLeft, action: "swap" },
+  { label: "History", icon: History, action: "history" },
 ] as const;
-
-function formatAddress(address: ManualWalletState["address"]) {
-  if (address.length <= 10) return address;
-  return `${address.slice(0, 4)}…${address.slice(-3)}`;
-}
 
 function tokenAmountLabel(token: TokenBalance) {
   if (token.symbol === "USDC") {
@@ -42,58 +46,23 @@ function tokenAmountLabel(token: TokenBalance) {
 
 const directionMap: Record<
   WalletTransaction["direction"],
-  { badge: string; colorClass: string }
+  { badge: string; colorClass: string; icon: ElementType }
 > = {
-  in: { badge: "In", colorClass: "bg-[color:var(--color-accent)]/15" },
-  out: { badge: "Out", colorClass: "bg-[color:var(--color-depth)]/10" },
-  swap: { badge: "Swap", colorClass: "bg-[color:var(--color-depth)]/5" },
-};
-
-const actionIconMap: Record<string, ReactElement> = {
-  south: (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
-      <path
-        d="M12 4v14m0 0 4-4m-4 4-4-4"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ),
-  north: (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
-      <path
-        d="M12 20V6m0 0-4 4m4-4 4 4"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ),
-  swap: (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
-      <path
-        d="M7 10H4l3-3 3 3H7zm10 4h3l-3 3-3-3h3zM7 10h13M17 14H4"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ),
-  clock: (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
-      <path
-        d="M12 7v5l3 1.5M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  ),
+  in: {
+    badge: "In",
+    colorClass: "bg-green-500/15 text-green-500",
+    icon: ArrowDown,
+  },
+  out: {
+    badge: "Out",
+    colorClass: "bg-red-500/15 text-red-500",
+    icon: ArrowUp,
+  },
+  swap: {
+    badge: "Swap",
+    colorClass: "bg-blue-500/15 text-blue-500",
+    icon: ArrowRightLeft,
+  },
 };
 
 function ChainToggle({
@@ -110,31 +79,31 @@ function ChainToggle({
       {chains.map((chain) => {
         const isActive = chain.label === activeChain;
         return (
-          <button
+          <Button
             key={chain.label}
-            type="button"
+            variant={isActive ? "default" : "ghost"}
+            size="sm"
             onClick={() => onChainChange(chain.label)}
-            className={[
-              "rounded-full px-3 py-1 text-sm font-medium transition-colors",
-              isActive
-                ? "bg-[color:var(--color-accent)] text-white"
-                : "text-[color:var(--color-depth)]/60",
-            ].join(" ")}
-            aria-pressed={isActive}
+            className="rounded-full"
           >
             {chain.label}
-          </button>
+          </Button>
         );
       })}
     </div>
   );
 }
 
-function TokenLogo({ symbol, name }: { symbol: string; name: string }) {
-  const firstLetter = symbol[0] || name[0] || "?";
+export function TokenLogo({
+  symbol,
+  name,
+}: {
+  symbol: string;
+  name: string;
+}) {
   return (
     <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 font-semibold text-[color:var(--color-accent)]">
-      {firstLetter}
+      {symbol[0] || name[0] || "?"}
     </div>
   );
 }
@@ -172,11 +141,11 @@ export function ChainLogo({ chain }: { chain: EVMChain | "solana" }) {
 
 function ManualActionButton({
   label,
-  iconKey,
+  Icon,
   action,
 }: {
   label: string;
-  iconKey: keyof typeof actionIconMap;
+  Icon: ElementType;
   action: string;
 }) {
   const { setCurrentView } = useApp();
@@ -194,16 +163,15 @@ function ManualActionButton({
   };
 
   return (
-    <button
-      type="button"
+    <Button
+      variant="outline"
+      size="lg"
       onClick={handleClick}
-      className="flex flex-1 items-center justify-center gap-2 rounded-2xl border border-[color:var(--color-border)] px-4 py-3 text-sm font-semibold text-[color:var(--color-depth)] transition hover:border-[color:var(--color-accent)]"
+      className="flex-1 justify-center gap-2"
     >
-      <span className="text-[color:var(--color-accent)]">
-        {actionIconMap[iconKey]}
-      </span>
-      {label}
-    </button>
+      <Icon className="h-4 w-4 text-[color:var(--color-accent)]" />
+      <span>{label}</span>
+    </Button>
   );
 }
 
@@ -221,13 +189,11 @@ function TokenList({
 
   return (
     <>
-      <div className="wallet-card flex flex-col gap-4 p-6">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold uppercase tracking-wide text-[color:var(--color-depth)]/65">
-            Token list
-          </p>
-        </div>
-        <div className="flex flex-col gap-4">
+      <div className="wallet-card flex flex-col gap-4 p-4 sm:p-6">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-[color:var(--color-depth)]/65 px-2">
+          Token List
+        </h2>
+        <div className="flex flex-col gap-2">
           {filteredTokens.length === 0 ? (
             <div className="py-8 text-center text-sm text-[color:var(--color-depth)]/60">
               No tokens on {activeChain}
@@ -237,21 +203,22 @@ function TokenList({
               <button
                 key={`${token.symbol}-${token.chain}${token.evmChain ? `-${token.evmChain}` : ""}`}
                 onClick={() => setSelectedToken(token)}
-                className="flex items-center justify-between rounded-2xl border border-[color:var(--color-border)] px-4 py-3 text-left transition hover:border-[color:var(--color-accent)]/30 hover:bg-[color:var(--color-depth)]/5"
+                className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
               >
                 <div className="flex items-center gap-3">
-                  <TokenLogo symbol={token.symbol} name={token.name} />
-                  <div className="flex items-center gap-2">
-                    <div>
-                      <p className="font-semibold">{token.name}</p>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm text-[color:var(--color-depth)]/60">
-                          {tokenAmountLabel(token)}
-                        </p>
-                        {token.evmChain && activeChain === "EVM" && (
-                          <ChainLogo chain={token.evmChain} />
-                        )}
-                      </div>
+                  <TokenLogo
+                    symbol={token.symbol}
+                    name={token.name}
+                  />
+                  <div className="flex flex-col">
+                    <p className="font-semibold">{token.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm text-[color:var(--color-depth)]/60">
+                        {tokenAmountLabel(token)}
+                      </p>
+                      {token.evmChain && activeChain === "EVM" && (
+                        <ChainLogo chain={token.evmChain} />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -294,54 +261,62 @@ function TransactionList({
     .slice(0, 3);
 
   return (
-    <div className="wallet-card flex flex-col gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <p className="text-sm font-semibold uppercase tracking-wide text-[color:var(--color-depth)]/65">
-          Recent transactions
-        </p>
-        <button
+    <div className="wallet-card flex flex-col gap-4 p-4 sm:p-6">
+      <div className="flex items-center justify-between px-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-[color:var(--color-depth)]/65">
+          Recent Transactions
+        </h2>
+        <Button
+          variant="link"
           onClick={() => setCurrentView("history")}
-          className="text-xs font-semibold text-[color:var(--color-accent)] transition hover:opacity-80"
+          className="text-xs text-[color:var(--color-accent)]"
         >
           View All
-        </button>
+        </Button>
       </div>
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
         {filteredTransactions.length === 0 ? (
           <div className="py-8 text-center text-sm text-[color:var(--color-depth)]/60">
             No transactions on {activeChain}
           </div>
         ) : (
-          filteredTransactions.map((tx) => (
-            <button
-              key={tx.id}
-              onClick={() => {
-                setSelectedTransactionId(tx.id);
-                setCurrentView("receipt");
-              }}
-              className="flex items-center justify-between rounded-2xl border border-[color:var(--color-border)] px-4 py-3 text-left transition hover:border-[color:var(--color-accent)]/30 hover:bg-[color:var(--color-depth)]/5"
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className={`flex h-10 w-10 items-center justify-center rounded-2xl text-sm font-semibold text-[color:var(--color-depth)] ${directionMap[tx.direction].colorClass}`}
-                >
-                  {tx.action}
+          filteredTransactions.map((tx) => {
+            const Icon = directionMap[tx.direction].icon;
+            return (
+              <button
+                key={tx.id}
+                onClick={() => {
+                  setSelectedTransactionId(tx.id);
+                  setCurrentView("receipt");
+                }}
+                className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
+              >
+                <div className="flex items-center gap-3">
+                  <Avatar className="h-10 w-10 rounded-lg">
+                    <AvatarFallback
+                      className={`rounded-lg text-sm font-semibold ${
+                        directionMap[tx.direction].colorClass
+                      }`}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <p className="font-semibold">{tx.token}</p>
+                    <p className="text-sm text-[color:var(--color-depth)]/60">
+                      {shortenAddress(tx.counterparty)}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <p className="font-semibold">{tx.token}</p>
+                <div className="text-right">
+                  <p className="font-semibold">{tx.amountLabel}</p>
                   <p className="text-sm text-[color:var(--color-depth)]/60">
-                    {shortenAddress(tx.counterparty)}
+                    {tx.timestampLabel}
                   </p>
                 </div>
-              </div>
-              <div className="text-right">
-                <p className="font-semibold">{tx.amountLabel}</p>
-                <p className="text-sm text-[color:var(--color-depth)]/60">
-                  {tx.timestampLabel}
-                </p>
-              </div>
-            </button>
-          ))
+              </button>
+            );
+          })
         )}
       </div>
     </div>
@@ -363,20 +338,39 @@ export default function ManualWallet() {
     (chain) => chain.label === activeChain,
   );
 
+  const handleCopyAddress = () => {
+    navigator.clipboard.writeText(manualWalletState.address);
+    // Add a toast notification here
+  };
+
   return (
-    <div className="flex flex-col gap-6 text-[color:var(--color-depth)]">
+    <div className="mx-auto max-w-7xl w-full flex flex-col gap-6 p-4 md:p-6 text-[color:var(--color-depth)]">
       <section className="wallet-card flex flex-col gap-6 p-6 md:p-8">
-        <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-col gap-2">
-            <h1 className="text-2xl font-semibold">{accountName}</h1>
-            <p className="text-sm text-[color:var(--color-depth)]/60">
-              {formatAddress(address)}
-            </p>
+        <header className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div className="flex items-center gap-4">
+            <Avatar className="h-12 w-12">
+              <AvatarFallback className="bg-[color:var(--color-accent)]/20 text-[color:var(--color-accent)] text-xl font-bold">
+                {accountName[0]}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex flex-col gap-1">
+              <h1 className="text-2xl font-semibold">{accountName}</h1>
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-[color:var(--color-depth)]/60">
+                  {shortenAddress(address)}
+                </p>
+                <Button variant="ghost" size="icon" onClick={handleCopyAddress} className="h-6 w-6">
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </div>
-          <ChainToggle chains={chains} activeChain={activeChain} onChainChange={setActiveChain} />
+          <div className="shrink-0">
+            <ChainToggle chains={chains} activeChain={activeChain} onChainChange={setActiveChain} />
+          </div>
         </header>
 
-        <div className="rounded-3xl border border-[color:var(--color-border)] p-6">
+        <div className="rounded-3xl bg-[color:var(--color-depth)]/5 p-6">
           <p className="text-sm text-[color:var(--color-depth)]/60">
             Available balance
           </p>
@@ -388,12 +382,12 @@ export default function ManualWallet() {
               {activeChainBalance?.nativeLabel}
             </p>
           </div>
-          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {actionButtons.map((btn) => (
               <ManualActionButton
                 key={btn.label}
                 label={btn.label}
-                iconKey={btn.icon}
+                Icon={btn.icon}
                 action={btn.action}
               />
             ))}

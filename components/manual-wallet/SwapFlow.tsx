@@ -3,9 +3,126 @@
 import { useState } from "react";
 import { useApp } from "../app/AppContext";
 import { manualWalletState, TokenBalance } from "./data";
-import { ChainLogo } from "./ManualWallet";
+import { ChainLogo, TokenLogo } from "./ManualWallet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Check,
+  X,
+  Loader2,
+  ArrowLeft,
+  ArrowUpDown,
+} from "lucide-react";
 
 type SwapStep = "form" | "confirm" | "loading" | "success" | "error";
+
+function TokenSelectCard({
+  label,
+  selectedToken,
+  onTokenSelect,
+  onChainSelect,
+  amount,
+  onAmountChange,
+  isFrom,
+}: {
+  label: string;
+  selectedToken: TokenBalance | null;
+  onTokenSelect: (symbol: string) => void;
+  onChainSelect: (chainKey: string) => void;
+  amount?: string;
+  onAmountChange?: (value: string) => void;
+  isFrom?: boolean;
+}) {
+  const groupedTokens = manualWalletState.tokens.reduce((acc, token) => {
+    const key = token.symbol;
+    if (!acc[key]) {
+      acc[key] = [];
+    }
+    acc[key].push(token);
+    return acc;
+  }, {} as Record<string, TokenBalance[]>);
+
+  const tokenChains = selectedToken
+    ? groupedTokens[selectedToken.symbol] || []
+    : [];
+
+  return (
+    <div className="rounded-xl border border-[color:var(--color-border)] p-4 space-y-4">
+      <div className="flex justify-between items-center">
+        <span className="text-sm text-[color:var(--color-depth)]/60">{label}</span>
+        {isFrom && selectedToken && (
+          <span className="text-sm text-[color:var(--color-depth)]/60">
+            Balance: {selectedToken.amount.toLocaleString()}
+          </span>
+        )}
+      </div>
+      <div className="flex gap-4">
+        <Select onValueChange={onTokenSelect} value={selectedToken?.symbol}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Select Token" />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.keys(groupedTokens).map((symbol) => (
+              <SelectItem key={symbol} value={symbol}>
+                <div className="flex items-center gap-2">
+                  <TokenLogo symbol={symbol} name={symbol} />
+                  {symbol}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Input
+          type="number"
+          value={amount}
+          onChange={(e) => onAmountChange?.(e.target.value)}
+          placeholder="0.00"
+          className="text-right"
+          readOnly={!isFrom}
+        />
+      </div>
+      {selectedToken && tokenChains.length > 1 && (
+        <Select
+          onValueChange={onChainSelect}
+          value={
+            selectedToken.evmChain
+              ? `${selectedToken.chain}-${selectedToken.evmChain}`
+              : selectedToken.chain
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select Chain" />
+          </SelectTrigger>
+          <SelectContent>
+            {tokenChains.map((token) => {
+              const chainKey = token.evmChain
+                ? `${token.chain}-${token.evmChain}`
+                : token.chain;
+              const chainLabel =
+                token.evmChain?.charAt(0).toUpperCase() +
+                  token.evmChain?.slice(1) || "Solana";
+              return (
+                <SelectItem key={chainKey} value={chainKey}>
+                  <div className="flex items-center gap-2">
+                    <ChainLogo chain={token.evmChain || "solana"} />
+                    {chainLabel}
+                  </div>
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      )}
+    </div>
+  );
+}
 
 export function SwapFlow() {
   const { setCurrentView, preselectedToken, setPreselectedToken } = useApp();
@@ -27,7 +144,6 @@ export function SwapFlow() {
   const [estimatedAmount, setEstimatedAmount] = useState("");
   const [error, setError] = useState("");
 
-  // Group tokens by symbol
   const groupedTokens = manualWalletState.tokens.reduce((acc, token) => {
     const key = token.symbol;
     if (!acc[key]) {
@@ -37,7 +153,6 @@ export function SwapFlow() {
     return acc;
   }, {} as Record<string, TokenBalance[]>);
 
-  // Get available chains for selected tokens
   const fromTokenChains = fromToken ? groupedTokens[fromToken.symbol] || [] : [];
   const toTokenChains = toToken ? groupedTokens[toToken.symbol] || [] : [];
 
@@ -48,14 +163,23 @@ export function SwapFlow() {
     setToToken(tempToken);
     setFromTokenChain(toTokenChain);
     setToTokenChain(tempChain);
-    setAmount("");
-    setEstimatedAmount("");
+    const newAmount = estimatedAmount;
+    const newEstimatedAmount = amount;
+    setAmount(newAmount);
+    setEstimatedAmount(newEstimatedAmount);
     setError("");
   };
 
   const handleAmountChange = (value: string) => {
     setAmount(value);
-    if (fromToken && toToken && value && parseFloat(value) > 0 && fromToken.pricePerToken && toToken.pricePerToken) {
+    if (
+      fromToken &&
+      toToken &&
+      value &&
+      parseFloat(value) > 0 &&
+      fromToken.pricePerToken &&
+      toToken.pricePerToken
+    ) {
       const fromValue = parseFloat(value) * fromToken.pricePerToken;
       const estimated = fromValue / toToken.pricePerToken;
       setEstimatedAmount(estimated.toFixed(6));
@@ -107,7 +231,12 @@ export function SwapFlow() {
     if (tokenOnChain) {
       setFromToken(tokenOnChain);
       setFromTokenChain(chainKey);
-      if (amount && toToken && tokenOnChain.pricePerToken && toToken.pricePerToken) {
+      if (
+        amount &&
+        toToken &&
+        tokenOnChain.pricePerToken &&
+        toToken.pricePerToken
+      ) {
         const fromValue = parseFloat(amount) * tokenOnChain.pricePerToken;
         const estimated = fromValue / toToken.pricePerToken;
         setEstimatedAmount(estimated.toFixed(6));
@@ -124,7 +253,12 @@ export function SwapFlow() {
     if (tokenOnChain) {
       setToToken(tokenOnChain);
       setToTokenChain(chainKey);
-      if (amount && fromToken && fromToken.pricePerToken && tokenOnChain.pricePerToken) {
+      if (
+        amount &&
+        fromToken &&
+        fromToken.pricePerToken &&
+        tokenOnChain.pricePerToken
+      ) {
         const fromValue = parseFloat(amount) * fromToken.pricePerToken;
         const estimated = fromValue / tokenOnChain.pricePerToken;
         setEstimatedAmount(estimated.toFixed(6));
@@ -137,7 +271,10 @@ export function SwapFlow() {
       setError("Please select both tokens");
       return;
     }
-    if (fromToken.symbol === toToken.symbol && fromTokenChain === toTokenChain) {
+    if (
+      fromToken.symbol === toToken.symbol &&
+      fromTokenChain === toTokenChain
+    ) {
       setError("Cannot swap the same token on the same chain");
       return;
     }
@@ -179,33 +316,45 @@ export function SwapFlow() {
 
   const getChainLabel = (token: TokenBalance) => {
     if (token.evmChain) {
-      return token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1);
+      return (
+        token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1)
+      );
     }
     return "Solana";
   };
 
-  const isCrossChain = fromToken && toToken && (
-    fromToken.chain !== toToken.chain ||
-    (fromToken.evmChain && toToken.evmChain && fromToken.evmChain !== toToken.evmChain)
-  );
+  const isCrossChain =
+    fromToken &&
+    toToken &&
+    (fromToken.chain !== toToken.chain ||
+      (fromToken.evmChain &&
+        toToken.evmChain &&
+        fromToken.evmChain !== toToken.evmChain));
 
-  // Calculate gas estimate (mock)
   const gasEstimate = isCrossChain ? "~$15-25" : "~$5-10";
   const timeEstimate = isCrossChain ? "5-15 min" : "1-3 min";
+
+  const renderHeader = (title: string) => (
+    <div className="mb-6 flex items-center justify-between">
+      <h2 className="text-2xl font-semibold text-[color:var(--color-depth)]">
+        {title}
+      </h2>
+      <Button variant="ghost" size="icon" onClick={handleClose}>
+        <X className="h-6 w-6" />
+      </Button>
+    </div>
+  );
 
   if (step === "loading") {
     return (
       <div className="wallet-card p-8">
         <div className="flex flex-col items-center justify-center gap-4 py-12">
-          <div className="h-16 w-16 animate-spin rounded-full border-4 border-[color:var(--color-accent)] border-t-transparent" />
+          <Loader2 className="h-16 w-16 animate-spin text-[color:var(--color-accent)]" />
           <p className="text-lg font-semibold text-[color:var(--color-depth)]">
             Processing swap...
           </p>
           <p className="text-sm text-[color:var(--color-depth)]/60">
             {isCrossChain ? "Executing cross-chain swap" : "Executing swap"}
-          </p>
-          <p className="text-xs text-[color:var(--color-depth)]/50">
-            This may take a few minutes
           </p>
         </div>
       </div>
@@ -215,35 +364,15 @@ export function SwapFlow() {
   if (step === "success") {
     return (
       <div className="wallet-card p-8">
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-2xl font-semibold text-[color:var(--color-depth)]">
-            Swap Successful
-          </h2>
-          <button
-            onClick={handleClose}
-            className="text-[color:var(--color-depth)]/60 hover:text-[color:var(--color-depth)]"
-          >
-            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor">
-              <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
+        {renderHeader("Swap Successful")}
         <div className="flex flex-col items-center justify-center gap-4 py-8">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--color-accent)]/15">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-8 w-8 text-[color:var(--color-accent)]"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M20 6L9 17l-5-5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <Check className="h-8 w-8 text-[color:var(--color-accent)]" />
           </div>
           <p className="text-lg font-semibold text-[color:var(--color-depth)]">
-            Swap completed successfully!
+            Swap completed!
           </p>
-          <div className="mt-4 w-full space-y-2 rounded-2xl border border-[color:var(--color-border)] p-4">
+          <div className="mt-4 w-full space-y-2 rounded-xl border border-[color:var(--color-border)] p-4">
             <div className="flex items-center justify-between">
               <p className="text-sm text-[color:var(--color-depth)]/60">Swapped</p>
               <p className="font-semibold">
@@ -257,12 +386,9 @@ export function SwapFlow() {
               </p>
             </div>
           </div>
-          <button
-            onClick={handleClose}
-            className="mt-4 w-full rounded-xl bg-[color:var(--color-accent)] px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90"
-          >
-            Close
-          </button>
+          <Button onClick={handleClose} className="mt-4 w-full">
+            Done
+          </Button>
         </div>
       </div>
     );
@@ -271,50 +397,19 @@ export function SwapFlow() {
   if (step === "error") {
     return (
       <div className="wallet-card p-8">
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-2xl font-semibold text-[color:var(--color-depth)]">
-            Swap Failed
-          </h2>
-          <button
-            onClick={handleClose}
-            className="text-[color:var(--color-depth)]/60 hover:text-[color:var(--color-depth)]"
-          >
-            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor">
-              <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
+        {renderHeader("Swap Failed")}
         <div className="flex flex-col items-center justify-center gap-4 py-8">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100 dark:bg-red-900/20">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-8 w-8 text-red-600 dark:text-red-400"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path d="M6 18L18 6M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            <X className="h-8 w-8 text-red-600 dark:text-red-400" />
           </div>
           <p className="text-lg font-semibold text-[color:var(--color-depth)]">
             Swap could not be completed
           </p>
-          <p className="text-sm text-[color:var(--color-depth)]/60 text-center">
-            The transaction failed. Please check your balance and try again.
-          </p>
           <div className="mt-4 flex gap-3">
-            <button
-              onClick={() => setStep("form")}
-              className="rounded-xl border border-[color:var(--color-border)] px-6 py-3 text-sm font-semibold text-[color:var(--color-depth)] transition hover:bg-[color:var(--color-depth)]/5"
-            >
+            <Button variant="outline" onClick={() => setStep("form")}>
               Try Again
-            </button>
-            <button
-              onClick={handleClose}
-              className="rounded-xl bg-[color:var(--color-accent)] px-6 py-3 text-sm font-semibold text-white transition hover:opacity-90"
-            >
-              Close
-            </button>
+            </Button>
+            <Button onClick={handleClose}>Close</Button>
           </div>
         </div>
       </div>
@@ -322,140 +417,108 @@ export function SwapFlow() {
   }
 
   if (step === "confirm") {
-    const fromValue = fromToken && amount && fromToken.pricePerToken
-      ? parseFloat(amount) * fromToken.pricePerToken
-      : 0;
-    const toValue = toToken && estimatedAmount && toToken.pricePerToken
-      ? parseFloat(estimatedAmount) * toToken.pricePerToken
-      : 0;
+    const fromValue =
+      fromToken && amount && fromToken.pricePerToken
+        ? parseFloat(amount) * fromToken.pricePerToken
+        : 0;
+    const toValue =
+      toToken && estimatedAmount && toToken.pricePerToken
+        ? parseFloat(estimatedAmount) * toToken.pricePerToken
+        : 0;
 
     return (
       <div className="wallet-card p-8">
-        <div className="mb-6 flex items-center justify-between">
-          <h2 className="text-2xl font-semibold text-[color:var(--color-depth)]">
-            Confirm Swap
-          </h2>
-          <button
-            onClick={() => setStep("form")}
-            className="text-[color:var(--color-depth)]/60 hover:text-[color:var(--color-depth)]"
-          >
-            <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor">
-              <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
-
-        <div className="space-y-6">
-          <div className="rounded-2xl border border-[color:var(--color-border)] p-4">
+        {renderHeader("Confirm Swap")}
+        <div className="space-y-4">
+          <div className="rounded-xl border border-[color:var(--color-border)] p-4">
             <p className="mb-2 text-sm text-[color:var(--color-depth)]/60">From</p>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 font-semibold text-[color:var(--color-accent)]">
-                {fromToken?.symbol[0]}
-              </div>
+              <TokenLogo
+                symbol={fromToken!.symbol}
+                name={fromToken!.name}
+              />
               <div className="flex-1">
-                <p className="font-semibold">{fromToken?.name}</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm text-[color:var(--color-depth)]/60">
-                    {getChainLabel(fromToken!)}
-                  </p>
-                  {fromToken?.evmChain && <ChainLogo chain={fromToken.evmChain} />}
-                  {fromToken?.chain === "Solana" && <ChainLogo chain="solana" />}
-                </div>
+                <p className="font-semibold">{fromToken!.name}</p>
+                <p className="text-sm text-[color:var(--color-depth)]/60">
+                  {getChainLabel(fromToken!)}
+                </p>
               </div>
               <div className="text-right">
                 <p className="font-semibold">
-                  {amount} {fromToken?.symbol}
+                  {amount} {fromToken!.symbol}
                 </p>
                 <p className="text-sm text-[color:var(--color-depth)]/60">
-                  ≈ ${fromValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  ≈ ${fromValue.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                  })}
                 </p>
               </div>
             </div>
           </div>
 
           <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={handleSwapTokens}
-              className="flex h-12 w-12 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] transition hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/10"
-            >
-              <svg
-                viewBox="0 0 24 24"
-                className="h-6 w-6 text-[color:var(--color-depth)]"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path
-                  d="M7 10H4l3-3 3 3H7zm10 4h3l-3 3-3-3h3zM7 10h13M17 14H4"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+            <ArrowUpDown className="h-6 w-6 text-[color:var(--color-depth)]/60" />
           </div>
 
-          <div className="rounded-2xl border border-[color:var(--color-border)] p-4">
+          <div className="rounded-xl border border-[color:var(--color-border)] p-4">
             <p className="mb-2 text-sm text-[color:var(--color-depth)]/60">To</p>
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 font-semibold text-[color:var(--color-accent)]">
-                {toToken?.symbol[0]}
-              </div>
+              <TokenLogo
+                symbol={toToken!.symbol}
+                name={toToken!.name}
+              />
               <div className="flex-1">
-                <p className="font-semibold">{toToken?.name}</p>
-                <div className="flex items-center gap-2">
-                  <p className="text-sm text-[color:var(--color-depth)]/60">
-                    {getChainLabel(toToken!)}
-                  </p>
-                  {toToken?.evmChain && <ChainLogo chain={toToken.evmChain} />}
-                  {toToken?.chain === "Solana" && <ChainLogo chain="solana" />}
-                </div>
+                <p className="font-semibold">{toToken!.name}</p>
+                <p className="text-sm text-[color:var(--color-depth)]/60">
+                  {getChainLabel(toToken!)}
+                </p>
               </div>
               <div className="text-right">
                 <p className="font-semibold">
-                  {estimatedAmount} {toToken?.symbol}
+                  {estimatedAmount} {toToken!.symbol}
                 </p>
                 <p className="text-sm text-[color:var(--color-depth)]/60">
-                  ≈ ${toValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  ≈ ${toValue.toLocaleString(undefined, {
+                    minimumFractionDigits: 2,
+                  })}
                 </p>
               </div>
             </div>
           </div>
 
-          <div className="space-y-3 rounded-2xl border border-[color:var(--color-border)] p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-[color:var(--color-depth)]/60">Swap Type</p>
-              <p className="font-semibold">{isCrossChain ? "Cross-Chain" : "Same-Chain"}</p>
-            </div>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-[color:var(--color-depth)]/60">Estimated Gas</p>
-              <p className="font-semibold">{gasEstimate}</p>
-            </div>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-[color:var(--color-depth)]/60">Estimated Time</p>
-              <p className="font-semibold">{timeEstimate}</p>
-            </div>
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-[color:var(--color-depth)]/60">Route</p>
-              <p className="font-semibold">
-                {isCrossChain ? "Rubic/Jupiter" : "Uniswap/Curve"}
-              </p>
-            </div>
+          <div className="space-y-3 rounded-xl border border-[color:var(--color-border)] p-4">
+            {[
+              {
+                label: "Swap Type",
+                value: isCrossChain ? "Cross-Chain" : "Same-Chain",
+              },
+              { label: "Estimated Gas", value: gasEstimate },
+              { label: "Estimated Time", value: timeEstimate },
+              {
+                label: "Route",
+                value: isCrossChain ? "Rubic/Jupiter" : "Uniswap/Curve",
+              },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex items-center justify-between">
+                <p className="text-sm text-[color:var(--color-depth)]/60">
+                  {label}
+                </p>
+                <p className="font-semibold">{value}</p>
+              </div>
+            ))}
           </div>
 
           <div className="flex gap-3 pt-4">
-            <button
+            <Button
+              variant="outline"
               onClick={() => setStep("form")}
-              className="flex-1 rounded-xl border border-[color:var(--color-border)] px-4 py-3 text-sm font-semibold text-[color:var(--color-depth)] transition hover:bg-[color:var(--color-depth)]/5"
+              className="flex-1"
             >
-              Back
-            </button>
-            <button
-              onClick={handleConfirm}
-              className="flex-1 rounded-xl bg-[color:var(--color-accent)] px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90"
-            >
+              <ArrowLeft className="mr-2 h-4 w-4" /> Back
+            </Button>
+            <Button onClick={handleConfirm} className="flex-1">
               Confirm Swap
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -463,275 +526,52 @@ export function SwapFlow() {
   }
 
   return (
-    <div className="wallet-card p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <h2 className="text-2xl font-semibold text-[color:var(--color-depth)]">Swap</h2>
-        <button
-          onClick={handleClose}
-          className="text-[color:var(--color-depth)]/60 hover:text-[color:var(--color-depth)]"
-        >
-          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor">
-            <path d="M18 6L6 18M6 6l12 12" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-        </button>
-      </div>
-
-      <div className="space-y-6">
-        <div>
-          <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
-            From
-          </label>
-          <div className="max-h-64 space-y-2 overflow-y-auto">
-            {Object.entries(groupedTokens)
-              .filter(([symbol]) => !toToken || symbol !== toToken.symbol)
-              .map(([symbol, tokens]) => {
-                const totalAmount = tokens.reduce((sum, t) => sum + t.amount, 0);
-                const totalValue = tokens.reduce((sum, t) => sum + t.usdValue, 0);
-                const firstToken = tokens[0];
-
-                return (
-                  <button
-                    key={symbol}
-                    type="button"
-                    onClick={() => handleFromTokenSelect(symbol)}
-                    className={`flex w-full items-center justify-between rounded-2xl border p-4 text-left transition ${
-                      fromToken?.symbol === symbol
-                        ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/5"
-                        : "border-[color:var(--color-border)] hover:border-[color:var(--color-accent)]/30"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 font-semibold text-[color:var(--color-accent)]">
-                        {symbol[0]}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold">{firstToken.name}</p>
-                          {tokens.length > 1 && (
-                            <span className="rounded-full bg-[color:var(--color-depth)]/10 px-2 py-0.5 text-xs font-semibold text-[color:var(--color-depth)]/70">
-                              {tokens.length} chains
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-[color:var(--color-depth)]/60">
-                          {totalAmount.toLocaleString(undefined, {
-                            maximumFractionDigits: 6,
-                          })}{" "}
-                          {symbol}
-                        </p>
-                      </div>
-                    </div>
-                    <p className="font-semibold">
-                      ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </p>
-                  </button>
-                );
-              })}
-          </div>
-        </div>
-
-        {fromToken && fromTokenChains.length > 1 && (
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
-              Select Chain (From)
-            </label>
-            <select
-              value={fromTokenChain || ""}
-              onChange={(e) => handleFromChainSelect(e.target.value)}
-              className="w-full rounded-2xl border border-[color:var(--color-border)] bg-transparent px-4 py-3 text-sm transition focus:border-[color:var(--color-accent)] focus:outline-none"
-            >
-              {fromTokenChains.map((token) => {
-                const chainKey = token.evmChain
-                  ? `${token.chain}-${token.evmChain}`
-                  : token.chain;
-                const chainLabel = getChainLabel(token);
-                return (
-                  <option key={chainKey} value={chainKey}>
-                    {chainLabel} - {token.amount.toLocaleString(undefined, {
-                      maximumFractionDigits: 6,
-                    })}{" "}
-                    {token.symbol} (${token.usdValue.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                    })})
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-        )}
-
-        {fromToken && (
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
-              Amount
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                value={amount}
-                onChange={(e) => handleAmountChange(e.target.value)}
-                placeholder="0.00"
-                step="any"
-                className="flex-1 rounded-2xl border border-[color:var(--color-border)] bg-transparent px-4 py-3 text-sm transition focus:border-[color:var(--color-accent)] focus:outline-none"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (fromToken) {
-                    handleAmountChange(fromToken.amount.toString());
-                  }
-                }}
-                className="rounded-2xl border border-[color:var(--color-border)] px-4 py-3 text-sm font-semibold text-[color:var(--color-accent)] transition hover:bg-[color:var(--color-depth)]/5"
-              >
-                Max
-              </button>
-            </div>
-            {fromToken && amount && fromToken.pricePerToken && (
-              <p className="mt-2 text-sm text-[color:var(--color-depth)]/60">
-                ≈ ${(parseFloat(amount) * fromToken.pricePerToken).toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </p>
-            )}
-          </div>
-        )}
+    <div className="wallet-card p-6 md:p-8">
+      {renderHeader("Swap")}
+      <div className="space-y-4">
+        <TokenSelectCard
+          label="From"
+          selectedToken={fromToken}
+          onTokenSelect={handleFromTokenSelect}
+          onChainSelect={handleFromChainSelect}
+          amount={amount}
+          onAmountChange={handleAmountChange}
+          isFrom
+        />
 
         <div className="flex justify-center">
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="icon"
             onClick={handleSwapTokens}
-            className="flex h-12 w-12 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] transition hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/10"
+            className="rounded-full"
           >
-            <svg
-              viewBox="0 0 24 24"
-              className="h-6 w-6 text-[color:var(--color-depth)]"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                d="M7 10H4l3-3 3 3H7zm10 4h3l-3 3-3-3h3zM7 10h13M17 14H4"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
+            <ArrowUpDown className="h-4 w-4" />
+          </Button>
         </div>
 
-        <div>
-          <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
-            To
-          </label>
-          <div className="max-h-64 space-y-2 overflow-y-auto">
-            {Object.entries(groupedTokens)
-              .filter(([symbol]) => !fromToken || symbol !== fromToken.symbol)
-              .map(([symbol, tokens]) => {
-                const totalAmount = tokens.reduce((sum, t) => sum + t.amount, 0);
-                const totalValue = tokens.reduce((sum, t) => sum + t.usdValue, 0);
-                const firstToken = tokens[0];
-
-                return (
-                  <button
-                    key={symbol}
-                    type="button"
-                    onClick={() => handleToTokenSelect(symbol)}
-                    className={`flex w-full items-center justify-between rounded-2xl border p-4 text-left transition ${
-                      toToken?.symbol === symbol
-                        ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/5"
-                        : "border-[color:var(--color-border)] hover:border-[color:var(--color-accent)]/30"
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 font-semibold text-[color:var(--color-accent)]">
-                        {symbol[0]}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold">{firstToken.name}</p>
-                          {tokens.length > 1 && (
-                            <span className="rounded-full bg-[color:var(--color-depth)]/10 px-2 py-0.5 text-xs font-semibold text-[color:var(--color-depth)]/70">
-                              {tokens.length} chains
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-[color:var(--color-depth)]/60">
-                          {totalAmount.toLocaleString(undefined, {
-                            maximumFractionDigits: 6,
-                          })}{" "}
-                          {symbol}
-                        </p>
-                      </div>
-                    </div>
-                    <p className="font-semibold">
-                      ${totalValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                    </p>
-                  </button>
-                );
-              })}
-          </div>
-        </div>
-
-        {toToken && toTokenChains.length > 1 && (
-          <div>
-            <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
-              Select Chain (To)
-            </label>
-            <select
-              value={toTokenChain || ""}
-              onChange={(e) => handleToChainSelect(e.target.value)}
-              className="w-full rounded-2xl border border-[color:var(--color-border)] bg-transparent px-4 py-3 text-sm transition focus:border-[color:var(--color-accent)] focus:outline-none"
-            >
-              {toTokenChains.map((token) => {
-                const chainKey = token.evmChain
-                  ? `${token.chain}-${token.evmChain}`
-                  : token.chain;
-                const chainLabel = getChainLabel(token);
-                return (
-                  <option key={chainKey} value={chainKey}>
-                    {chainLabel} - {token.amount.toLocaleString(undefined, {
-                      maximumFractionDigits: 6,
-                    })}{" "}
-                    {token.symbol} (${token.usdValue.toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                    })})
-                  </option>
-                );
-              })}
-            </select>
-          </div>
-        )}
-
-        {toToken && estimatedAmount && (
-          <div className="rounded-2xl border border-[color:var(--color-border)] p-4">
-            <p className="text-sm text-[color:var(--color-depth)]/60">Estimated Receive</p>
-            <p className="mt-1 text-xl font-semibold">
-              {estimatedAmount} {toToken.symbol}
-            </p>
-            {toToken.pricePerToken && (
-              <p className="mt-1 text-sm text-[color:var(--color-depth)]/60">
-                ≈ ${(parseFloat(estimatedAmount) * toToken.pricePerToken).toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </p>
-            )}
-          </div>
-        )}
+        <TokenSelectCard
+          label="To (estimated)"
+          selectedToken={toToken}
+          onTokenSelect={handleToTokenSelect}
+          onChainSelect={handleToChainSelect}
+          amount={estimatedAmount}
+        />
 
         {error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20 p-4">
+          <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
           </div>
         )}
 
-        <button
+        <Button
           onClick={handleNext}
           disabled={!fromToken || !toToken || !amount}
-          className="w-full rounded-xl bg-[color:var(--color-accent)] px-4 py-3 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full"
+          size="lg"
         >
           Continue
-        </button>
+        </Button>
       </div>
     </div>
   );
