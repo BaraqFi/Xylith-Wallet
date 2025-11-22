@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import {
   manualWalletState,
   Chain,
@@ -49,7 +49,7 @@ const directionMap: Record<
   swap: { badge: "Swap", colorClass: "bg-[color:var(--color-depth)]/5" },
 };
 
-const actionIconMap: Record<string, JSX.Element> = {
+const actionIconMap: Record<string, ReactElement> = {
   south: (
     <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
       <path
