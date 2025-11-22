@@ -21,6 +21,8 @@ import { shortenAddress } from "./utils";
 import { TokenDetailsModal } from "./TokenDetailsModal";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+// Web3Icons for token and network logos
+import * as Web3Icons from "@web3icons/react";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -101,6 +103,35 @@ export function TokenLogo({
   symbol: string;
   name: string;
 }) {
+  // Map token symbols to Web3Icons component names
+  const tokenIconMap: Record<string, string> = {
+    ETH: "TokenETH",
+    USDC: "TokenUSDC",
+    USDT: "TokenUSDT",
+    WBTC: "TokenWBTC",
+    DAI: "TokenDAI",
+    ARB: "TokenARB",
+    OP: "TokenOP",
+    MATIC: "TokenMATIC",
+    BNB: "TokenBNB",
+    SOL: "TokenSOL",
+    RAY: "TokenRAY",
+    JUP: "TokenJUP",
+  };
+
+  const iconName = tokenIconMap[symbol];
+  // @ts-expect-error - Dynamic access to Web3Icons
+  const IconComponent = iconName ? Web3Icons[iconName] : null;
+
+  if (IconComponent) {
+    return (
+      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12">
+        <IconComponent variant="branded" size={40} />
+      </div>
+    );
+  }
+
+  // Fallback to initial letter if icon not found
   return (
     <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-[color:var(--color-accent)]/12 font-semibold text-[color:var(--color-accent)]">
       {symbol[0] || name[0] || "?"}
@@ -109,6 +140,30 @@ export function TokenLogo({
 }
 
 export function ChainLogo({ chain }: { chain: EVMChain | "solana" }) {
+  // Map chain names to Web3Icons Network component names
+  const networkIconMap: Record<string, string> = {
+    ethereum: "NetworkEthereum",
+    bsc: "NetworkBSC",
+    base: "NetworkBase",
+    arbitrum: "NetworkArbitrum",
+    optimism: "NetworkOptimism",
+    polygon: "NetworkPolygon",
+    solana: "NetworkSolana",
+  };
+
+  const iconName = networkIconMap[chain];
+  // @ts-expect-error - Dynamic access to Web3Icons
+  const IconComponent = iconName ? Web3Icons[iconName] : null;
+
+  if (IconComponent) {
+    return (
+      <div className="flex h-4 w-4 items-center justify-center" title={chain}>
+        <IconComponent variant="branded" size={16} />
+      </div>
+    );
+  }
+
+  // Fallback
   const chainColors: Record<string, string> = {
     ethereum: "bg-blue-500",
     bsc: "bg-yellow-500",
