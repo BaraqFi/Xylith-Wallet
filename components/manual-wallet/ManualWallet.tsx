@@ -24,6 +24,7 @@ import { TokenDetailsModal } from "./TokenDetailsModal";
 import { Button } from "@/components/ui/button";
 // Web3Icons for token and network logos
 import * as Web3Icons from "@web3icons/react";
+import { usePrivy } from "@privy-io/react-auth";
 
 // Hexagonal Avatar Component
 function HexagonalAvatar({ 
@@ -401,12 +402,23 @@ export default function ManualWallet() {
     transactions,
   } = manualWalletState;
   const [copied, setCopied] = useState(false);
+  const { user } = usePrivy();
+
+  // New: Find real addresses from Privy user object (if present)
+  let actualEvmAddress = address;
+  let actualSolAddress = solanaAddress;
+  if (user?.linkedAccounts?.length) {
+    // Find EVM (ETH) and Solana wallets.
+    const eth = user.linkedAccounts.find((a:any) => a.type === "wallet" && a.address?.startsWith("0x"));
+    const sol = user.linkedAccounts.find((a:any) => a.type === "wallet" && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a.address));
+    if (eth?.address) actualEvmAddress = eth.address;
+    if (sol?.address) actualSolAddress = sol.address;
+  }
+  const currentAddress = activeChain === "EVM" ? actualEvmAddress : actualSolAddress;
 
   const activeChainBalance = chains.find(
     (chain) => chain.label === activeChain,
   );
-
-  const currentAddress = activeChain === "EVM" ? address : solanaAddress;
 
   const handleCopyAddress = async () => {
     await navigator.clipboard.writeText(currentAddress);
