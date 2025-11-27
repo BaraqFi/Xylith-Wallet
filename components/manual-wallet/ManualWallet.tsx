@@ -404,16 +404,35 @@ export default function ManualWallet() {
   const [copied, setCopied] = useState(false);
   const { user } = usePrivy();
 
-  // New: Find real addresses from Privy user object (if present)
   let actualEvmAddress = address;
   let actualSolAddress = solanaAddress;
+
   if (user?.linkedAccounts?.length) {
-    // Find EVM (ETH) and Solana wallets.
-    const eth = user.linkedAccounts.find((a:any) => a.type === "wallet" && a.address?.startsWith("0x"));
-    const sol = user.linkedAccounts.find((a:any) => a.type === "wallet" && /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(a.address));
-    if (eth?.address) actualEvmAddress = eth.address;
-    if (sol?.address) actualSolAddress = sol.address;
+    // Find embedded or linked EVM wallet
+    const evmAccount = user.linkedAccounts.find(
+      (acc) =>
+        acc.type === "wallet" &&
+        (acc as any).chainType === "ethereum" && // safe cast – Privy still ships untyped chainType in 3.8.x
+        typeof (acc as any).address === "string"
+    );
+
+    // Find embedded or linked Solana wallet
+    const solanaAccount = user.linkedAccounts.find(
+      (acc) =>
+        acc.type === "wallet" &&
+        (acc as any).chainType === "solana" &&
+        typeof (acc as any).address === "string"
+    );
+
+    if (evmAccount && "address" in evmAccount && typeof evmAccount.address === "string") {
+      actualEvmAddress = evmAccount.address;
+    }
+
+    if (solanaAccount && "address" in solanaAccount && typeof solanaAccount.address === "string") {
+      actualSolAddress = solanaAccount.address;
+    }
   }
+
   const currentAddress = activeChain === "EVM" ? actualEvmAddress : actualSolAddress;
 
   const activeChainBalance = chains.find(
