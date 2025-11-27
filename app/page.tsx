@@ -13,6 +13,7 @@ import { HistoryScreen } from "@/components/manual-wallet/HistoryScreen";
 import { TransactionReceipt } from "@/components/manual-wallet/TransactionReceipt";
 import { AiModePage } from "@/components/manual-wallet/AiModePage";
 import { WalletSettingsModal } from "@/components/manual-wallet/WalletSettingsModal";
+import AuthGate from "./AuthGate";
 
 function WalletContent() {
   const { mode, currentView } = useApp();
@@ -72,35 +73,19 @@ function Header() {
 }
 
 function HomeContent() {
-  const { darkMode } = useApp();
-  const [showSplash, setShowSplash] = useState(true);
-
-  // Initialize dark mode on mount
-  useEffect(() => {
-    const root = document.documentElement;
-    if (darkMode) {
-      root.classList.add("dark");
-      root.setAttribute("data-theme", "dark");
-    } else {
-      root.classList.remove("dark");
-      root.setAttribute("data-theme", "light");
-    }
-  }, [darkMode]);
-
-  if (showSplash) {
-    return <SplashScreen onComplete={() => setShowSplash(false)} />;
-  }
-
+  // previously: inserted LoginWithEmailAndGoogle or splash
   return (
-    <div className="min-h-screen bg-[color:var(--color-surface)] px-4 py-6 sm:px-8 sm:py-10">
-      <main className="mx-auto w-full">
-        <Header />
-        <WalletContent />
-        <ReceiveModalWrapper />
-        <SettingsModalWrapper />
-        <AiModeAlert />
-      </main>
-    </div>
+    <AuthGate>
+      <div className="min-h-screen bg-[color:var(--color-surface)] px-4 py-6 sm:px-8 sm:py-10">
+        <main className="mx-auto w-full">
+          <Header />
+          <WalletContent />
+          <ReceiveModalWrapper />
+          <SettingsModalWrapper />
+          <AiModeAlert />
+        </main>
+      </div>
+    </AuthGate>
   );
 }
 
