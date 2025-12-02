@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect, useRef } from "react";
+import { usePrivy } from "@privy-io/react-auth";
 import { useApp } from "../app/AppContext";
 import { manualWalletState, Chain } from "../wallet/data";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,12 @@ function QRCodeGrid({ address }: { address: string }) {
   return (
     <div className="grid grid-cols-12 gap-0.5">
       {grid.map((isDark, i) => (
-        <div key={i} className={`aspect-square ${isDark ? "bg-[color:var(--color-depth)]" : "bg-transparent"}`} />
+        <div
+          key={i}
+          className={`aspect-square ${
+            isDark ? "bg-[color:var(--color-depth)]" : "bg-transparent"
+          }`}
+        />
       ))}
     </div>
   );
@@ -27,6 +33,7 @@ function QRCodeGrid({ address }: { address: string }) {
 
 export function ReceiveScreen() {
   const { currentView, setCurrentView, activeChain, setActiveChain } = useApp();
+  const { user } = usePrivy();
   const [selectedChain, setSelectedChain] = useState<Chain>(activeChain);
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -103,7 +110,46 @@ export function ReceiveScreen() {
   };
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
-  const address = selectedChain === "EVM" ? manualWalletState.address : manualWalletState.solanaAddress;
+
+  let actualEvmAddress = manualWalletState.address;
+  let actualSolAddress = manualWalletState.solanaAddress;
+
+  if (user?.linkedAccounts?.length) {
+    // Find embedded or linked EVM wallet
+    const evmAccount = user.linkedAccounts.find(
+      (acc) =>
+        acc.type === "wallet" &&
+        (acc as any).chainType === "ethereum" && // safe cast – Privy still ships untyped chainType in 3.8.x
+        typeof (acc as any).address === "string"
+    );
+
+    // Find embedded or linked Solana wallet
+    const solanaAccount = user.linkedAccounts.find(
+      (acc) =>
+        acc.type === "wallet" &&
+        (acc as any).chainType === "solana" &&
+        typeof (acc as any).address === "string"
+    );
+
+    if (
+      evmAccount &&
+      "address" in evmAccount &&
+      typeof evmAccount.address === "string"
+    ) {
+      actualEvmAddress = evmAccount.address;
+    }
+
+    if (
+      solanaAccount &&
+      "address" in solanaAccount &&
+      typeof solanaAccount.address === "string"
+    ) {
+      actualSolAddress = solanaAccount.address;
+    }
+  }
+
+  const address =
+    selectedChain === "EVM" ? actualEvmAddress : actualSolAddress;
 
   if (!address) {
     return (
@@ -113,7 +159,10 @@ export function ReceiveScreen() {
         aria-modal="true"
         aria-labelledby="receive-modal-title"
       >
-        <div className="relative w-full max-w-md m-6 bg-white dark:bg-[#232323] rounded-lg shadow-xl p-6" role="document">
+        <div
+          className="relative w-full max-w-md m-6 bg-white dark:bg-[color:var(--color-surface)] rounded-lg shadow-xl p-6"
+          role="document"
+        >
           <p className="text-center">Wallet address not available</p>
         </div>
       </div>
@@ -134,7 +183,7 @@ export function ReceiveScreen() {
     >
       <div
         ref={modalRef}
-        className="relative w-full max-w-md m-6 bg-white dark:bg-[#232323] rounded-lg shadow-xl p-6 animate-in fade-in-0"
+        className="relative w-full max-w-md m-6 bg-[color:var(--color-surface)] rounded-lg shadow-xl p-6 animate-in fade-in-0"
         role="document"
       >
         <button
@@ -145,10 +194,14 @@ export function ReceiveScreen() {
         >
           <X className="h-5 w-5 text-[color:var(--color-depth)]" />
         </button>
-        <h2 id="receive-modal-title" className="text-xl font-bold mb-6">Receive</h2>
+        <h2 id="receive-modal-title" className="text-xl font-bold mb-6">
+          Receive
+        </h2>
         <div className="space-y-6 pt-4">
           <div>
-            <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">Network</label>
+            <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
+              Network
+            </label>
             <div className="grid grid-cols-2 gap-2 rounded-lg border border-[color:var(--color-border)] p-1">
               {(["EVM", "Solana"] as Chain[]).map((chain) => (
                 <Button
@@ -163,10 +216,16 @@ export function ReceiveScreen() {
           </div>
 
           <div className="grid grid-cols-2 gap-2 rounded-lg border border-[color:var(--color-border)] p-1">
-            <Button variant={!showQr ? "secondary" : "ghost"} onClick={() => setShowQr(false)}>
+            <Button
+              variant={!showQr ? "secondary" : "ghost"}
+              onClick={() => setShowQr(false)}
+            >
               Address
             </Button>
-            <Button variant={showQr ? "secondary" : "ghost"} onClick={() => setShowQr(true)}>
+            <Button
+              variant={showQr ? "secondary" : "ghost"}
+              onClick={() => setShowQr(true)}
+            >
               QR Code
             </Button>
           </div>
@@ -185,11 +244,17 @@ export function ReceiveScreen() {
           ) : (
             <div className="space-y-4">
               <div className="rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-depth)]/5 p-4">
-                <p className="mb-2 text-sm text-[color:var(--color-depth)]/60">Your {selectedChain} address</p>
+                <p className="mb-2 text-sm text-[color:var(--color-depth)]/60">
+                  Your {selectedChain} address
+                </p>
                 <p className="break-all font-mono text-sm">{address}</p>
               </div>
               <Button onClick={handleCopy} className="w-full">
-                {copied ? <Check className="mr-2 h-4 w-4" /> : <Copy className="mr-2 h-4 w-4" />}
+                {copied ? (
+                  <Check className="mr-2 h-4 w-4" />
+                ) : (
+                  <Copy className="mr-2 h-4 w-4" />
+                )}
                 {copied ? "Copied!" : "Copy Address"}
               </Button>
             </div>
@@ -198,7 +263,8 @@ export function ReceiveScreen() {
           <div className="flex items-start gap-3 rounded-lg border border-yellow-200 bg-yellow-50 p-4 dark:border-yellow-800 dark:bg-yellow-900/20">
             <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
             <p className="text-sm text-yellow-800 dark:text-yellow-300">
-              Only send {selectedChain} assets to this address. Sending other assets may result in permanent loss.
+              Only send {selectedChain} assets to this address. Sending other
+              assets may result in permanent loss.
             </p>
           </div>
         </div>

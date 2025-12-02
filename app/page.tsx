@@ -59,6 +59,21 @@ function Header() {
   );
 }
 
+function BodyScrollManager() {
+  const { currentView } = useApp();
+
+  useEffect(() => {
+    const isModalOpen = currentView === 'receive' || currentView === 'settings';
+    if (isModalOpen) {
+      document.body.classList.add('overflow-hidden');
+    } else {
+      document.body.classList.remove('overflow-hidden');
+    }
+  }, [currentView]);
+
+  return null;
+}
+
 function HomeContent() {
   return (
     <AuthGate>
@@ -78,6 +93,7 @@ function HomeContent() {
 export default function Home() {
   return (
     <AppProvider>
+      <BodyScrollManager />
       <HomeContent />
     </AppProvider>
   );
