@@ -1,9 +1,9 @@
 "use client";
 
 import { useApp } from "../app/AppContext";
-import { manualWalletState, WalletTransaction } from "./data";
-import { shortenAddress } from "./utils";
-import { TokenLogo } from "./ManualWallet";
+import { manualWalletState, WalletTransaction } from "../wallet/data";
+import { shortenAddress } from "../wallet/utils";
+import { TokenLogo } from "../wallet/ManualWallet";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
 

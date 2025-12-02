@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, ReactNode } from "react";
-import { TokenBalance, Chain } from "@/components/manual-wallet/data";
+import { TokenBalance, Chain } from "@/components/wallet/data";
 
 export type WalletMode = "manual" | "ai";
 

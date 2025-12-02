@@ -1,6 +1,6 @@
 "use client";
 
-import { useApp } from "./AppContext";
+import { useApp } from "../app/AppContext";
 
 export function AiModeAlert() {
   const {

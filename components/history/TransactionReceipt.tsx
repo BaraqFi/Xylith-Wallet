@@ -1,8 +1,8 @@
 "use client";
 
 import { useApp } from "../app/AppContext";
-import { manualWalletState, WalletTransaction } from "./data";
-import { ChainLogo, TokenLogo } from "./ManualWallet";
+import { manualWalletState, WalletTransaction } from "../wallet/data";
+import { ChainLogo, TokenLogo } from "../wallet/ManualWallet";
 
 export function TransactionReceipt() {
   const { setCurrentView, selectedTransactionId } = useApp();

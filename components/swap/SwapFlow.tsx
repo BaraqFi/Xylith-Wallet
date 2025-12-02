@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { useApp } from "../app/AppContext";
-import { manualWalletState, TokenBalance } from "./data";
-import { ChainLogo, TokenLogo } from "./ManualWallet";
-import { TokenSelectModal } from "./TokenSelectModal";
+import { manualWalletState, TokenBalance } from "../wallet/data";
+import { ChainLogo, TokenLogo } from "../wallet/ManualWallet";
+import { TokenSelectModal } from "../wallet/TokenSelectModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { useApp } from "../app/AppContext";
-import { manualWalletState, TokenBalance } from "./data";
-import { ChainLogo, TokenLogo } from "./ManualWallet";
+import { manualWalletState, TokenBalance } from "../wallet/data";
+import { ChainLogo, TokenLogo } from "../wallet/ManualWallet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {

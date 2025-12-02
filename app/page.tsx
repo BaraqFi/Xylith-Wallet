@@ -3,16 +3,16 @@
 import { useState, useEffect } from "react";
 import { AppProvider, useApp } from "@/components/app/AppContext";
 import { ModeToggle } from "@/components/app/ModeToggle";
-import { AiModeAlert } from "@/components/app/AiModeAlert";
+import { AiModeAlert } from "@/components/ai/AiModeAlert";
 import { SplashScreen } from "@/components/app/SplashScreen";
-import ManualWallet from "@/components/manual-wallet/ManualWallet";
-import { SendFlow } from "@/components/manual-wallet/SendFlow";
-import { SwapFlow } from "@/components/manual-wallet/SwapFlow";
-import { ReceiveModal } from "@/components/manual-wallet/ReceiveModal";
-import { HistoryScreen } from "@/components/manual-wallet/HistoryScreen";
-import { TransactionReceipt } from "@/components/manual-wallet/TransactionReceipt";
-import { AiModePage } from "@/components/manual-wallet/AiModePage";
-import { WalletSettingsModal } from "@/components/manual-wallet/WalletSettingsModal";
+import ManualWallet from "@/components/wallet/ManualWallet";
+import { SendFlow } from "@/components/send/SendFlow";
+import { SwapFlow } from "@/components/swap/SwapFlow";
+import { ReceiveScreen } from "@/components/receive/ReceiveModal";
+import { HistoryScreen } from "@/components/history/HistoryScreen";
+import { TransactionReceipt } from "@/components/history/TransactionReceipt";
+import { AiModePage } from "@/components/ai/AiModePage";
+import { WalletSettingsScreen } from "@/components/wallet/WalletSettingsModal";
 import AuthGate from "./AuthGate";
 
 function WalletContent() {
@@ -21,48 +21,35 @@ function WalletContent() {
   if (mode === "ai") {
     return <AiModePage />;
   }
-
   if (currentView === "send") {
     return <SendFlow />;
   }
-
   if (currentView === "swap") {
     return <SwapFlow />;
   }
-
   if (currentView === "history") {
     return <HistoryScreen />;
   }
-
   if (currentView === "receipt") {
     return <TransactionReceipt />;
   }
-
   return <ManualWallet />;
 }
 
-function ReceiveModalWrapper() {
+function ReceiveScreenWrapper() {
   const { currentView } = useApp();
-  if (currentView === "receive") {
-    return <ReceiveModal />;
-  }
-  return null;
+  return currentView === "receive" ? <ReceiveScreen /> : null;
 }
 
-function SettingsModalWrapper() {
+function SettingsScreenWrapper() {
   const { currentView } = useApp();
-  if (currentView === "settings") {
-    return <WalletSettingsModal />;
-  }
-  return null;
+  return currentView === "settings" ? <WalletSettingsScreen /> : null;
 }
 
 function Header() {
   const { currentView } = useApp();
   const showToggles = currentView === "wallet";
-
   if (!showToggles) return null;
-
   return (
     <div className="mb-6 flex items-center justify-end">
       <div className="flex items-center gap-3">
@@ -73,15 +60,14 @@ function Header() {
 }
 
 function HomeContent() {
-  // previously: inserted LoginWithEmailAndGoogle or splash
   return (
     <AuthGate>
       <div className="min-h-screen bg-[color:var(--color-surface)] px-4 py-6 sm:px-8 sm:py-10">
         <main className="mx-auto w-full">
           <Header />
           <WalletContent />
-          <ReceiveModalWrapper />
-          <SettingsModalWrapper />
+          <ReceiveScreenWrapper />
+          <SettingsScreenWrapper />
           <AiModeAlert />
         </main>
       </div>

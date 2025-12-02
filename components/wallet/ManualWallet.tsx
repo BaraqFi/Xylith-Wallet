@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ElementType } from "react";
+import { useState, type ElementType, type ComponentType } from "react";
 import {
   Copy,
   QrCode,
@@ -22,8 +22,28 @@ import { useApp } from "../app/AppContext";
 import { shortenAddress } from "./utils";
 import { TokenDetailsModal } from "./TokenDetailsModal";
 import { Button } from "@/components/ui/button";
-// Web3Icons for token and network logos
-import * as Web3Icons from "@web3icons/react";
+// Web3Icons for token and network logos - optimized individual imports
+import {
+  TokenETH,
+  TokenUSDC,
+  TokenUSDT,
+  TokenWBTC,
+  TokenDAI,
+  TokenARB,
+  TokenOP,
+  TokenMATIC,
+  TokenBNB,
+  TokenSOL,
+  TokenRAY,
+  TokenJUP,
+  NetworkEthereum,
+  NetworkBSC,
+  NetworkBase,
+  NetworkArbitrum,
+  NetworkOptimism,
+  NetworkPolygon,
+  NetworkSolana,
+} from "@web3icons/react";
 import { usePrivy } from "@privy-io/react-auth";
 
 // Hexagonal Avatar Component
@@ -154,8 +174,22 @@ export function TokenLogo({
   const sizes = sizeMap[size];
 
   const iconName = tokenIconMap[symbol];
-  // @ts-expect-error - Dynamic access to Web3Icons
-  const IconComponent = iconName ? Web3Icons[iconName] : null;
+  // Map icon names to actual components for better tree-shaking
+  const iconComponentMap: Record<string, ComponentType<any>> = {
+    TokenETH,
+    TokenUSDC,
+    TokenUSDT,
+    TokenWBTC,
+    TokenDAI,
+    TokenARB,
+    TokenOP,
+    TokenMATIC,
+    TokenBNB,
+    TokenSOL,
+    TokenRAY,
+    TokenJUP,
+  };
+  const IconComponent = iconName ? iconComponentMap[iconName] : null;
 
   if (IconComponent) {
     return (
@@ -186,8 +220,17 @@ export function ChainLogo({ chain }: { chain: EVMChain | "solana" }) {
   };
 
   const iconName = networkIconMap[chain];
-  // @ts-expect-error - Dynamic access to Web3Icons
-  const IconComponent = iconName ? Web3Icons[iconName] : null;
+  // Map network icon names to actual components for better tree-shaking
+  const networkComponentMap: Record<string, ComponentType<any>> = {
+    NetworkEthereum,
+    NetworkBSC,
+    NetworkBase,
+    NetworkArbitrum,
+    NetworkOptimism,
+    NetworkPolygon,
+    NetworkSolana,
+  };
+  const IconComponent = iconName ? networkComponentMap[iconName] : null;
 
   if (IconComponent) {
     return (
