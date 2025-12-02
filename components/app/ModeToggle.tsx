@@ -1,7 +1,7 @@
 "use client";
 
 import { useApp } from "./AppContext";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect   } from "react";
 
 export function ModeToggle() {
   const { mode, setMode, setShowAiAlert, dontShowAiAlert } = useApp();
@@ -21,6 +21,16 @@ export function ModeToggle() {
       triggerPulse("out");
     }
   };
+
+
+
+// ... other code ...
+
+  useEffect(() => {
+    return () => {
+      if (pulseTimeout.current) clearTimeout(pulseTimeout.current);
+    };
+  }, []);
 
   function triggerPulse(direction: "in" | "out") {
     setPulse(direction);
@@ -46,16 +56,11 @@ export function ModeToggle() {
         {/* Pulse Animation Effect */}
         {pulse && (
           <span
-            className={`pointer-events-none absolute z-0 left-1/2 top-1/2 h-14 w-14 rounded-full opacity-60 -translate-x-1/2 -translate-y-1/2 bg-[color:var(--color-accent)]/40 transition-all duration-700 ease-out
+            className={`pointer-events-none absolute z-0 left-1/2 top-1/2 h-14 w-14 rounded-full bg-[color:var(--color-accent)]/40
             ${pulse === "in"
-              ? "scale-0 animate-pulse-pulsein"
-              : "scale-100 animate-pulse-pulseout"}
+              ? "animate-pulse-pulsein"
+              : "animate-pulse-pulseout"}
           `}
-            style={{
-              boxShadow: pulse === "in"
-                ? "0 0 0 10px rgba(88, 66, 245, 0.28), 0 0 0 1px rgba(88, 66, 245, 0.14)"
-                : "none"
-            }}
           />
         )}
         <span
@@ -66,13 +71,13 @@ export function ModeToggle() {
       </button>
       <style jsx global>{`
         @keyframes pulse-pulsein {
-          0% { transform: scale(0); opacity: 0.7; }
+          0% { transform: translate(-50%, -50%) scale(0); opacity: 0.7; }
           80% { opacity: 0.28; }
-          100% { transform: scale(2.5); opacity: 0; }
+          100% { transform: translate(-50%, -50%) scale(2.5); opacity: 0; }
         }
         @keyframes pulse-pulseout {
-          0% { transform: scale(1.7); opacity: 0.2; }
-          100% { transform: scale(0); opacity: 0; }
+          0% { transform: translate(-50%, -50%) scale(1.7); opacity: 0.2; }
+          100% { transform: translate(-50%, -50%) scale(0); opacity: 0; }
         }
         .animate-pulse-pulsein { animation: pulse-pulsein 0.7s cubic-bezier(0.31,1.14,0.37,1) forwards; }
         .animate-pulse-pulseout { animation: pulse-pulseout 0.7s cubic-bezier(0.31,1.14,0.37,1) forwards; }

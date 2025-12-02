@@ -76,8 +76,19 @@ export function SendFlow() {
       setError("Please select a token");
       return;
     }
-    if (!recipient || recipient.length < 10) {
-      setError("Please enter a valid recipient address");
+    if (!recipient) {
+      setError("Please enter a recipient address");
+      return;
+    }
+    const isEvm = selectedToken?.chain === "EVM";
+    const evmRegex = /^0x[a-fA-F0-9]{40}$/;
+    const solanaRegex = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
+    if (isEvm && !evmRegex.test(recipient)) {
+      setError("Please enter a valid EVM address (0x...)");
+      return;
+    }
+    if (!isEvm && !solanaRegex.test(recipient)) {
+      setError("Please enter a valid Solana address");
       return;
     }
     if (!amount || parseFloat(amount) <= 0) {

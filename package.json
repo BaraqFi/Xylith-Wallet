@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "PORT=5111 next dev --webpack",
-    "build": "next build",
+    "dev": "PORT=5111 next dev",
+    "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint"
   },
@@ -35,7 +35,7 @@
     "@types/react-dom": "^19",
     "baseline-browser-mapping": "^2.8.32",
     "eslint": "^9",
-    "eslint-config-next": "16.0.3",
+    "eslint-config-next": "16.0.6",
     "pino": "^10.1.0",
     "pino-pretty": "^13.1.2",
     "tailwindcss": "^4",

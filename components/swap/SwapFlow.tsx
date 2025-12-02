@@ -42,22 +42,36 @@ function SlippageSettings({
 }) {
   const [customSlippage, setCustomSlippage] = useState("");
   const [useCustom, setUseCustom] = useState(false);
+  const [slippageError, setSlippageError] = useState("");
 
   const defaultSlippages = [0.1, 0.5, 1.0];
+  const maxSlippage = 50; // Maximum slippage tolerance in percentage
 
   const handleDefaultSelect = (value: number) => {
     onSlippageChange(value);
     setUseCustom(false);
     setCustomSlippage("");
+    setSlippageError("");
   };
 
   const handleCustomChange = (value: string) => {
     setCustomSlippage(value);
     const numValue = parseFloat(value);
-    if (!isNaN(numValue) && numValue >= 0) {
-      onSlippageChange(numValue);
-      setUseCustom(true);
+    if (value === "" || isNaN(numValue)) {
+      setSlippageError("");
+      return;
     }
+    if (numValue < 0) {
+      setSlippageError("Slippage cannot be negative");
+      return;
+    }
+    if (numValue > maxSlippage) {
+      setSlippageError(`Slippage cannot exceed ${maxSlippage}%`);
+      return;
+    }
+    setSlippageError("");
+    onSlippageChange(numValue);
+    setUseCustom(true);
   };
 
   return (
@@ -90,10 +104,14 @@ function SlippageSettings({
               placeholder="0.0"
               step="0.1"
               min="0"
+              max={maxSlippage}
               className="flex-1"
             />
             <span className="text-sm text-[color:var(--color-depth)]/60">%</span>
           </div>
+          {slippageError && (
+            <p className="mt-1 text-sm text-red-600 dark:text-red-400">{slippageError}</p>
+          )}
         </div>
         <Button onClick={onClose} className="w-full">
           Done

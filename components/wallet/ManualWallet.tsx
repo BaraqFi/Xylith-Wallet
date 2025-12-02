@@ -37,9 +37,9 @@ import {
   TokenRAY,
   TokenJUP,
   NetworkEthereum,
-  NetworkBSC,
+  NetworkBinanceSmartChain,
   NetworkBase,
-  NetworkArbitrum,
+  NetworkArbitrumOne,
   NetworkOptimism,
   NetworkPolygon,
   NetworkSolana,
@@ -211,9 +211,9 @@ export function ChainLogo({ chain }: { chain: EVMChain | "solana" }) {
   // Map chain names to Web3Icons Network component names
   const networkIconMap: Record<string, string> = {
     ethereum: "NetworkEthereum",
-    bsc: "NetworkBSC",
+    bsc: "NetworkBinanceSmartChain",
     base: "NetworkBase",
-    arbitrum: "NetworkArbitrum",
+    arbitrum: "NetworkArbitrumOne",
     optimism: "NetworkOptimism",
     polygon: "NetworkPolygon",
     solana: "NetworkSolana",
@@ -223,9 +223,9 @@ export function ChainLogo({ chain }: { chain: EVMChain | "solana" }) {
   // Map network icon names to actual components for better tree-shaking
   const networkComponentMap: Record<string, ComponentType<any>> = {
     NetworkEthereum,
-    NetworkBSC,
+    NetworkBinanceSmartChain,
     NetworkBase,
-    NetworkArbitrum,
+    NetworkArbitrumOne,
     NetworkOptimism,
     NetworkPolygon,
     NetworkSolana,

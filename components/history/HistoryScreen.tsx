@@ -6,6 +6,7 @@ import { shortenAddress } from "../wallet/utils";
 import { TokenLogo } from "../wallet/ManualWallet";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
+import { useState, useEffect } from "react";
 
 const statusColors: Record<
   WalletTransaction["status"],
@@ -54,6 +55,27 @@ const directionColors: Record<
 
 export function HistoryScreen() {
   const { setCurrentView, setSelectedTransactionId } = useApp();
+  // Use reactive state for transactions to ensure re-renders when they change
+  const [transactions, setTransactions] = useState<WalletTransaction[]>(
+    manualWalletState.transactions
+  );
+
+  // Subscribe to manualWalletState.transactions changes
+  useEffect(() => {
+    // Create a reactive copy of transactions
+    setTransactions([...manualWalletState.transactions]);
+    
+    // If transactions were to be updated elsewhere, you could add a subscription mechanism here
+    // For now, we'll update on mount and when the component is focused
+    const handleFocus = () => {
+      setTransactions([...manualWalletState.transactions]);
+    };
+    window.addEventListener("focus", handleFocus);
+    
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+    };
+  }, []);
 
   const handleTransactionClick = (tx: WalletTransaction) => {
     setSelectedTransactionId(tx.id);
@@ -78,7 +100,7 @@ export function HistoryScreen() {
       </div>
 
       <div className="wallet-card flex flex-col p-2 sm:p-4">
-        {manualWalletState.transactions.length === 0 ? (
+        {transactions.length === 0 ? (
           <div className="py-12 text-center">
             <p className="text-[color:var(--color-depth)]/60">
               No transactions yet
@@ -86,7 +108,7 @@ export function HistoryScreen() {
           </div>
         ) : (
           <div className="divide-y divide-[color:var(--color-border)]">
-            {manualWalletState.transactions.map((tx) => (
+            {transactions.map((tx) => (
               <button
                 key={tx.id}
                 onClick={() => handleTransactionClick(tx)}

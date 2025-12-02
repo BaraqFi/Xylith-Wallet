@@ -1,13 +1,18 @@
 /**
- * Shortens an address to show first 4 and last 4 characters
+ * Shortens an address to show first 6 and last 4 characters for "0x" addresses,
+ * or first 4 and last 4 characters for non-"0x" addresses
  * @param address - The full address
- * @returns Shortened address (e.g., "0x12...5678")
+ * @returns Shortened address (e.g., "0x12...5678" or "12ab...5678")
  */
 export function shortenAddress(address: string): string {
-  if (!address || address.length <= 8) return address;
+  if (!address) return address;
   if (address.startsWith("0x")) {
+    // For "0x" addresses: need at least 11 chars (0x + 4 front + 1 middle + 4 back)
+    if (address.length < 11) return address;
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   }
+  // For non-"0x" addresses: need at least 9 chars (4 front + 1 middle + 4 back)
+  if (address.length < 9) return address;
   return `${address.slice(0, 4)}...${address.slice(-4)}`;
 }
 

@@ -160,7 +160,7 @@ export function TransactionReceipt() {
             <div className="rounded-2xl border border-[color:var(--color-depth)]/10 p-4">
               <p className="text-sm text-[color:var(--color-depth)]/60">Gas Price</p>
               <p className="mt-1 font-semibold">
-                {transaction.gasPrice} {transaction.chain === "EVM" ? "Gwei" : "SOL"}
+                {transaction.gasPrice} {transaction.chain === "EVM" ? "Gwei" : "lamports"}
               </p>
             </div>
           )}

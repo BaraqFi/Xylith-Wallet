@@ -11,6 +11,14 @@ const nextConfig: NextConfig = {
   // - lucide-react: Already optimized with named imports
   // - @web3icons/react: Refactored to individual imports (see ManualWallet.tsx)
   // - @radix-ui: Uses namespace imports (recommended pattern)
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.alias['qrcode/lib/renderer/terminal'] = false;
+      config.resolve.alias['qrcode/lib/renderer/utf8'] = false;
+    }
+    return config;
+  },
+  turbopack: {},
 };
 
 export default nextConfig;

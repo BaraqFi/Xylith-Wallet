@@ -48,17 +48,28 @@ export function TokenSelectModal({
   }, [groupedTokens, searchQuery, excludeSymbol]);
 
   const handleTokenClick = (tokens: TokenBalance[]) => {
-    // Select the token with highest value
-    const bestToken = tokens.reduce((best, current) =>
-      current.usdValue > best.usdValue ? current : best
-    );
+    // Early return if tokens array is empty
+    if (tokens.length === 0) return;
+    
+    // Select the token with highest value, using safe fallback for undefined usdValue
+    const bestToken = tokens.reduce((best, current) => {
+      const currentValue = current.usdValue ?? 0;
+      const bestValue = best.usdValue ?? 0;
+      return currentValue > bestValue ? current : best;
+    });
     onSelect(bestToken);
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--color-depth)]/40 p-4">
-      <div className="wallet-card w-full max-w-md max-h-[80vh] flex flex-col p-4 sm:p-6">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--color-depth)]/40 p-4"
+      onClick={onClose}
+    >
+      <div 
+        className="wallet-card w-full max-w-md max-h-[80vh] flex flex-col p-4 sm:p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between mb-4 pb-4 border-b border-[color:var(--color-border)] px-1">
           <button
             onClick={onClose}

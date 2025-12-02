@@ -47,9 +47,14 @@ export function TokenDetailsModal({
 
   const handleCopy = async () => {
     if (token.contractAddress) {
-      await navigator.clipboard.writeText(token.contractAddress);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      try {
+        await navigator.clipboard.writeText(token.contractAddress);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      } catch (error) {
+        console.error('Failed to copy to clipboard:', error);
+        // Optionally show error toast to user
+      }
     }
   };
 
