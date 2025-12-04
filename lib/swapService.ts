@@ -1,4 +1,4 @@
-import { TokenBalance, EVMChain } from "./wallet/data";
+import { TokenBalance, EVMChain } from "../components/wallet/data";
 
 // Type definitions for API responses
 export interface OneInchQuote {
