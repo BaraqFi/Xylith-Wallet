@@ -45,13 +45,15 @@ import {
   NetworkSolana,
 } from "@web3icons/react";
 import { usePrivy } from "@privy-io/react-auth";
+import { useTokenBalances } from "@/hooks/useTokenBalances";
+import { useTransactionHistory } from "@/hooks/useTransactionHistory";
 
 // Hexagonal Avatar Component
-function HexagonalAvatar({ 
-  children, 
-  className = "" 
-}: { 
-  children: React.ReactNode; 
+function HexagonalAvatar({
+  children,
+  className = ""
+}: {
+  children: React.ReactNode;
   className?: string;
 }) {
   return (
@@ -441,11 +443,19 @@ export default function ManualWallet() {
     address,
     solanaAddress,
     chains,
-    tokens,
     transactions,
   } = manualWalletState;
   const [copied, setCopied] = useState(false);
   const { user } = usePrivy();
+
+  // Use Real Balances
+  // We assume 'ethereum' is the default for EVM view in this MVP
+  const { balances: realBalances, isLoading } = useTokenBalances(activeChain, 'ethereum');
+
+  // Combine real balances with default state structure if needed, or just use realBalances
+  // If loading or error, we might fallback to empty or show loading state. 
+  // For now, let's substitute 'tokens' with 'realBalances' if available.
+  const displayTokens = realBalances.length > 0 ? realBalances : manualWalletState.tokens;
 
   let actualEvmAddress = address;
   let actualSolAddress = solanaAddress;
@@ -591,10 +601,81 @@ export default function ManualWallet() {
       </div>
 
       {/* Token List Container */}
-      <TokenList tokens={tokens} activeChain={activeChain} allTokens={tokens} />
+      <TokenList tokens={displayTokens} activeChain={activeChain} allTokens={displayTokens} />
 
       {/* Recent Transactions Container */}
-      <TransactionList transactions={transactions} activeChain={activeChain} />
+      <RecentTransactionList activeChain={activeChain} />
+    </div>
+  );
+}
+
+function RecentTransactionList({ activeChain }: { activeChain: Chain }) {
+  const { setCurrentView, setSelectedTransactionId } = useApp();
+  // Default to Ethereum for EVM
+  const { transactions, isLoading } = useTransactionHistory(activeChain, 'ethereum');
+
+  const filteredTransactions = transactions.slice(0, 3);
+
+  return (
+    <div className="wallet-card flex flex-col gap-4 p-4 sm:p-6">
+      <div className="flex items-center justify-between px-2">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-[color:var(--color-depth)]/65">
+          Recent Transactions
+        </h2>
+        <Button
+          variant="link"
+          onClick={() => setCurrentView("history")}
+          className="text-xs text-[color:var(--color-accent)]"
+        >
+          View All
+        </Button>
+      </div>
+      <div className="flex flex-col gap-2 px-2">
+        {isLoading ? (
+          <div className="py-8 text-center text-sm text-[color:var(--color-depth)]/60">Loading...</div>
+        ) : filteredTransactions.length === 0 ? (
+          <div className="py-8 text-center text-sm text-[color:var(--color-depth)]/60">
+            No transactions on {activeChain}
+          </div>
+        ) : (
+          filteredTransactions.map((tx) => {
+            // Safe access to icon
+            const Icon = directionMap[tx.direction]?.icon || ArrowRightLeft;
+            return (
+              <button
+                key={tx.id}
+                onClick={() => {
+                  setSelectedTransactionId(tx.id);
+                  setCurrentView("receipt");
+                }}
+                className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
+              >
+                <div className="flex items-center gap-3">
+                  {tx.direction === "swap" ? (
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${directionMap[tx.direction]?.colorClass || 'bg-gray-100'}`}>
+                      <Icon className="h-5 w-5" />
+                    </div>
+                  ) : (
+                    <TokenLogo symbol={tx.tokenSymbol || "?"} name={tx.token || "Unknown"} />
+                  )}
+                  <div>
+                    <p className="font-semibold">{tx.token || "Unknown"}</p>
+                    <p className="text-sm text-[color:var(--color-depth)]/60">
+                      {shortenAddress(tx.counterparty)}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold">{tx.amountLabel}</p>
+                  <p className="text-sm text-[color:var(--color-depth)]/60">
+                    {tx.timestampLabel}
+                  </p>
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

@@ -1,12 +1,13 @@
 "use client";
 
 import { useApp } from "../app/AppContext";
-import { manualWalletState, WalletTransaction } from "../wallet/data";
+import { WalletTransaction } from "../wallet/data";
 import { shortenAddress } from "../wallet/utils";
 import { TokenLogo } from "../wallet/ManualWallet";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
 import { useState, useEffect } from "react";
+import { useTransactionHistory } from "@/hooks/useTransactionHistory";
 
 const statusColors: Record<
   WalletTransaction["status"],
@@ -54,28 +55,11 @@ const directionColors: Record<
 };
 
 export function HistoryScreen() {
-  const { setCurrentView, setSelectedTransactionId } = useApp();
-  // Use reactive state for transactions to ensure re-renders when they change
-  const [transactions, setTransactions] = useState<WalletTransaction[]>(
-    manualWalletState.transactions
-  );
+  const { setCurrentView, setSelectedTransactionId, activeChain } = useApp();
 
-  // Subscribe to manualWalletState.transactions changes
-  useEffect(() => {
-    // Create a reactive copy of transactions
-    setTransactions([...manualWalletState.transactions]);
-    
-    // If transactions were to be updated elsewhere, you could add a subscription mechanism here
-    // For now, we'll update on mount and when the component is focused
-    const handleFocus = () => {
-      setTransactions([...manualWalletState.transactions]);
-    };
-    window.addEventListener("focus", handleFocus);
-    
-    return () => {
-      window.removeEventListener("focus", handleFocus);
-    };
-  }, []);
+  // Default to 'ethereum' for EVM history in this MVP. 
+  // Ideally we would aggregate or have a network selector.
+  const { transactions, isLoading, error } = useTransactionHistory(activeChain, 'ethereum');
 
   const handleTransactionClick = (tx: WalletTransaction) => {
     setSelectedTransactionId(tx.id);
@@ -100,11 +84,16 @@ export function HistoryScreen() {
       </div>
 
       <div className="wallet-card flex flex-col p-2 sm:p-4">
-        {transactions.length === 0 ? (
+        {isLoading ? (
+          <div className="py-12 text-center text-[color:var(--color-depth)]/60">
+            Loading history...
+          </div>
+        ) : transactions.length === 0 ? (
           <div className="py-12 text-center">
             <p className="text-[color:var(--color-depth)]/60">
-              No transactions yet
+              No transactions found
             </p>
+            {error && <p className="text-xs text-red-500 mt-2">{error}</p>}
           </div>
         ) : (
           <div className="divide-y divide-[color:var(--color-border)]">
@@ -120,7 +109,7 @@ export function HistoryScreen() {
                       {directionIcons[tx.direction]}
                     </div>
                   ) : (
-                    <TokenLogo symbol={tx.tokenSymbol} name={tx.token} />
+                    <TokenLogo symbol={tx.tokenSymbol || "?"} name={tx.token || "Unknown"} />
                   )}
                   <div>
                     <p className="font-semibold">{tx.action}</p>
@@ -141,10 +130,10 @@ export function HistoryScreen() {
                   <p className="font-semibold">{tx.amountLabel}</p>
                   <div className="flex items-center justify-end gap-2">
                     <div
-                      className={`h-2 w-2 rounded-full ${statusColors[tx.status].dot}`}
+                      className={`h-2 w-2 rounded-full ${statusColors[tx.status]?.dot || 'bg-gray-400'}`}
                     />
                     <p
-                      className={`text-sm font-medium ${statusColors[tx.status].text}`}
+                      className={`text-sm font-medium ${statusColors[tx.status]?.text || 'text-gray-500'}`}
                     >
                       {tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}
                     </p>

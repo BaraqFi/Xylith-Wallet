@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "../app/AppContext";
 import { manualWalletState, TokenBalance } from "../wallet/data";
 import { ChainLogo, TokenLogo } from "../wallet/ManualWallet";
@@ -28,6 +28,15 @@ import {
   ArrowUpDown,
   Settings,
 } from "lucide-react";
+import { usePrivy } from "@privy-io/react-auth";
+import { formatUnits, parseUnits, encodeFunctionData, parseAbi } from "viem";
+import { useTokenBalances } from "@/hooks/useTokenBalances";
+import { useSwapQuote } from "@/hooks/useSwapQuote";
+import { useAllowance } from "@/hooks/useAllowance";
+import { OneInchClient } from "@/lib/1inch/client";
+
+// OneInch V6 Router
+const AGGREGATION_ROUTER_V6 = "0x111111125421ca6dc452d289314280a0f8842a65";
 
 type SwapStep = "form" | "confirm" | "loading" | "success" | "error";
 
@@ -144,8 +153,66 @@ export function SwapFlow() {
   const [showToTokenModal, setShowToTokenModal] = useState(false);
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [percentage, setPercentage] = useState(0);
+  const { user } = usePrivy();
 
-  const groupedTokens = manualWalletState.tokens.reduce((acc, token) => {
+  // Real Data Hooks
+  // Default to Ethereum for token list if no fromToken is selected to determine chain
+  const activeChainForBalances = fromToken ? fromToken.chain : "EVM";
+  const activeEvmChainForBalances = fromToken && fromToken.evmChain ? fromToken.evmChain : "ethereum";
+
+  const { balances: tokens } = useTokenBalances(activeChainForBalances, activeEvmChainForBalances);
+
+  // Quote Hook
+  // We need to pass the chainId as a number. 
+  // Map our string chains to IDs or store IDs in token data.
+  // For MVP: Ethereum=1, Base=8453 etc.
+  const getChainId = (t: TokenBalance | null) => {
+    if (!t) return 1;
+    if (t.chain === 'Solana') return 0; // Not supported for 1inch EVM swap yet
+    switch (t.evmChain) {
+      case 'ethereum': return 1;
+      case 'base': return 8453;
+      case 'arbitrum': return 42161;
+      case 'optimism': return 10;
+      case 'polygon': return 137;
+      case 'bsc': return 56;
+      default: return 1;
+    }
+  };
+
+  const { quote, swapTx, isLoading: isQuoteLoading, error: quoteError, fetchSwapTransaction } = useSwapQuote({
+    fromToken,
+    toToken,
+    amount,
+    chainId: getChainId(fromToken),
+    slippage,
+    address: user?.wallet?.address,
+  });
+
+  // Allowance Hook
+  const { allowance, refetch: refetchAllowance } = useAllowance(
+    fromToken?.contractAddress,
+    AGGREGATION_ROUTER_V6,
+    user?.wallet?.address,
+    amount,
+    fromToken?.evmChain
+  );
+
+  // Effect: Update estimated amount when quote changes
+  useEffect(() => { // Warning: need import useEffect
+    if (quote && toToken) {
+      // quote.dstAmount is in Wei. Need to format to decimals.
+      // We assume we know decimals from toToken (default 18 if missing)
+      const decimals = toToken.decimals || 18;
+      const val = formatUnits(BigInt(quote.dstAmount), decimals);
+      setEstimatedAmount(val);
+    } else {
+      if (!isQuoteLoading && !quote) setEstimatedAmount("");
+    }
+  }, [quote, toToken, isQuoteLoading]);
+
+  // Replace manualWalletState.tokens with real 'tokens'
+  const groupedTokens = tokens.reduce((acc, token) => {
     const key = token.symbol;
     if (!acc[key]) {
       acc[key] = [];
@@ -190,20 +257,8 @@ export function SwapFlow() {
       setPercentage(0);
     }
 
-    if (
-      fromToken &&
-      toToken &&
-      value &&
-      parseFloat(value) > 0 &&
-      fromToken.pricePerToken &&
-      toToken.pricePerToken
-    ) {
-      const fromValue = parseFloat(value) * fromToken.pricePerToken;
-      const estimated = fromValue / toToken.pricePerToken;
-      setEstimatedAmount(estimated.toFixed(6));
-    } else {
-      setEstimatedAmount("");
-    }
+    // We rely on useSwapQuote to update estimatedAmount
+    setEstimatedAmount(""); // Clear until quote arrives
   };
 
   const handlePercentageChange = (value: number) => {
@@ -211,11 +266,9 @@ export function SwapFlow() {
     if (fromToken && value > 0) {
       const newAmount = (fromToken.amount * value) / 100;
       setAmount(newAmount.toFixed(6));
-      
-      if (toToken && fromToken.pricePerToken && toToken.pricePerToken) {
-        const fromValue = newAmount * fromToken.pricePerToken;
-        const estimated = fromValue / toToken.pricePerToken;
-        setEstimatedAmount(estimated.toFixed(6));
+
+      if (toToken) {
+        setEstimatedAmount(""); // Clear until quote arrives
       }
     } else {
       setAmount("");
@@ -319,15 +372,65 @@ export function SwapFlow() {
     setStep("confirm");
   };
 
-  const handleConfirm = () => {
+  const { sendTransaction } = usePrivy();
+  const [isApproving, setIsApproving] = useState(false);
+
+  const handleApprove = async () => {
+    if (!fromToken) return;
+    setIsApproving(true);
+    try {
+      const amountWei = parseUnits(amount, fromToken.decimals || 18);
+      const data = encodeFunctionData({
+        abi: parseAbi(['function approve(address spender, uint256 amount) returns (bool)']),
+        functionName: 'approve',
+        args: [AGGREGATION_ROUTER_V6, amountWei]
+      });
+
+      const txHash = await sendTransaction({
+        to: fromToken.contractAddress,
+        data: data,
+        chainId: getChainId(fromToken),
+      });
+
+      console.log("Approve Tx Sent:", txHash);
+      // We can wait for receipt here or just wait for allowance hook to update (polling)
+      // For MVP UI, assume success after short delay/confirmation
+      setTimeout(() => {
+        refetchAllowance();
+        setIsApproving(false);
+      }, 5000); // 5 sec delay to allow for update (naive)
+    } catch (err) {
+      console.error("Approve Failed:", err);
+      setIsApproving(false);
+    }
+  };
+
+  const handleConfirm = async () => {
     setStep("loading");
-    setTimeout(() => {
-      if (Math.random() > 0.2) {
-        setStep("success");
-      } else {
-        setStep("error");
+
+    try {
+      // 1. Fetch Fresh Swap Data (Calldata)
+      const txData = await fetchSwapTransaction();
+      if (!txData || !txData.tx) {
+        throw new Error("Failed to prepare transaction");
       }
-    }, 3000);
+
+      // 2. Send Transaction via Privy
+      // Privy expects: to, value, data, chainId?
+      // 1inch returns tx.to, tx.data, tx.value (wei hex)
+      const txHash = await sendTransaction({
+        to: txData.tx.to,
+        data: txData.tx.data,
+        value: BigInt(txData.tx.value), // viem expects bigint or hex string? Privy expects number/string/bigint
+        chainId: getChainId(fromToken),
+      });
+
+      console.log("Swap Executed:", txHash);
+      setStep("success");
+    } catch (err) {
+      console.error("Swap Failed:", err);
+      setStep("error");
+    }
   };
 
   const handleClose = () => {
@@ -564,9 +667,20 @@ export function SwapFlow() {
             >
               <ArrowLeft className="mr-2 h-4 w-4" /> Back
             </Button>
-            <Button onClick={handleConfirm} className="flex-1">
-              Confirm Swap
-            </Button>
+
+            {fromToken &&
+              // Check Allowance: output amount in Wei vs Allowance
+              allowance < parseUnits(amount || "0", fromToken.decimals || 18) ? (
+              <Button onClick={handleApprove} disabled={isApproving} className="flex-1">
+                {isApproving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                {isApproving ? "Approving..." : `Approve ${fromToken.symbol}`}
+              </Button>
+            ) : (
+              <Button onClick={handleConfirm} className="flex-1">
+                Confirm Swap
+              </Button>
+            )
+            }
           </div>
         </div>
       </div>
@@ -589,7 +703,7 @@ export function SwapFlow() {
               </span>
             )}
           </div>
-          
+
           <div className="flex gap-3">
             <button
               onClick={() => setShowFromTokenModal(true)}
@@ -691,7 +805,7 @@ export function SwapFlow() {
         {/* To Section */}
         <div className="rounded-xl border border-[color:var(--color-border)] p-4 space-y-4">
           <span className="text-sm text-[color:var(--color-depth)]/60">To (estimated)</span>
-          
+
           <div className="flex gap-3">
             <button
               onClick={() => setShowToTokenModal(true)}
