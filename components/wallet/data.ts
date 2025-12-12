@@ -1,5 +1,6 @@
 export type Chain = "EVM" | "Solana";
 export type EVMChain = "ethereum" | "bsc" | "base" | "arbitrum" | "optimism" | "polygon";
+export type WalletDirection = "in" | "out" | "swap" | "unknown";
 
 export interface ChainBalance {
   label: Chain;
@@ -28,7 +29,7 @@ export interface WalletTransaction {
   counterparty: string;
   amountLabel: string;
   timestampLabel: string;
-  direction: "in" | "out" | "swap";
+  direction: WalletDirection;
   chain: Chain;
   evmChain?: EVMChain;
   status: "pending" | "confirmed" | "failed";
@@ -94,6 +95,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 3420,
     usdValue: 0.5324 * 3420,
     contractAddress: "0x0000000000000000000000000000000000000000",
+    decimals: 18,
   },
   {
     symbol: "USDC",
@@ -115,6 +117,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1,
     usdValue: 1200 * 1,
     contractAddress: "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    decimals: 6,
   },
   {
     symbol: "WBTC",
@@ -125,6 +128,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 74020,
     usdValue: 0.025 * 74020,
     contractAddress: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+    decimals: 8,
   },
   {
     symbol: "DAI",
@@ -135,6 +139,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1,
     usdValue: 850 * 1,
     contractAddress: "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    decimals: 18,
   },
   // Base
   {
@@ -146,6 +151,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 3420,
     usdValue: 0.15 * 3420,
     contractAddress: "0x4200000000000000000000000000000000000006",
+    decimals: 18,
   },
   {
     symbol: "USDC",
@@ -156,6 +162,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1,
     usdValue: 1500 * 1,
     contractAddress: "0x833589fCD6eDb6E08f4C7C32D4f71b54bdA02913",
+    decimals: 6,
   },
   // Arbitrum
   {
@@ -167,6 +174,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 3420,
     usdValue: 0.08 * 3420,
     contractAddress: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    decimals: 18,
   },
   {
     symbol: "USDC",
@@ -177,6 +185,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1,
     usdValue: 800 * 1,
     contractAddress: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+    decimals: 6,
   },
   {
     symbol: "ARB",
@@ -187,6 +196,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1.3,
     usdValue: 500 * 1.3,
     contractAddress: "0x912CE59144191C1204E64559FE8253a0e49E6548",
+    decimals: 18,
   },
   // Optimism
   {
@@ -198,6 +208,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 3420,
     usdValue: 0.12 * 3420,
     contractAddress: "0x4200000000000000000000000000000000000006",
+    decimals: 18,
   },
   {
     symbol: "USDC",
@@ -208,6 +219,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1,
     usdValue: 600 * 1,
     contractAddress: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+    decimals: 6,
   },
   {
     symbol: "OP",
@@ -218,6 +230,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 2.5,
     usdValue: 300 * 2.5,
     contractAddress: "0x4200000000000000000000000000000000000042",
+    decimals: 18,
   },
   // Polygon
   {
@@ -229,6 +242,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 0.7,
     usdValue: 2000 * 0.7,
     contractAddress: "0x0000000000000000000000000000000000001010",
+    decimals: 18,
   },
   {
     symbol: "USDC",
@@ -239,6 +253,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1,
     usdValue: 400 * 1,
     contractAddress: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    decimals: 6,
   },
   {
     symbol: "USDT",
@@ -249,6 +264,7 @@ export const tokens: TokenBalance[] = [
     usdValue: 300,
     pricePerToken: 1,
     contractAddress: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F",
+    decimals: 6,
   },
   // BSC
   {
@@ -260,6 +276,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 250,
     usdValue: 2.5 * 250,
     contractAddress: "0x0000000000000000000000000000000000000000",
+    decimals: 18,
   },
   {
     symbol: "USDT",
@@ -270,6 +287,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1,
     usdValue: 1200 * 1,
     contractAddress: "0x55d398326f99059fF775485246999027B3197955",
+    decimals: 18,
   },
   {
     symbol: "USDC",
@@ -280,6 +298,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1,
     usdValue: 500 * 1,
     contractAddress: "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+    decimals: 18,
   },
   // Solana
   {
@@ -290,6 +309,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 155.8,
     usdValue: 28.02 * 155.8,
     contractAddress: "So11111111111111111111111111111111111111112",
+    decimals: 9,
   },
   {
     symbol: "USDC",
@@ -299,6 +319,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1,
     usdValue: 500 * 1,
     contractAddress: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    decimals: 6,
   },
   {
     symbol: "USDT",
@@ -308,6 +329,7 @@ export const tokens: TokenBalance[] = [
     usdValue: 300,
     pricePerToken: 1,
     contractAddress: "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    decimals: 6,
   },
   {
     symbol: "RAY",
@@ -317,6 +339,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 1.5,
     usdValue: 150 * 1.5,
     contractAddress: "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    decimals: 6,
   },
   {
     symbol: "JUP",
@@ -326,6 +349,7 @@ export const tokens: TokenBalance[] = [
     pricePerToken: 0.9,
     usdValue: 200 * 0.9,
     contractAddress: "JUPyiwrYJFskUPiHa7hkeR8VUtosUc6Z5q5Z7Kp5j5q",
+    decimals: 6,
   },
 ];
 

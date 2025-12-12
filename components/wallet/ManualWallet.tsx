@@ -111,6 +111,11 @@ const directionMap: Record<
     colorClass: "bg-blue-500/15 text-blue-500",
     icon: ArrowRightLeft,
   },
+  unknown: {
+    badge: "Unknown",
+    colorClass: "bg-gray-200 text-gray-600",
+    icon: ArrowRightLeft,
+  },
 };
 
 function ChainToggle({
@@ -278,10 +283,12 @@ function TokenList({
   tokens,
   activeChain,
   allTokens,
+  isLoading = false,
 }: {
   tokens: ManualWalletState["tokens"];
   activeChain: Chain;
   allTokens: ManualWalletState["tokens"];
+  isLoading?: boolean;
 }) {
   const { setCurrentView } = useApp();
   const [selectedToken, setSelectedToken] = useState<TokenBalance | null>(null);
@@ -295,7 +302,12 @@ function TokenList({
         <h2 className="text-sm font-semibold uppercase tracking-wide text-[color:var(--color-depth)]/65 px-2">
           Token List
         </h2>
-        {filteredTokens.length === 0 ? (
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-8 gap-3 px-2 text-[color:var(--color-depth)]/70">
+            <div className="h-10 w-10 animate-spin rounded-full border-2 border-[color:var(--color-accent)] border-t-transparent" />
+            <p className="text-sm">Loading balances…</p>
+          </div>
+        ) : filteredTokens.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-4 px-2">
             <p className="text-sm text-[color:var(--color-depth)]/60 text-center">
               No tokens found. Make a Deposit
@@ -601,7 +613,12 @@ export default function ManualWallet() {
       </div>
 
       {/* Token List Container */}
-      <TokenList tokens={displayTokens} activeChain={activeChain} allTokens={displayTokens} />
+      <TokenList
+        tokens={displayTokens}
+        activeChain={activeChain}
+        allTokens={displayTokens}
+        isLoading={isLoading}
+      />
 
       {/* Recent Transactions Container */}
       <RecentTransactionList activeChain={activeChain} />

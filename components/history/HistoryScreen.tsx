@@ -34,6 +34,7 @@ const directionIcons: Record<WalletTransaction["direction"], React.ReactNode> = 
   in: <ArrowDown className="h-5 w-5 text-green-500" />,
   out: <ArrowUp className="h-5 w-5 text-red-500" />,
   swap: <ArrowRightLeft className="h-5 w-5 text-blue-500" />,
+  unknown: <ArrowRightLeft className="h-5 w-5 text-gray-500" />,
 };
 
 const directionColors: Record<
@@ -51,6 +52,10 @@ const directionColors: Record<
   swap: {
     text: "text-blue-500",
     bg: "bg-blue-500/10",
+  },
+  unknown: {
+    text: "text-gray-500",
+    bg: "bg-gray-500/10",
   },
 };
 

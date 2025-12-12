@@ -56,22 +56,24 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
 
                 let client;
                 let chainIdForPrice = 1; // Default to ETH mainnet for prices
+                let targetChain: any;
 
                 if (currentEvmChain === 'ethereum' && process.env.NODE_ENV === 'development') {
-                    // Use Local Fork
-                    client = createPublicClient({
-                        chain: localFork,
-                        transport: http()
-                    });
-                    chainIdForPrice = 1;
+                    targetChain = localFork;
                 } else {
-                    const targetChain = chainMap[currentEvmChain];
-                    client = createPublicClient({
-                        chain: targetChain,
-                        transport: http()
-                    });
-                    chainIdForPrice = targetChain.id;
+                    targetChain = chainMap[currentEvmChain];
                 }
+
+                if (!targetChain) {
+                    throw new Error(`Unsupported EVM chain: ${currentEvmChain}`);
+                }
+
+                client = createPublicClient({
+                    chain: targetChain,
+                    transport: http()
+                });
+                chainIdForPrice = targetChain.id ?? 1;
+                const nativeDecimals = targetChain.nativeCurrency?.decimals ?? 18;
 
                 // 2. Filter tokens for this chain
                 const chainTokens = defaultTokens.filter(t => t.chain === "EVM" && t.evmChain === currentEvmChain);
@@ -82,7 +84,7 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                         if (token.symbol === "ETH" || token.symbol === "BNB" || token.symbol === "MATIC") {
                             // Native Currency logic (naive check by symbol, ideally use address/type)
                             const bal = await client.getBalance({ address });
-                            return { ...token, rawBalance: bal, decimals: 18 };
+                            return { ...token, rawBalance: bal, decimals: nativeDecimals };
                         } else if (token.contractAddress && token.contractAddress !== "0x0000000000000000000000000000000000000000") {
                             // ERC20
                             const bal = await client.readContract({
@@ -91,15 +93,27 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                                 functionName: 'balanceOf',
                                 args: [address]
                             });
-                            // We assume decimals are known from `data.ts` (18 or 6 etc). In real app, fetch decimals() too.
-                            // Assuming USDC is 6, others 18 usually. token.amount in data.ts implies we need to calculate
-                            const decimals = token.symbol === 'USDC' || token.symbol === 'USDT' ? 6 : 18;
+                            let decimals = token.decimals ?? 18;
+                            try {
+                                const tokenDecimals = await client.readContract({
+                                    address: token.contractAddress as Address,
+                                    abi: [parseAbiItem('function decimals() view returns (uint8)')],
+                                    functionName: 'decimals'
+                                });
+                                if (typeof tokenDecimals === "number") {
+                                    decimals = tokenDecimals;
+                                } else if (typeof tokenDecimals === "bigint") {
+                                    decimals = Number(tokenDecimals);
+                                }
+                            } catch (e) {
+                                console.warn(`Failed to fetch decimals for ${token.symbol}, falling back to ${decimals}`, e);
+                            }
                             return { ...token, rawBalance: bal as bigint, decimals };
                         }
-                        return { ...token, rawBalance: BigInt(0), decimals: 18 };
+                        return { ...token, rawBalance: BigInt(0), decimals: nativeDecimals };
                     } catch (e) {
                         console.warn(`Failed to fetch balance for ${token.symbol}`, e);
-                        return { ...token, rawBalance: BigInt(0), decimals: 18 };
+                        return { ...token, rawBalance: BigInt(0), decimals: nativeDecimals };
                     }
                 });
 
@@ -117,6 +131,7 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                     try {
                         const priceRes = await fetch(`/api/1inch/price?chainId=${chainIdForPrice}`, {
                             method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ tokens: tokenAddresses }),
                         });
                         if (priceRes.ok) {
@@ -146,11 +161,14 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
 
                 // 5. Format
                 const formattedTokens: TokenBalance[] = tokensWithRawBalance.map(t => {
-                    const amount = parseFloat(formatUnits(t.rawBalance, t.decimals));
+                    const decimals = t.decimals ?? nativeDecimals;
+                    const safeRaw = typeof t.rawBalance === "bigint" ? t.rawBalance : BigInt(0);
+                    const amount = parseFloat(formatUnits(safeRaw, decimals));
                     // Use hardcoded price from data.ts for now as fallback
                     const price = t.pricePerToken || 0;
                     return {
                         ...t,
+                        decimals,
                         amount,
                         usdValue: amount * price
                     };

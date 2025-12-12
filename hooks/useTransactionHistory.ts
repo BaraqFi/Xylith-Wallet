@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { usePrivy } from "@privy-io/react-auth";
-import { WalletTransaction, Chain, EVMChain } from "@/components/wallet/data";
+import { WalletTransaction, Chain, EVMChain, WalletDirection } from "@/components/wallet/data";
 import { formatUnits } from "viem";
 
 // Types from 1inch History API (simplified)
@@ -10,6 +10,8 @@ interface HistoryItem {
     blockNumber: number;
     time: number; // string or number? usually timestamp
     status: "mined" | "pending" | "failed"; // match API
+    logIndex?: number;
+    eventIndex?: number;
     details: {
         type: string; // "swap", "approve", "transfer"
         status: string;
@@ -58,6 +60,11 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                 case 'optimism': chainId = 10; break;
                 case 'polygon': chainId = 137; break;
                 case 'bsc': chainId = 56; break;
+                default:
+                    console.warn(`Unrecognized EVM chain: ${currentEvmChain}`);
+                    setError(`Unsupported chain: ${currentEvmChain}`);
+                    setIsLoading(false);
+                    return;
             }
 
             try {
@@ -82,26 +89,89 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                 // This mapping is non-trivial because 1inch History API returns "events" (like 'swap', 'transfer')
                 // We need to normalize this to our UI model.
 
-                const mapped: WalletTransaction[] = items.map((item: any) => {
-                    // Basic mapping attempt
+                // TODO: Normalize 1inch history payload once full schema is known (token metadata, amount parsing, direction), and localize fallbacks.
+                const mapped: WalletTransaction[] = items.map((item: HistoryItem, idx: number) => {
+                    const details = item.details || {};
+                    const normalize = (addr?: string) => (addr || "").toLowerCase();
+                    const normalizedUser = normalize(address);
+                    const fromAddr = normalize(details.from);
+                    const toAddr = normalize(details.to);
+
+                    const normalizedType = typeof details.type === "string" ? details.type.toLowerCase() : "";
+                    const isSwapLike =
+                        normalizedType === "swap" ||
+                        normalizedType === "bridge" ||
+                        Array.isArray((details as any).operations);
+
+                    const direction: WalletDirection = isSwapLike
+                        ? "swap"
+                        : toAddr && toAddr === normalizedUser
+                          ? "in"
+                          : fromAddr && fromAddr === normalizedUser
+                            ? "out"
+                            : "unknown";
+
+                    const parseTimestamp = (timeValue: any) => {
+                        if (typeof timeValue === "string") {
+                            const parsed = Date.parse(timeValue);
+                            if (!Number.isNaN(parsed)) return parsed;
+                            const numeric = Number(timeValue);
+                            if (!Number.isNaN(numeric)) {
+                                return numeric > 1e12 ? numeric : numeric * 1000;
+                            }
+                        }
+                        if (typeof timeValue === "number") {
+                            const isMs = Math.abs(timeValue) > 1e12;
+                            return isMs ? timeValue : timeValue * 1000;
+                        }
+                        return Date.now();
+                    };
+
+                    const timestampMs = parseTimestamp((item as any).time ?? (details as any).timestamp);
+                    const timestampLabel = new Date(timestampMs).toLocaleString();
+
+                    const tokenSymbol =
+                        (details as any).tokenSymbol ||
+                        (details as any).symbol ||
+                        (details as any).asset ||
+                        (details as any).token?.symbol ||
+                        "Unavailable";
+                    const tokenAmountRaw =
+                        (details as any).tokenAmount ??
+                        (details as any).amount ??
+                        (details as any).value ??
+                        (details as any).token?.amount;
+                    const tokenAmount = tokenAmountRaw !== undefined ? String(tokenAmountRaw) : "Unavailable";
+
+                    const counterparty =
+                        toAddr && toAddr === normalizedUser
+                            ? details.from || "Unavailable"
+                            : details.to || details.from || "Unavailable";
+                    const amountLabel =
+                        tokenAmount !== "Unavailable"
+                            ? `${tokenAmount} ${tokenSymbol !== "Unavailable" ? tokenSymbol : ""}`.trim()
+                            : "Unavailable";
+
+                    const eventSuffix = item.logIndex ?? item.eventIndex ?? idx;
+
                     return {
-                        id: item.hash + item.logIndex, // unique id
-                        action: mapTypeToAction(item.details.type),
-                        token: "Unknown", // need to parse token details
-                        counterparty: item.details.to || item.details.from || "",
-                        amountLabel: "0", // need parsing
-                        timestampLabel: new Date(item.time * 1000).toLocaleDateString(),
-                        direction: item.details.to?.toLowerCase() === address.toLowerCase() ? "in" : "out", // simplistic
+                        id: `${item.hash}_${String(eventSuffix)}`, // stable per event
+                        action: mapTypeToAction(details.type),
+                        token: tokenSymbol,
+                        counterparty,
+                        amountLabel,
+                        timestampLabel,
+                        direction,
                         chain: "EVM",
                         evmChain: currentEvmChain,
-                        status: item.status === "mined" ? "confirmed" : "failed", // 1inch uses 'mined'
+                        status: item.status === "mined" ? "confirmed" : item.status === "pending" ? "pending" : "failed",
                         txHash: item.hash,
-                        timestamp: item.time * 1000,
-                        fromAddress: item.details.from,
-                        toAddress: item.details.to,
-                        value: "0",
-                        tokenSymbol: "UNK",
-                        tokenAmount: "0"
+                        timestamp: timestampMs,
+                        fromAddress: details.from || "",
+                        toAddress: details.to || "",
+                        value: tokenAmount,
+                        tokenSymbol,
+                        tokenAmount,
                     } as WalletTransaction;
                 });
 
@@ -133,6 +203,6 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
 
 function mapTypeToAction(type: string): "Send" | "Receive" | "Swap" {
     if (type === "swap") return "Swap";
-    if (type === "transfer" || type === "transfer_from") return "Send"; // or Receive depending on direction
+    if (type === "transfer" || type === "transfer_from") return "Send"; // direction determined separately
     return "Send"; // default
 }

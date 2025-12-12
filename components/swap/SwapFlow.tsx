@@ -353,6 +353,10 @@ export function SwapFlow() {
       setError("Please select both tokens");
       return;
     }
+    if (fromToken.chain === "Solana" || toToken.chain === "Solana") {
+      setError("Solana swaps are not yet supported");
+      return;
+    }
     if (
       fromToken.symbol === toToken.symbol &&
       fromTokenChain === toTokenChain
@@ -376,7 +380,12 @@ export function SwapFlow() {
   const [isApproving, setIsApproving] = useState(false);
 
   const handleApprove = async () => {
-    if (!fromToken) return;
+    if (!fromToken || !fromToken.contractAddress) return;
+    const isNativeToken =
+      fromToken.contractAddress.toLowerCase() ===
+      "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+    if (isNativeToken) return; // Native tokens don't need approval
+
     setIsApproving(true);
     try {
       const amountWei = parseUnits(amount, fromToken.decimals || 18);
@@ -668,19 +677,36 @@ export function SwapFlow() {
               <ArrowLeft className="mr-2 h-4 w-4" /> Back
             </Button>
 
-            {fromToken &&
-              // Check Allowance: output amount in Wei vs Allowance
-              allowance < parseUnits(amount || "0", fromToken.decimals || 18) ? (
-              <Button onClick={handleApprove} disabled={isApproving} className="flex-1">
-                {isApproving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                {isApproving ? "Approving..." : `Approve ${fromToken.symbol}`}
-              </Button>
-            ) : (
-              <Button onClick={handleConfirm} className="flex-1">
-                Confirm Swap
-              </Button>
-            )
-            }
+            {(() => {
+              if (!fromToken) return null;
+              const isNativeToken =
+                !fromToken.contractAddress ||
+                fromToken.contractAddress.toLowerCase() ===
+                  "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+              if (isNativeToken) {
+                return (
+                  <Button onClick={handleConfirm} className="flex-1">
+                    Confirm Swap
+                  </Button>
+                );
+              }
+
+              const allowanceValue =
+                typeof allowance === "bigint" ? allowance : BigInt(allowance ?? 0);
+              const needsApproval =
+                allowanceValue < parseUnits(amount || "0", fromToken.decimals || 18);
+
+              return needsApproval ? (
+                <Button onClick={handleApprove} disabled={isApproving} className="flex-1">
+                  {isApproving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                  {isApproving ? "Approving..." : `Approve ${fromToken.symbol}`}
+                </Button>
+              ) : (
+                <Button onClick={handleConfirm} className="flex-1">
+                  Confirm Swap
+                </Button>
+              );
+            })()}
           </div>
         </div>
       </div>

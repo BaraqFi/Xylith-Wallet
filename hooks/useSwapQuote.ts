@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { OneInchClient, OneInchQuoteParams, OneInchSwapParams } from "@/lib/1inch/client";
+import { parseUnits } from "viem";
 import { Quote, SwapResponse } from "@/lib/1inch/types";
 // Local debounce used below
 
@@ -40,6 +41,8 @@ export function useSwapQuote({
     const debouncedAmount = useLocalDebounce(amount, 500);
 
     useEffect(() => {
+        let cancelled = false;
+
         async function fetchQuote() {
             if (!fromToken || !toToken || !debouncedAmount || parseFloat(debouncedAmount) <= 0 || !chainId) {
                 setQuote(null);
@@ -55,14 +58,24 @@ export function useSwapQuote({
 
             try {
                 // We use GetQuote for the UI update (faster, less parameters needed)
+                let atomicAmount: string;
+                try {
+                    atomicAmount = parseUnits(debouncedAmount, fromToken.decimals ?? 18).toString();
+                } catch (err) {
+                    setError("Invalid amount");
+                    setQuote(null);
+                    return;
+                }
+
                 const params: OneInchQuoteParams = {
                     src: fromToken.contractAddress || fromToken.address, // Handle both data shapes
                     dst: toToken.contractAddress || toToken.address,
-                    amount: (parseFloat(debouncedAmount) * Math.pow(10, fromToken.decimals)).toFixed(0), // Convert to Wei
+                    amount: atomicAmount, // Convert to base units safely
                     chainId: chainId,
                 };
 
                 const quoteData = await OneInchClient.getQuote(params);
+                if (cancelled) return;
                 setQuote(quoteData);
 
                 // If we have an address, we can also pre-fetch the Swap Calldata (optional, but good for "Review" step readiness)
@@ -76,15 +89,17 @@ export function useSwapQuote({
                 setSwapTx(null);
 
             } catch (err: any) {
+                if (cancelled) return;
                 console.error("Quote fetch error:", err);
                 setError(err.message || "Failed to fetch quote");
                 setQuote(null);
             } finally {
-                setIsLoading(false);
+                if (!cancelled) setIsLoading(false);
             }
         }
 
         fetchQuote();
+        return () => { cancelled = true; };
     }, [fromToken, toToken, debouncedAmount, chainId]);
 
     // Function to explicitly fetch the full swap transaction (calldata)
@@ -95,10 +110,18 @@ export function useSwapQuote({
 
         setIsLoading(true);
         try {
+            let atomicAmount: string;
+            try {
+                atomicAmount = parseUnits(amount, fromToken.decimals ?? 18).toString();
+            } catch {
+                setError("Invalid amount");
+                throw new Error("Invalid amount");
+            }
+
             const params: OneInchSwapParams = {
                 src: fromToken.contractAddress || fromToken.address,
                 dst: toToken.contractAddress || toToken.address,
-                amount: (parseFloat(amount) * Math.pow(10, fromToken.decimals)).toFixed(0),
+                amount: atomicAmount,
                 chainId: chainId,
                 from: address,
                 slippage: slippage,
