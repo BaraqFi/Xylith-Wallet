@@ -113,7 +113,7 @@ const directionMap: Record<
   },
   unknown: {
     badge: "Unknown",
-    colorClass: "bg-gray-200 text-gray-600",
+    colorClass: "bg-[color:var(--color-depth)]/10 text-[color:var(--color-depth)]/60",
     icon: ArrowRightLeft,
   },
 };

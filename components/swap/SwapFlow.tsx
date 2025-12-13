@@ -224,6 +224,22 @@ export function SwapFlow() {
   const fromTokenChains = fromToken ? groupedTokens[fromToken.symbol] || [] : [];
   const toTokenChains = toToken ? groupedTokens[toToken.symbol] || [] : [];
 
+  // Get real balance from tokens array
+  const getRealBalance = (token: TokenBalance | null): number => {
+    if (!token) return 0;
+    const realToken = tokens.find(
+      (t) =>
+        t.symbol === token.symbol &&
+        t.chain === token.chain &&
+        t.evmChain === token.evmChain &&
+        (t.contractAddress === token.contractAddress || 
+         (!t.contractAddress && !token.contractAddress))
+    );
+    return realToken?.amount ?? token.amount ?? 0;
+  };
+
+  const realFromTokenBalance = getRealBalance(fromToken);
+
   const handleSwapTokens = () => {
     const tempToken = fromToken;
     const tempChain = fromTokenChain;
@@ -251,7 +267,8 @@ export function SwapFlow() {
     setAmount(value);
     // Update percentage based on amount
     if (fromToken && value && parseFloat(value) > 0) {
-      const newPercentage = (parseFloat(value) / fromToken.amount) * 100;
+      const balance = getRealBalance(fromToken);
+      const newPercentage = balance > 0 ? (parseFloat(value) / balance) * 100 : 0;
       setPercentage(Math.min(100, Math.max(0, Math.round(newPercentage))));
     } else {
       setPercentage(0);
@@ -264,7 +281,7 @@ export function SwapFlow() {
   const handlePercentageChange = (value: number) => {
     setPercentage(value);
     if (fromToken && value > 0) {
-      const newAmount = (fromToken.amount * value) / 100;
+      const newAmount = (realFromTokenBalance * value) / 100;
       setAmount(newAmount.toFixed(6));
 
       if (toToken) {
@@ -368,7 +385,7 @@ export function SwapFlow() {
       setError("Please enter a valid amount");
       return;
     }
-    if (parseFloat(amount) > fromToken.amount) {
+    if (parseFloat(amount) > realFromTokenBalance) {
       setError("Insufficient balance");
       return;
     }
@@ -473,8 +490,38 @@ export function SwapFlow() {
         toToken.evmChain &&
         fromToken.evmChain !== toToken.evmChain));
 
-  const gasEstimate = isCrossChain ? "~$15-25" : "~$5-10";
+  // Use real gas data from quote if available
+  const formatGasEstimate = () => {
+    if (quote?.gas && quote?.gasPrice) {
+      const gasInGwei = BigInt(quote.gasPrice) / BigInt(1e9);
+      const gasCost = (Number(quote.gas) * Number(gasInGwei)) / 1e9;
+      return `~${gasCost.toFixed(4)} ETH (${quote.gas} gas)`;
+    }
+    return isCrossChain ? "~$15-25" : "~$5-10";
+  };
+
+  const gasEstimate = formatGasEstimate();
   const timeEstimate = isCrossChain ? "5-15 min" : "1-3 min";
+
+  // Get route from quote protocols
+  const getRoute = () => {
+    if (quote?.protocols && Array.isArray(quote.protocols) && quote.protocols.length > 0) {
+      // Extract protocol names from the nested structure
+      const protocolNames = new Set<string>();
+      const extractProtocols = (protocols: any[]): void => {
+        protocols.forEach((p: any) => {
+          if (p.name) protocolNames.add(p.name);
+          if (Array.isArray(p)) extractProtocols(p);
+          if (p.subProtocols) extractProtocols(p.subProtocols);
+        });
+      };
+      extractProtocols(quote.protocols);
+      if (protocolNames.size > 0) {
+        return Array.from(protocolNames).join(", ");
+      }
+    }
+    return isCrossChain ? "Rubic/Jupiter" : "Uniswap/Curve";
+  };
 
   const renderHeader = (title: string) => (
     <div className="mb-6 flex items-center justify-between">
@@ -652,7 +699,7 @@ export function SwapFlow() {
               { label: "Estimated Time", value: timeEstimate },
               {
                 label: "Route",
-                value: isCrossChain ? "Rubic/Jupiter" : "Uniswap/Curve",
+                value: getRoute(),
               },
               {
                 label: "Slippage Tolerance",
@@ -723,7 +770,7 @@ export function SwapFlow() {
             <span className="text-sm text-[color:var(--color-depth)]/60">From</span>
             {fromToken && (
               <span className="text-sm text-[color:var(--color-depth)]/60">
-                Balance: {fromToken.amount.toLocaleString(undefined, {
+                Balance: {realFromTokenBalance.toLocaleString(undefined, {
                   maximumFractionDigits: 6,
                 })}
               </span>

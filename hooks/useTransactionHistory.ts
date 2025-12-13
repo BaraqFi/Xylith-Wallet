@@ -8,7 +8,7 @@ interface HistoryItem {
     id: string; // internal id?
     hash: string;
     blockNumber: number;
-    time: number; // string or number? usually timestamp
+    time: number | string; // timestamp as string or number
     status: "mined" | "pending" | "failed"; // match API
     logIndex?: number;
     eventIndex?: number;
@@ -75,14 +75,13 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                 });
 
                 const res = await fetch(`/api/1inch/history?${params.toString()}`);
+                const data = await res.json();
+                
                 if (!res.ok) {
                     // It might fail if wallet has NO history (404?) or other error.
                     // 1inch returns 200 with items usually.
-                    const data = await res.json();
                     throw new Error(data.error || "Failed to fetch history");
                 }
-
-                const data = await res.json();
                 const items: any[] = data.items || [];
 
                 // Map 1inch History Items to WalletTransaction

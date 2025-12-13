@@ -109,7 +109,7 @@ export function HistoryScreen() {
                 className="flex w-full items-center justify-between p-4 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
               >
                 <div className="flex items-center gap-4">
-                  {tx.direction === "swap" ? (
+                  {directionIcons[tx.direction] ? (
                     <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${directionColors[tx.direction].bg}`}>
                       {directionIcons[tx.direction]}
                     </div>

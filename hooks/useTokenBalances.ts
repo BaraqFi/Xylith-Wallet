@@ -110,10 +110,10 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                             }
                             return { ...token, rawBalance: bal as bigint, decimals };
                         }
-                        return { ...token, rawBalance: BigInt(0), decimals: nativeDecimals };
+                        return { ...token, rawBalance: BigInt(0), decimals: token.decimals ?? 18 };
                     } catch (e) {
                         console.warn(`Failed to fetch balance for ${token.symbol}`, e);
-                        return { ...token, rawBalance: BigInt(0), decimals: nativeDecimals };
+                        return { ...token, rawBalance: BigInt(0), decimals: token.decimals ?? 18 };
                     }
                 });
 

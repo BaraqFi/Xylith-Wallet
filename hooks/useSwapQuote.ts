@@ -67,9 +67,17 @@ export function useSwapQuote({
                     return;
                 }
 
+                // Convert native token address (0x0000...) to 1inch format (0xeeee...)
+                const normalizeTokenAddress = (addr?: string) => {
+                    if (!addr || addr.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+                        return "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+                    }
+                    return addr;
+                };
+
                 const params: OneInchQuoteParams = {
-                    src: fromToken.contractAddress || fromToken.address, // Handle both data shapes
-                    dst: toToken.contractAddress || toToken.address,
+                    src: normalizeTokenAddress(fromToken.contractAddress || fromToken.address),
+                    dst: normalizeTokenAddress(toToken.contractAddress || toToken.address),
                     amount: atomicAmount, // Convert to base units safely
                     chainId: chainId,
                 };
@@ -118,9 +126,17 @@ export function useSwapQuote({
                 throw new Error("Invalid amount");
             }
 
+            // Convert native token address (0x0000...) to 1inch format (0xeeee...)
+            const normalizeTokenAddress = (addr?: string) => {
+                if (!addr || addr.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+                    return "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+                }
+                return addr;
+            };
+
             const params: OneInchSwapParams = {
-                src: fromToken.contractAddress || fromToken.address,
-                dst: toToken.contractAddress || toToken.address,
+                src: normalizeTokenAddress(fromToken.contractAddress || fromToken.address),
+                dst: normalizeTokenAddress(toToken.contractAddress || toToken.address),
                 amount: atomicAmount,
                 chainId: chainId,
                 from: address,
