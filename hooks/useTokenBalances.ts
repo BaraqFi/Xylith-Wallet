@@ -1,8 +1,20 @@
-import { useState, useEffect } from "react";
-import { createPublicClient, http, formatUnits, parseAbiItem, Address } from "viem";
-import { mainnet, sepolia, arbitrum, optimism, polygon, base, bsc } from "viem/chains";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { createPublicClient, http, formatUnits, Address } from "viem";
+import { mainnet, arbitrum, optimism, polygon, base, bsc } from "viem/chains";
 import { usePrivy } from "@privy-io/react-auth";
-import { TokenBalance, tokens as defaultTokens, Chain, EVMChain } from "@/components/wallet/data";
+import {
+  TokenBalance,
+  defaultEvmTokens,
+  Chain,
+  EVMChain,
+} from "@/components/wallet/data";
+import { 
+    getTokenBalancesFromAlchemy, 
+    getNativeBalanceFromAlchemy,
+    getTokenMetadataFromAlchemy 
+} from "@/lib/services/tokenIndexer";
+import { getAlchemyRpcUrl } from "@/lib/services/alchemyClient";
+import { getCachedData, setCachedData } from "@/lib/utils/cache";
 
 // Map our internal chain IDs to Viem chains
 const chainMap: Record<EVMChain, any> = {
@@ -25,6 +37,19 @@ const localFork = {
     },
 } as const;
 
+// Native token addresses for each chain
+const NATIVE_TOKEN_ADDRESSES: Record<EVMChain, string> = {
+    ethereum: "0x0000000000000000000000000000000000000000",
+    base: "0x4200000000000000000000000000000000000006",
+    arbitrum: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+    optimism: "0x4200000000000000000000000000000000000006",
+    polygon: "0x0000000000000000000000000000000000001010",
+    bsc: "0x0000000000000000000000000000000000000000",
+};
+
+// Cache TTL: 2 minutes for balances (they can change frequently)
+const BALANCE_CACHE_TTL = 2 * 60 * 1000;
+
 export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) {
     const { user } = usePrivy();
     // Find the embedded wallet address
@@ -34,32 +59,61 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
     const [balances, setBalances] = useState<TokenBalance[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    
+    // Use ref to track if we're currently fetching to prevent duplicate requests
+    const fetchingRef = useRef(false);
+    // Use ref to track last fetch time per address+chain combo
+    const lastFetchRef = useRef<{ address: string; chain: string; timestamp: number } | null>(null);
 
     useEffect(() => {
         async function fetchBalances() {
-            if (!address || activeChain !== "EVM") return;
+            if (!address || activeChain !== "EVM") {
+                setBalances([]);
+                return;
+            }
 
-            setIsLoading(true);
+            // Check cache first
+            const cacheKey = `xylith_cache_balances_${address.toLowerCase()}_${currentEvmChain}`;
+            const cached = getCachedData<TokenBalance[]>(cacheKey, BALANCE_CACHE_TTL);
+            
+            if (cached) {
+                setBalances(cached);
+                setIsLoading(false);
+                // Still fetch in background to update cache, but don't show loading
+                // Only if we haven't fetched recently (avoid duplicate requests)
+                const lastFetch = lastFetchRef.current;
+                const shouldFetch = !lastFetch || 
+                    lastFetch.address !== address.toLowerCase() ||
+                    lastFetch.chain !== currentEvmChain ||
+                    Date.now() - lastFetch.timestamp > BALANCE_CACHE_TTL;
+                
+                if (!shouldFetch || fetchingRef.current) {
+                    return;
+                }
+            } else {
+                setIsLoading(true);
+            }
+
+            // Prevent duplicate concurrent requests
+            if (fetchingRef.current) {
+                return;
+            }
+            fetchingRef.current = true;
             setError(null);
 
             try {
                 // 1. Determine Chain and Client
-                // Check if we assume we are on Local Fork (for dev) or Real Chain
-                // Ideally checking `window.ethereum.chainId` is best, but here we drive from UI state or config
-                // For now, if currentEvmChain is 'ethereum' and we are in dev mode, maybe use local fork?
-                // Let's stick to the requested architecture: Use RPC.
-
-                // Note: For this demo, I will hardcode utilizing the Local Fork RPC if chain is 'ethereum' and environment is dev, 
-                // OR simply rely on the user selecting the chain. 
-                // As per request "Test on Local Fork", we will assume 'ethereum' in the UI maps to Local Fork URL if env var set?
-                // Actually, let's just use the real chain RPCs for non-local, and Local Fork for local.
-
-                let client;
-                let chainIdForPrice = 1; // Default to ETH mainnet for prices
                 let targetChain: any;
+                let useAlchemy = true;
 
-                if (currentEvmChain === 'ethereum' && process.env.NODE_ENV === 'development') {
+                // Only use local fork if explicitly enabled via environment variable
+                const useLocalFork = process.env.NEXT_PUBLIC_USE_LOCAL_FORK === 'true' && 
+                                     currentEvmChain === 'ethereum' && 
+                                     process.env.NODE_ENV === 'development';
+
+                if (useLocalFork) {
                     targetChain = localFork;
+                    useAlchemy = false; // Use local fork RPC for dev
                 } else {
                     targetChain = chainMap[currentEvmChain];
                 }
@@ -68,124 +122,229 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                     throw new Error(`Unsupported EVM chain: ${currentEvmChain}`);
                 }
 
-                client = createPublicClient({
-                    chain: targetChain,
-                    transport: http()
-                });
-                chainIdForPrice = targetChain.id ?? 1;
                 const nativeDecimals = targetChain.nativeCurrency?.decimals ?? 18;
+                const nativeTokenAddress = NATIVE_TOKEN_ADDRESSES[currentEvmChain];
 
-                // 2. Filter tokens for this chain
-                const chainTokens = defaultTokens.filter(t => t.chain === "EVM" && t.evmChain === currentEvmChain);
+                // 2. Get default token list for this chain
+                const defaultChainTokens = defaultEvmTokens.filter(
+                    t => t.evmChain === currentEvmChain
+                );
 
-                // 3. Fetch Balances (Multicall would be better, but Promise.all is okay for small lists)
-                const balancePromises = chainTokens.map(async (token) => {
+                // 3. Fetch balances using Alchemy indexer API (more efficient)
+                let alchemyBalances: Map<string, string> = new Map();
+                let nativeBalanceHex = "0x0";
+
+                // Always try Alchemy via server-side API (no client-side API key check needed)
+                if (useAlchemy) {
                     try {
-                        if (token.symbol === "ETH" || token.symbol === "BNB" || token.symbol === "MATIC") {
-                            // Native Currency logic (naive check by symbol, ideally use address/type)
-                            const bal = await client.getBalance({ address });
-                            return { ...token, rawBalance: bal, decimals: nativeDecimals };
-                        } else if (token.contractAddress && token.contractAddress !== "0x0000000000000000000000000000000000000000") {
-                            // ERC20
-                            const bal = await client.readContract({
-                                address: token.contractAddress as Address,
-                                abi: [parseAbiItem('function balanceOf(address) view returns (uint256)')],
-                                functionName: 'balanceOf',
-                                args: [address]
-                            });
-                            let decimals = token.decimals ?? 18;
-                            try {
-                                const tokenDecimals = await client.readContract({
-                                    address: token.contractAddress as Address,
-                                    abi: [parseAbiItem('function decimals() view returns (uint8)')],
-                                    functionName: 'decimals'
-                                });
-                                if (typeof tokenDecimals === "number") {
-                                    decimals = tokenDecimals;
-                                } else if (typeof tokenDecimals === "bigint") {
-                                    decimals = Number(tokenDecimals);
-                                }
-                            } catch (e) {
-                                console.warn(`Failed to fetch decimals for ${token.symbol}, falling back to ${decimals}`, e);
+                        // Fetch all token balances in one call
+                        const tokenBalances = await getTokenBalancesFromAlchemy(address, currentEvmChain);
+                        tokenBalances.forEach((token) => {
+                            if (token.contractAddress) {
+                                alchemyBalances.set(
+                                    token.contractAddress.toLowerCase(),
+                                    token.tokenBalance
+                                );
                             }
-                            return { ...token, rawBalance: bal as bigint, decimals };
-                        }
-                        return { ...token, rawBalance: BigInt(0), decimals: token.decimals ?? 18 };
-                    } catch (e) {
-                        console.warn(`Failed to fetch balance for ${token.symbol}`, e);
-                        return { ...token, rawBalance: BigInt(0), decimals: token.decimals ?? 18 };
-                    }
-                });
-
-                const tokensWithRawBalance = await Promise.all(balancePromises);
-
-                // 4. Fetch Prices from 1inch Proxy
-                // We only need prices for the tokens we have addresses for
-                const tokenAddresses = tokensWithRawBalance
-                    .filter(t => t.contractAddress && t.contractAddress !== "0x0000000000000000000000000000000000000000")
-                    .map(t => t.contractAddress);
-
-                let priceMap: Record<string, number> = {};
-
-                if (tokenAddresses.length > 0) {
-                    try {
-                        const priceRes = await fetch(`/api/1inch/price?chainId=${chainIdForPrice}`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ tokens: tokenAddresses }),
                         });
-                        if (priceRes.ok) {
-                            const prices = await priceRes.json();
-                            // 1inch returns prices in Wei (18 decimals usually) relative to Native Token? 
-                            // No, Spot Price API usually returns price in Native currency of the chain, or USD if configured?
-                            // The docs say "All prices are presented in the native currency WEI". 
-                            // This means we need the Native Token Price in USD to convert everything.
-                            // Or use a library that handles this. 1inch Price API acts as an Oracle.
-                            // For simplicity in this MVP, let's assume we get the raw values and need to normalize.
 
-                            // Actually, `price/v1.1/1` returns values like {"0x...": "123456..."}.
-                            // We need to know the price of ETH (Native) to convert to USD.
-                            // 1inch has `/currencies` or we can just fetch ETH-USDC price.
-
-                            // Complex! For now, let's rely on data.ts prices OR just map raw response if sensible. 
-                            // To keep it simple for the USER REQUEST ("Real Data"), let's stick to creating the infrastructure.
-                            // Real conversion logic is non-trivial without a dedicated Price Service.
-                            // I'll skip complex price conversion for now and use hardcoded prices from data.ts * current balance.
-                            // But I will LOG the real prices to console to prove it works :)
-                            console.log("Real 1inch Prices:", prices);
-                        }
-                    } catch (err) {
-                        console.error("Price fetch failed", err);
+                        // Fetch native balance
+                        nativeBalanceHex = await getNativeBalanceFromAlchemy(address, currentEvmChain);
+                    } catch (alchemyError) {
+                        console.warn("Alchemy API failed, falling back to RPC:", alchemyError);
+                        useAlchemy = false;
                     }
                 }
 
-                // 5. Format
-                const formattedTokens: TokenBalance[] = tokensWithRawBalance.map(t => {
-                    const decimals = t.decimals ?? nativeDecimals;
-                    const safeRaw = typeof t.rawBalance === "bigint" ? t.rawBalance : BigInt(0);
-                    const amount = parseFloat(formatUnits(safeRaw, decimals));
-                    // Use hardcoded price from data.ts for now as fallback
-                    const price = t.pricePerToken || 0;
-                    return {
-                        ...t,
-                        decimals,
-                        amount,
-                        usdValue: amount * price
-                    };
+                // 4. Create client for fallback or metadata fetching
+                let rpcUrl: string | undefined;
+                
+                // Use public RPC endpoints - Alchemy calls go through API routes
+                // Don't expose API keys in client-side code
+                
+                // Only use local fork if explicitly enabled and available
+                if (!useAlchemy && useLocalFork) {
+                    rpcUrl = 'http://127.0.0.1:8545';
+                }
+
+                // Use public RPC for fallback calls
+                // Alchemy-specific calls already go through server-side API routes
+                const client = createPublicClient({
+                    chain: targetChain,
+                    transport: http() // Use default public RPC
                 });
 
-                setBalances(formattedTokens);
+                // 5. Merge default tokens with Alchemy results
+                const mergedTokens: TokenBalance[] = await Promise.all(
+                    defaultChainTokens.map(async (defaultToken) => {
+                        const isNative = 
+                            defaultToken.contractAddress === nativeTokenAddress ||
+                            defaultToken.contractAddress === "0x0000000000000000000000000000000000000000";
+
+                        let rawBalance: bigint;
+                        let decimals = defaultToken.decimals ?? nativeDecimals;
+
+                        if (isNative) {
+                            // Native token balance
+                            if (useAlchemy && nativeBalanceHex) {
+                                rawBalance = BigInt(nativeBalanceHex);
+                            } else {
+                                try {
+                                    rawBalance = await client.getBalance({ address });
+                                } catch (e) {
+                                    console.warn(`Failed to fetch native balance for ${currentEvmChain}:`, e);
+                                    rawBalance = BigInt(0);
+                                }
+                            }
+                        } else {
+                            // ERC20 token balance
+                            const contractAddr = defaultToken.contractAddress?.toLowerCase();
+                            if (useAlchemy && contractAddr && alchemyBalances.has(contractAddr)) {
+                                rawBalance = BigInt(alchemyBalances.get(contractAddr)!);
+                            } else if (defaultToken.contractAddress) {
+                                // Fallback to RPC call
+                                try {
+                                    rawBalance = await client.readContract({
+                                        address: defaultToken.contractAddress as Address,
+                                        abi: [{ 
+                                            inputs: [{ name: 'account', type: 'address' }],
+                                            name: 'balanceOf',
+                                            outputs: [{ name: '', type: 'uint256' }],
+                                            stateMutability: 'view',
+                                            type: 'function'
+                                        }],
+                                        functionName: 'balanceOf',
+                                        args: [address]
+                                    }) as bigint;
+                                } catch (e) {
+                                    console.warn(`Failed to fetch balance for ${defaultToken.symbol}:`, e);
+                                    rawBalance = BigInt(0);
+                                }
+                            } else {
+                                rawBalance = BigInt(0);
+                            }
+
+                            // Fetch decimals if not in default token
+                            if (!defaultToken.decimals && defaultToken.contractAddress) {
+                                try {
+                                    if (useAlchemy) {
+                                        const metadata = await getTokenMetadataFromAlchemy(
+                                            defaultToken.contractAddress as Address,
+                                            currentEvmChain
+                                        );
+                                        if (metadata?.decimals) {
+                                            decimals = metadata.decimals;
+                                        }
+                                    } else {
+                                        const tokenDecimals = await client.readContract({
+                                            address: defaultToken.contractAddress as Address,
+                                            abi: [{
+                                                inputs: [],
+                                                name: 'decimals',
+                                                outputs: [{ name: '', type: 'uint8' }],
+                                                stateMutability: 'view',
+                                                type: 'function'
+                                            }],
+                                            functionName: 'decimals'
+                                        });
+                                        if (typeof tokenDecimals === "number") {
+                                            decimals = tokenDecimals;
+                                        } else if (typeof tokenDecimals === "bigint") {
+                                            decimals = Number(tokenDecimals);
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.warn(`Failed to fetch decimals for ${defaultToken.symbol}`, e);
+                                }
+                            }
+                        }
+
+                        const amount = parseFloat(formatUnits(rawBalance, decimals));
+                        const price = defaultToken.pricePerToken || 0;
+                        const usdValue = amount * price;
+
+                        return {
+                            ...defaultToken,
+                            amount,
+                            usdValue,
+                            decimals,
+                            // Update balance from fetched data
+                        };
+                    })
+                );
+
+                // 6. Add any new tokens found by Alchemy that aren't in default list
+                if (useAlchemy) {
+                    for (const [contractAddr, balanceHex] of alchemyBalances.entries()) {
+                        const balance = BigInt(balanceHex);
+                        if (balance === BigInt(0)) continue;
+
+                        // Check if token already exists in merged list
+                        const exists = mergedTokens.some(
+                            t => t.contractAddress?.toLowerCase() === contractAddr
+                        );
+
+                        if (!exists) {
+                            // Fetch metadata for new token
+                            const metadata = await getTokenMetadataFromAlchemy(
+                                contractAddr as Address,
+                                currentEvmChain
+                            );
+
+                            if (metadata) {
+                                const decimals = metadata.decimals ?? 18;
+                                const amount = parseFloat(formatUnits(balance, decimals));
+                                
+                                mergedTokens.push({
+                                    symbol: metadata.symbol || "UNKNOWN",
+                                    name: metadata.name || "Unknown Token",
+                                    chain: "EVM",
+                                    evmChain: currentEvmChain,
+                                    amount,
+                                    usdValue: 0, // Price will be fetched separately if needed
+                                    contractAddress: contractAddr,
+                                    decimals,
+                                    logo: metadata.logo,
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // 7. Sort tokens: non-zero by USD value (desc), zero balances at end
+                const sortedTokens = [
+                    ...mergedTokens
+                        .filter(t => t.usdValue > 0)
+                        .sort((a, b) => b.usdValue - a.usdValue),
+                    ...mergedTokens.filter(t => t.usdValue === 0)
+                ];
+
+                setBalances(sortedTokens);
+                
+                // Cache the result
+                setCachedData(cacheKey, sortedTokens);
+                lastFetchRef.current = {
+                    address: address.toLowerCase(),
+                    chain: currentEvmChain,
+                    timestamp: Date.now(),
+                };
 
             } catch (err) {
                 console.error("Error in useTokenBalances:", err);
                 setError("Failed to load balances");
+                // On error, try to use cached data if available
+                const cached = getCachedData<TokenBalance[]>(cacheKey, BALANCE_CACHE_TTL * 2); // Use stale cache on error
+                if (cached) {
+                    setBalances(cached);
+                }
             } finally {
                 setIsLoading(false);
+                fetchingRef.current = false;
             }
         }
 
         fetchBalances();
-    }, [address, activeChain, currentEvmChain, user]); // Re-run when chain/address changes
+    }, [address, activeChain, currentEvmChain]); // Removed 'user' from dependencies - only depend on address
 
     return { balances, isLoading, error };
 }

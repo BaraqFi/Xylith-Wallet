@@ -1,30 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { WalletTransaction, Chain, EVMChain, WalletDirection } from "@/components/wallet/data";
 import { formatUnits } from "viem";
+import { getCachedData, setCachedData } from "@/lib/utils/cache";
 
-// Types from 1inch History API (simplified)
-interface HistoryItem {
-    id: string; // internal id?
-    hash: string;
-    blockNumber: number;
-    time: number | string; // timestamp as string or number
-    status: "mined" | "pending" | "failed"; // match API
-    logIndex?: number;
-    eventIndex?: number;
-    details: {
-        type: string; // "swap", "approve", "transfer"
-        status: string;
-        token?: string;
-        amount?: string;
-        to?: string;
-        from?: string;
-        // ... complex structure depending on type
-    };
-    // 1inch v2 structure is quite complex.
-    // Let's assume we map it to our internal WalletTransaction type.
-    // For MVP, we might just display what we get.
-}
+// Cache TTL: 5 minutes for transaction history (less frequent changes)
+const HISTORY_CACHE_TTL = 5 * 60 * 1000;
+
+// Note: Now using Alchemy's getAssetTransfers API instead of 1inch History API
+// 1inch is only used for swaps, not transaction history
 
 export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMChain) {
     const { user } = usePrivy();
@@ -33,6 +17,11 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
     const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    
+    // Use ref to track if we're currently fetching to prevent duplicate requests
+    const fetchingRef = useRef(false);
+    // Use ref to track last fetch time per address+chain combo
+    const lastFetchRef = useRef<{ address: string; chain: string; timestamp: number } | null>(null);
 
     useEffect(() => {
         async function fetchHistory() {
@@ -48,7 +37,33 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                 return;
             }
 
-            setIsLoading(true);
+            // Check cache first
+            const cacheKey = `xylith_cache_history_${address.toLowerCase()}_${currentEvmChain}`;
+            const cached = getCachedData<WalletTransaction[]>(cacheKey, HISTORY_CACHE_TTL);
+            
+            if (cached) {
+                setTransactions(cached);
+                setIsLoading(false);
+                // Still fetch in background to update cache, but don't show loading
+                // Only if we haven't fetched recently (avoid duplicate requests)
+                const lastFetch = lastFetchRef.current;
+                const shouldFetch = !lastFetch || 
+                    lastFetch.address !== address.toLowerCase() ||
+                    lastFetch.chain !== currentEvmChain ||
+                    Date.now() - lastFetch.timestamp > HISTORY_CACHE_TTL;
+                
+                if (!shouldFetch || fetchingRef.current) {
+                    return;
+                }
+            } else {
+                setIsLoading(true);
+            }
+
+            // Prevent duplicate concurrent requests
+            if (fetchingRef.current) {
+                return;
+            }
+            fetchingRef.current = true;
             setError(null);
 
             // Map chain to ID
@@ -74,88 +89,91 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                     limit: "20"
                 });
 
-                const res = await fetch(`/api/1inch/history?${params.toString()}`);
+                // Use Alchemy-based transaction history API (more reliable than 1inch)
+                const res = await fetch(`/api/transactions/history?${params.toString()}`);
                 const data = await res.json();
                 
                 if (!res.ok) {
-                    // It might fail if wallet has NO history (404?) or other error.
-                    // 1inch returns 200 with items usually.
+                    // Handle errors gracefully
+                    if (res.status === 404 || res.status === 500) {
+                        // If Alchemy API key not configured or other error, return empty
+                        console.warn("Transaction history unavailable:", data.error || "Unknown error");
+                        setTransactions([]);
+                        setCachedData(cacheKey, []);
+                        lastFetchRef.current = {
+                            address: address.toLowerCase(),
+                            chain: currentEvmChain,
+                            timestamp: Date.now(),
+                        };
+                        return;
+                    }
+                    // For other errors, throw
                     throw new Error(data.error || "Failed to fetch history");
                 }
                 const items: any[] = data.items || [];
 
-                // Map 1inch History Items to WalletTransaction
-                // This mapping is non-trivial because 1inch History API returns "events" (like 'swap', 'transfer')
-                // We need to normalize this to our UI model.
-
-                // TODO: Normalize 1inch history payload once full schema is known (token metadata, amount parsing, direction), and localize fallbacks.
-                const mapped: WalletTransaction[] = items.map((item: HistoryItem, idx: number) => {
-                    const details = item.details || {};
+                // Map Alchemy Transaction History Items to WalletTransaction
+                // Alchemy's getAssetTransfers returns transfers with metadata
+                // Map Alchemy transaction items to WalletTransaction format
+                // Alchemy returns transfers with: hash, from, to, value, asset, category, timestamp, blockNum
+                const mapped: WalletTransaction[] = items.map((item: any, idx: number) => {
                     const normalize = (addr?: string) => (addr || "").toLowerCase();
                     const normalizedUser = normalize(address);
-                    const fromAddr = normalize(details.from);
-                    const toAddr = normalize(details.to);
+                    const fromAddr = normalize(item.from);
+                    const toAddr = normalize(item.to);
 
-                    const normalizedType = typeof details.type === "string" ? details.type.toLowerCase() : "";
-                    const isSwapLike =
-                        normalizedType === "swap" ||
-                        normalizedType === "bridge" ||
-                        Array.isArray((details as any).operations);
+                    // Determine direction based on address
+                    const direction: WalletDirection = 
+                        toAddr === normalizedUser
+                            ? "in"
+                            : fromAddr === normalizedUser
+                                ? "out"
+                                : "unknown";
 
-                    const direction: WalletDirection = isSwapLike
-                        ? "swap"
-                        : toAddr && toAddr === normalizedUser
-                          ? "in"
-                          : fromAddr && fromAddr === normalizedUser
-                            ? "out"
-                            : "unknown";
+                    // Determine action type from category
+                    const category = item.category || "external";
+                    const action = direction === "in" ? "Receive" : "Send";
 
-                    const parseTimestamp = (timeValue: any) => {
-                        if (typeof timeValue === "string") {
-                            const parsed = Date.parse(timeValue);
-                            if (!Number.isNaN(parsed)) return parsed;
-                            const numeric = Number(timeValue);
-                            if (!Number.isNaN(numeric)) {
-                                return numeric > 1e12 ? numeric : numeric * 1000;
-                            }
-                        }
-                        if (typeof timeValue === "number") {
-                            const isMs = Math.abs(timeValue) > 1e12;
-                            return isMs ? timeValue : timeValue * 1000;
-                        }
-                        return Date.now();
-                    };
-
-                    const timestampMs = parseTimestamp((item as any).time ?? (details as any).timestamp);
+                    // Parse timestamp (Alchemy returns milliseconds)
+                    const timestampMs = item.timestamp || Date.now();
                     const timestampLabel = new Date(timestampMs).toLocaleString();
 
-                    const tokenSymbol =
-                        (details as any).tokenSymbol ||
-                        (details as any).symbol ||
-                        (details as any).asset ||
-                        (details as any).token?.symbol ||
-                        "Unavailable";
-                    const tokenAmountRaw =
-                        (details as any).tokenAmount ??
-                        (details as any).amount ??
-                        (details as any).value ??
-                        (details as any).token?.amount;
-                    const tokenAmount = tokenAmountRaw !== undefined ? String(tokenAmountRaw) : "Unavailable";
+                    // Parse value - Alchemy returns hex string for value
+                    const valueHex = item.value || "0x0";
+                    const tokenSymbol = item.asset || (category === "external" ? "ETH" : "TOKEN");
+                    
+                    // Format amount
+                    let tokenAmount = "0";
+                    let amountLabel = "0";
+                    
+                    try {
+                        if (category === "external") {
+                            // Native token transfer - value is in wei (hex)
+                            const valueBigInt = BigInt(valueHex);
+                            tokenAmount = formatUnits(valueBigInt, 18).toString();
+                            amountLabel = `${parseFloat(tokenAmount).toFixed(6)} ${tokenSymbol}`;
+                        } else {
+                            // ERC20/ERC721/ERC1155 transfer
+                            // For ERC20, we'd need decimals from token metadata
+                            // For now, show raw value
+                            const valueBigInt = BigInt(valueHex);
+                            tokenAmount = valueBigInt.toString();
+                            amountLabel = `${tokenAmount} ${tokenSymbol}`;
+                        }
+                    } catch (e) {
+                        console.warn("Error parsing transaction value:", e, item);
+                        tokenAmount = valueHex;
+                        amountLabel = `${valueHex} ${tokenSymbol}`;
+                    }
 
-                    const counterparty =
-                        toAddr && toAddr === normalizedUser
-                            ? details.from || "Unavailable"
-                            : details.to || details.from || "Unavailable";
-                    const amountLabel =
-                        tokenAmount !== "Unavailable"
-                            ? `${tokenAmount} ${tokenSymbol !== "Unavailable" ? tokenSymbol : ""}`.trim()
-                            : "Unavailable";
-
-                    const eventSuffix = item.logIndex ?? item.eventIndex ?? idx;
+                    const counterparty = 
+                        direction === "in" 
+                            ? item.from || "Unavailable"
+                            : item.to || "Unavailable";
 
                     return {
-                        id: `${item.hash}_${String(eventSuffix)}`, // stable per event
-                        action: mapTypeToAction(details.type),
+                        id: `${item.hash}_${idx}`, // stable per transfer
+                        action: action as "Send" | "Receive" | "Swap",
                         token: tokenSymbol,
                         counterparty,
                         amountLabel,
@@ -163,34 +181,47 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                         direction,
                         chain: "EVM",
                         evmChain: currentEvmChain,
-                        status: item.status === "mined" ? "confirmed" : item.status === "pending" ? "pending" : "failed",
+                        status: "confirmed", // Alchemy returns confirmed transactions
                         txHash: item.hash,
                         timestamp: timestampMs,
-                        fromAddress: details.from || "",
-                        toAddress: details.to || "",
+                        fromAddress: item.from || "",
+                        toAddress: item.to || "",
                         value: tokenAmount,
                         tokenSymbol,
                         tokenAmount,
                     } as WalletTransaction;
                 });
 
-                // Since mapping 1inch V2 history perfectly to our specific UI "WalletTransaction" type without seeing the exact response payload is risky, 
-                // I will implement a "Safe Fallback" which is:
-                // Use the raw data to populate essential fields, and leave others generic.
-                // For the sake of this task ("Remove Mocks"), fetching *anything* real is better than hardcoded.
-                // However, if the list is empty (common for test wallets), we might look empty.
-
-                // BETTER APPROACH FOR THIS TASK:
-                // 1inch History API response is complex. 
-                // Let's just create a simplified mapped list.
-
                 setTransactions(mapped);
+                
+                // Cache the result
+                setCachedData(cacheKey, mapped);
+                lastFetchRef.current = {
+                    address: address.toLowerCase(),
+                    chain: currentEvmChain,
+                    timestamp: Date.now(),
+                };
 
-            } catch (err) {
+            } catch (err: any) {
                 console.error("History Fetch Error:", err);
-                setError("Failed to load history");
+                
+                // Handle 404 gracefully - it might just mean no history exists
+                if (err?.message?.includes("404") || err?.message?.includes("Not Found")) {
+                    setError(null); // Don't show error for 404, just empty list
+                    setTransactions([]);
+                    // Cache empty result to avoid repeated 404s
+                    setCachedData(cacheKey, []);
+                } else {
+                    setError("Failed to load history");
+                    // On error, try to use cached data if available
+                    const cached = getCachedData<WalletTransaction[]>(cacheKey, HISTORY_CACHE_TTL * 2); // Use stale cache on error
+                    if (cached) {
+                        setTransactions(cached);
+                    }
+                }
             } finally {
                 setIsLoading(false);
+                fetchingRef.current = false;
             }
         }
 

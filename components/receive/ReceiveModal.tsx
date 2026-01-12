@@ -106,7 +106,6 @@ export function ReceiveScreen() {
 
   const handleChainChange = (chain: Chain) => {
     setSelectedChain(chain);
-    setActiveChain(chain);
   };
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);

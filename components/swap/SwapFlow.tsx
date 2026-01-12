@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useApp } from "../app/AppContext";
-import { manualWalletState, TokenBalance } from "../wallet/data";
+import { TokenBalance } from "../wallet/data";
 import { ChainLogo, TokenLogo } from "../wallet/ManualWallet";
 import { TokenSelectModal } from "../wallet/TokenSelectModal";
 import { Button } from "@/components/ui/button";
@@ -34,6 +34,7 @@ import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { useSwapQuote } from "@/hooks/useSwapQuote";
 import { useAllowance } from "@/hooks/useAllowance";
 import { OneInchClient } from "@/lib/1inch/client";
+import { useSwapTokenList } from "@/hooks/useSwapTokenList";
 
 // OneInch V6 Router
 const AGGREGATION_ROUTER_V6 = "0x111111125421ca6dc452d289314280a0f8842a65";
@@ -160,7 +161,18 @@ export function SwapFlow() {
   const activeChainForBalances = fromToken ? fromToken.chain : "EVM";
   const activeEvmChainForBalances = fromToken && fromToken.evmChain ? fromToken.evmChain : "ethereum";
 
-  const { balances: tokens } = useTokenBalances(activeChainForBalances, activeEvmChainForBalances);
+  const { balances: userTokenBalances } = useTokenBalances(activeChainForBalances, activeEvmChainForBalances);
+  
+  // Get comprehensive token list from 1inch (only for EVM chains)
+  const { tokens: swapTokenList, isLoading: isLoadingTokenList } = useSwapTokenList(
+    activeEvmChainForBalances,
+    userTokenBalances
+  );
+  
+  // Use swap token list if available, otherwise fall back to user balances
+  const tokens = activeChainForBalances === "EVM" && swapTokenList.length > 0 
+    ? swapTokenList 
+    : userTokenBalances;
 
   // Quote Hook
   // We need to pass the chainId as a number. 
@@ -212,7 +224,10 @@ export function SwapFlow() {
   }, [quote, toToken, isQuoteLoading]);
 
   // Replace manualWalletState.tokens with real 'tokens'
-  const groupedTokens = tokens.reduce((acc, token) => {
+  // Filter out zero-value tokens for swap (only show tokens with balance)
+  const tokensWithBalance = tokens.filter(t => t.amount > 0 || t.usdValue > 0);
+  
+  const groupedTokens = tokensWithBalance.reduce((acc, token) => {
     const key = token.symbol;
     if (!acc[key]) {
       acc[key] = [];
@@ -962,19 +977,21 @@ export function SwapFlow() {
       {/* Token Select Modals */}
       {showFromTokenModal && (
         <TokenSelectModal
-          tokens={manualWalletState.tokens}
+          tokens={tokensWithBalance}
           onSelect={handleFromTokenSelect}
           onClose={() => setShowFromTokenModal(false)}
           excludeSymbol={toToken?.symbol}
+          chain={activeEvmChainForBalances}
         />
       )}
 
       {showToTokenModal && (
         <TokenSelectModal
-          tokens={manualWalletState.tokens}
+          tokens={tokens}
           onSelect={handleToTokenSelect}
           onClose={() => setShowToTokenModal(false)}
           excludeSymbol={fromToken?.symbol}
+          chain={activeEvmChainForBalances}
         />
       )}
 

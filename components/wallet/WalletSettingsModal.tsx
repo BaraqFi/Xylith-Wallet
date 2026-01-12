@@ -3,14 +3,17 @@
 import { useApp } from "../app/AppContext";
 import { DarkModeToggle } from "../app/DarkModeToggle";
 import { Button } from "@/components/ui/button";
-import { X, Loader2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { X, Loader2, User, KeyRound, Save } from "lucide-react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useState, useEffect, useRef } from "react";
 
 export function WalletSettingsScreen() {
   const { currentView, setCurrentView } = useApp();
-  const { logout } = usePrivy();
+  const { user, exportWallet, logout } = usePrivy();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [userName, setUserName] = useState(user?.email?.split('@')[0] || '');
+
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const firstFocusableRef = useRef<HTMLButtonElement | null>(null);
@@ -25,15 +28,12 @@ export function WalletSettingsScreen() {
   useEffect(() => {
     if (!isOpen) return;
 
-    // Save the previously focused element
     previousFocusRef.current = document.activeElement as HTMLElement;
 
-    // Focus the first focusable element (close button) when modal opens
     const timer = setTimeout(() => {
       firstFocusableRef.current?.focus();
     }, 0);
 
-    // Handle Escape key
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !isLoggingOut) {
         handleClose();
@@ -45,12 +45,10 @@ export function WalletSettingsScreen() {
     return () => {
       clearTimeout(timer);
       document.removeEventListener("keydown", handleEscape);
-      // Restore focus to previously focused element
       previousFocusRef.current?.focus();
     };
   }, [isOpen, isLoggingOut, setCurrentView]);
 
-  // Focus trap: keep focus within modal
   useEffect(() => {
     if (!isOpen || !modalRef.current) return;
 
@@ -65,13 +63,11 @@ export function WalletSettingsScreen() {
       if (e.key !== "Tab") return;
 
       if (e.shiftKey) {
-        // Shift + Tab
         if (document.activeElement === firstElement) {
           e.preventDefault();
           lastElement?.focus();
         }
       } else {
-        // Tab
         if (document.activeElement === lastElement) {
           e.preventDefault();
           firstElement?.focus();
@@ -83,18 +79,23 @@ export function WalletSettingsScreen() {
     return () => modal.removeEventListener("keydown", handleTabKey);
   }, [isOpen]);
 
-  if (!isOpen) return null;
-
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
       await logout();
-      window.location.reload(); // ensure full session clear
+      window.location.reload();
     } catch (error) {
       console.error("Logout error:", error);
-      // Show error to user (you could add a toast notification here)
       setIsLoggingOut(false);
     }
+  };
+
+  const handleSaveName = () => {
+    // In a real app, you would use Privy's updateUser method
+    // For now, we'll just log it to demonstrate the concept
+    console.log("Saving user name:", userName);
+    // Example: await user.update({ ...user, name: userName });
+    // You could show a toast notification on success
   };
 
   return (
@@ -120,10 +121,50 @@ export function WalletSettingsScreen() {
         </button>
         <h2 id="wallet-settings-title" className="text-xl font-bold mb-6">Wallet Settings</h2>
         <div className="space-y-6 pt-4">
+
+          {/* Profile Section */}
           <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-[color:var(--color-depth)]/60 border-b border-[color:var(--color-border)] pb-2">Profile</h3>
+            <div className="flex items-center justify-between">
+              <p className="font-medium text-[color:var(--color-depth)]">Name</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-[color:var(--color-depth)]/60" />
+              <Input 
+                value={userName}
+                onChange={(e) => setUserName(e.target.value)}
+                placeholder="Enter your name"
+                className="flex-1"
+              />
+              <Button size="icon" onClick={handleSaveName}>
+                <Save className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
+          {/* Security Section */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold text-[color:var(--color-depth)]/60 border-b border-[color:var(--color-border)] pb-2">Security</h3>
             <div className="flex items-center justify-between">
               <div>
-                <p className="font-medium text-[color:var(--color-depth)]">Appearance</p>
+                <p className="font-medium text-[color:var(--color-depth)]">Export Private Key</p>
+                <p className="text-sm text-[color:var(--color-depth)]/60">
+                  Reveals your private key. Keep it secret.
+                </p>
+              </div>
+              <Button variant="outline" onClick={exportWallet}>
+                <KeyRound className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            </div>
+          </div>
+
+          {/* Appearance Section */}
+          <div className="space-y-4">
+             <h3 className="text-sm font-semibold text-[color:var(--color-depth)]/60 border-b border-[color:var(--color-border)] pb-2">Appearance</h3>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-[color:var(--color-depth)]">Theme</p>
                 <p className="text-sm text-[color:var(--color-depth)]/60">
                   Choose your preferred theme
                 </p>
@@ -131,6 +172,7 @@ export function WalletSettingsScreen() {
               <DarkModeToggle />
             </div>
           </div>
+
           <div className="pt-6 flex flex-col items-center">
             <Button
               onClick={handleLogout}

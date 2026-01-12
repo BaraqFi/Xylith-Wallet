@@ -1,3 +1,13 @@
+import { TokenBalance } from "./data";
+
+export interface GroupedToken {
+  symbol: string;
+  name: string;
+  logo: string;
+  totalUsdValue: number;
+  chains: TokenBalance[];
+}
+
 /**
  * Shortens an address to show first 6 and last 4 characters for "0x" addresses,
  * or first 4 and last 4 characters for non-"0x" addresses
@@ -32,5 +42,34 @@ export function getChainDisplayName(chain: string): string {
     solana: "Solana",
   };
   return chainMap[chain.toLowerCase()] || chain;
+}
+
+/**
+ * Groups an array of tokens by their symbol.
+ * @param tokens - The flat array of TokenBalance objects.
+ * @returns An array of GroupedToken objects.
+ */
+export function groupTokensBySymbol(tokens: TokenBalance[]): GroupedToken[] {
+  if (!tokens || tokens.length === 0) {
+    return [];
+  }
+
+  const grouped = tokens.reduce((acc, token) => {
+    const key = token.symbol;
+    if (!acc[key]) {
+      acc[key] = {
+        symbol: token.symbol,
+        name: token.name,
+        logo: token.logo || '',
+        totalUsdValue: 0,
+        chains: [],
+      };
+    }
+    acc[key].totalUsdValue += token.usdValue;
+    acc[key].chains.push(token);
+    return acc;
+  }, {} as Record<string, GroupedToken>);
+
+  return Object.values(grouped).sort((a, b) => b.totalUsdValue - a.totalUsdValue);
 }
 

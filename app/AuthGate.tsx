@@ -4,10 +4,10 @@ import { SplashScreen } from "@/components/app/SplashScreen";
 import { UserPill } from "@privy-io/react-auth/ui";
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
-  const { ready, authenticated, user } = usePrivy();
+  const { ready, authenticated } = usePrivy();
   const [splashDone, setSplashDone] = useState(false);
 
-  console.log("user", user);
+/*   console.log("user", user); */
 
   // Wait for PrivyProvider AND splash
   if (!ready || !splashDone) {

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useApp } from "../app/AppContext";
-import { manualWalletState, TokenBalance } from "../wallet/data";
+import { TokenBalance, EVMChain } from "../wallet/data";
+import { groupTokensBySymbol, GroupedToken } from "../wallet/utils";
 import { ChainLogo, TokenLogo } from "../wallet/ManualWallet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,66 +15,61 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Check, X, Loader2, ArrowLeft } from "lucide-react";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { createWalletClient, custom, Address } from "viem";
+import { useTransactionBuilder } from "@/hooks/useTransactionBuilder";
+import { TransactionDetails } from "./TransactionDetails";
 
 type SendStep = "form" | "confirm" | "loading" | "success" | "error";
 
-export function SendFlow() {
+export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
   const { setCurrentView, preselectedToken, setPreselectedToken } = useApp();
+  const { user } = usePrivy();
+  const { wallets } = useWallets();
+  const { buildTransaction, preview, isBuilding, error: buildError, clearPreview } = useTransactionBuilder();
+  
   const [step, setStep] = useState<SendStep>("form");
-  const [selectedToken, setSelectedToken] = useState<TokenBalance | null>(
-    preselectedToken
-  );
+  
+  const [selectedGroup, setSelectedGroup] = useState<GroupedToken | null>(null);
+  const [selectedToken, setSelectedToken] = useState<TokenBalance | null>(preselectedToken);
+
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
+  const [txHash, setTxHash] = useState<string | null>(null);
+  const [insufficientBalance, setInsufficientBalance] = useState(false);
+  const [selectedChainFilter, setSelectedChainFilter] = useState<"EVM" | "Solana" | "all">("all");
 
-  const [selectedChainFilter, setSelectedChainFilter] = useState<
-    "EVM" | "Solana" | "all"
-  >("all");
-  const [selectedTokenChain, setSelectedTokenChain] = useState<string | null>(
-    () => {
-      if (preselectedToken) {
-        return preselectedToken.evmChain
-          ? `${preselectedToken.chain}-${preselectedToken.evmChain}`
-          : preselectedToken.chain;
-      }
-      return null;
+  const groupedTokens = useMemo(() => {
+    const filtered = tokens.filter(t => selectedChainFilter === 'all' || t.chain === selectedChainFilter);
+    return groupTokensBySymbol(filtered);
+  }, [tokens, selectedChainFilter]);
+
+  const handleGroupSelect = (group: GroupedToken) => {
+    setSelectedGroup(group);
+    // If there's only one chain, auto-select it. Otherwise, wait for user to select a chain.
+    if (group.chains.length === 1) {
+      setSelectedToken(group.chains[0]);
+    } else {
+      setSelectedToken(null); // Force user to pick a chain
     }
-  );
-
-  const availableTokens = manualWalletState.tokens.filter((t) => {
-    if (selectedChainFilter === "all") return true;
-    return t.chain === selectedChainFilter;
-  });
-
-  const groupedTokens = availableTokens.reduce((acc, token) => {
-    const key = token.symbol;
-    if (!acc[key]) {
-      acc[key] = [];
-    }
-    acc[key].push(token);
-    return acc;
-  }, {} as Record<string, typeof availableTokens>);
-
-  const selectedTokenChains = selectedToken
-    ? groupedTokens[selectedToken.symbol] || []
-    : [];
+    setError("");
+  };
 
   const handleChainSelect = (chainKey: string) => {
-    if (!selectedToken) return;
-    const tokenOnChain = selectedTokenChains.find((t) => {
+    if (!selectedGroup) return;
+    const tokenOnChain = selectedGroup.chains.find((t) => {
       const key = t.evmChain ? `${t.chain}-${t.evmChain}` : t.chain;
       return key === chainKey;
     });
     if (tokenOnChain) {
       setSelectedToken(tokenOnChain);
-      setSelectedTokenChain(chainKey);
     }
   };
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (!selectedToken) {
-      setError("Please select a token");
+      setError("Please select a token and chain");
       return;
     }
     if (!recipient) {
@@ -95,23 +91,77 @@ export function SendFlow() {
       setError("Please enter a valid amount");
       return;
     }
-    if (parseFloat(amount) > selectedToken.amount) {
-      setError("Insufficient balance");
+    
+    const hasInsufficientBalance = parseFloat(amount) > selectedToken.amount;
+    setInsufficientBalance(hasInsufficientBalance);
+
+    if (!isEvm || !selectedToken.evmChain) {
+      setError("Solana transactions not yet implemented");
       return;
     }
-    setError("");
-    setStep("confirm");
+
+    const wallet = wallets.find((w) => w.walletClientType === 'privy') || wallets[0];
+    if (!wallet?.address) {
+      setError("Wallet not connected");
+      return;
+    }
+
+    if (!hasInsufficientBalance) {
+      setError("");
+    }
+    
+    try {
+      await buildTransaction(selectedToken, recipient as Address, amount, selectedToken.evmChain, wallet.address as Address);
+      setStep("confirm");
+    } catch (err: any) {
+      if (hasInsufficientBalance || err.message?.toLowerCase().includes("insufficient")) {
+        setError("");
+        try {
+          await buildTransaction(selectedToken, recipient as Address, amount, selectedToken.evmChain, wallet.address as Address);
+        } catch {}
+        setStep("confirm");
+      } else {
+        setError(err.message || "Failed to build transaction");
+      }
+    }
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    if (!preview || !selectedToken?.evmChain) {
+      setError("Transaction preview not available");
+      return;
+    }
+
     setStep("loading");
-    setTimeout(() => {
-      if (Math.random() > 0.2) {
-        setStep("success");
-      } else {
-        setStep("error");
+    setError("");
+
+    try {
+      const wallet = wallets.find((w) => w.walletClientType === 'privy') || wallets[0];
+      if (!wallet?.address) {
+        throw new Error("Wallet not connected");
       }
-    }, 2000);
+
+      const provider = await wallet.getEthereumProvider();
+      const walletClient = createWalletClient({
+        chain: { id: preview.transactionData.to ? 1 : 1 } as any,
+        transport: custom(provider)
+      });
+
+      const hash = await walletClient.sendTransaction({
+        account: wallet.address as Address,
+        to: preview.transactionData.to,
+        value: preview.transactionData.value,
+        data: preview.transactionData.data,
+      } as any);
+
+      setTxHash(hash);
+      setStep("success");
+      clearPreview();
+    } catch (err: any) {
+      console.error("Transaction failed:", err);
+      setError(err.message || "Transaction failed");
+      setStep("error");
+    }
   };
 
   const handleClose = () => {
@@ -119,6 +169,7 @@ export function SendFlow() {
     setStep("form");
     setSelectedToken(null);
     setPreselectedToken(null);
+    setSelectedGroup(null);
     setRecipient("");
     setAmount("");
     setError("");
@@ -140,12 +191,8 @@ export function SendFlow() {
       <div className="wallet-card p-8">
         <div className="flex flex-col items-center justify-center gap-4 py-12">
           <Loader2 className="h-16 w-16 animate-spin text-[color:var(--color-accent)]" />
-          <p className="text-lg font-semibold text-[color:var(--color-depth)]">
-            Processing transaction...
-          </p>
-          <p className="text-sm text-[color:var(--color-depth)]/60">
-            Please wait while we send your transaction
-          </p>
+          <p className="text-lg font-semibold text-[color:var(--color-depth)]">Processing transaction...</p>
+          <p className="text-sm text-[color:var(--color-depth)]/60">Please wait while we send your transaction</p>
         </div>
       </div>
     );
@@ -158,16 +205,16 @@ export function SendFlow() {
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--color-accent)]/15">
             <Check className="h-8 w-8 text-[color:var(--color-accent)]" />
           </div>
-          <p className="text-lg font-semibold text-[color:var(--color-depth)]">
-            Transaction successful!
-          </p>
+          <p className="text-lg font-semibold text-[color:var(--color-depth)]">Transaction successful!</p>
           <p className="text-sm text-center text-[color:var(--color-depth)]/60">
-            {amount} {selectedToken?.symbol} has been sent to{" "}
-            {recipient.slice(0, 6)}...{recipient.slice(-4)}
+            {amount} {selectedToken?.symbol} has been sent to {recipient.slice(0, 6)}...{recipient.slice(-4)}
           </p>
-          <Button onClick={handleClose} className="mt-4">
-            Close
-          </Button>
+          {txHash && (
+            <p className="text-xs text-center text-[color:var(--color-depth)]/50 font-mono break-all">
+              TX: {txHash.slice(0, 10)}...{txHash.slice(-8)}
+            </p>
+          )}
+          <Button onClick={handleClose} className="mt-4">Close</Button>
         </div>
       </div>
     );
@@ -180,16 +227,10 @@ export function SendFlow() {
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-red-100">
             <X className="h-8 w-8 text-red-600" />
           </div>
-          <p className="text-lg font-semibold text-[color:var(--color-depth)]">
-            Transaction failed
-          </p>
-          <p className="text-sm text-center text-[color:var(--color-depth)]/60">
-            The transaction could not be completed. Please try again.
-          </p>
+          <p className="text-lg font-semibold text-[color:var(--color-depth)]">Transaction failed</p>
+          <p className="text-sm text-center text-[color:var(--color-depth)]/60">The transaction could not be completed. Please try again.</p>
           <div className="mt-4 flex gap-3">
-            <Button variant="outline" onClick={() => setStep("form")}>
-              Try Again
-            </Button>
+            <Button variant="outline" onClick={() => setStep("form")}>Try Again</Button>
             <Button onClick={handleClose}>Close</Button>
           </div>
         </div>
@@ -198,46 +239,23 @@ export function SendFlow() {
   }
 
   if (step === "confirm") {
+    if (!preview) {
+      return (
+        <div className="wallet-card p-8">{renderHeader("Confirm Transaction")}<div className="py-8 text-center"><p className="text-[color:var(--color-depth)]/60">Loading transaction details...</p></div></div>
+      );
+    }
     return (
       <div className="wallet-card p-8">
         {renderHeader("Confirm Transaction")}
-        <div className="space-y-6">
-          {[
-            { label: "Token", value: selectedToken?.name },
-            {
-              label: "Amount",
-              value: `${amount} ${selectedToken?.symbol}`,
-            },
-            { label: "Recipient", value: recipient, mono: true },
-            { label: "Network", value: manualWalletState.activeChain },
-          ].map(({ label, value, mono }) => (
-            <div
-              key={label}
-              className="rounded-xl border border-[color:var(--color-depth)]/10 p-4"
-            >
-              <p className="text-sm text-[color:var(--color-depth)]/60">
-                {label}
-              </p>
-              <p
-                className={`mt-1 text-lg font-semibold break-all ${mono ? "font-mono text-sm" : ""}`}
-              >
-                {value}
-              </p>
-            </div>
-          ))}
-          <div className="flex gap-3 pt-4">
-            <Button
-              variant="outline"
-              onClick={() => setStep("form")}
-              className="flex-1"
-            >
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back
-            </Button>
-            <Button onClick={handleConfirm} className="flex-1">
-              Confirm & Send
-            </Button>
-          </div>
-        </div>
+        {buildError && (<div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">{buildError}</div>)}
+        <TransactionDetails
+          preview={preview}
+          selectedToken={selectedToken}
+          insufficientBalance={insufficientBalance}
+          onEdit={() => { clearPreview(); setStep("form"); setInsufficientBalance(false); }}
+          onConfirm={handleConfirm}
+          isConfirming={step === "loading"}
+        />
       </div>
     );
   }
@@ -248,115 +266,67 @@ export function SendFlow() {
       <div className="space-y-6">
         <div>
           <div className="mb-3 flex items-center justify-between">
-            <label className="block text-sm font-medium text-[color:var(--color-depth)]">
-              Select Token
-            </label>
+            <label className="block text-sm font-medium text-[color:var(--color-depth)]">Select Token</label>
             <div className="flex gap-1 rounded-full border border-[color:var(--color-border)] p-1">
               {(["all", "EVM", "Solana"] as const).map((chain) => (
-                <Button
-                  key={chain}
-                  size="sm"
-                  variant={selectedChainFilter === chain ? "secondary" : "ghost"}
-                  onClick={() => setSelectedChainFilter(chain)}
-                  className="rounded-full text-xs"
-                >
-                  {chain === "all" ? "All" : chain}
-                </Button>
+                <Button key={chain} size="sm" variant={selectedChainFilter === chain ? "secondary" : "ghost"} onClick={() => setSelectedChainFilter(chain)} className="rounded-full text-xs">{chain === "all" ? "All" : chain}</Button>
               ))}
             </div>
           </div>
           <div className="max-h-60 space-y-2 overflow-y-auto p-1">
-            {Object.entries(groupedTokens).map(([symbol, tokens]) => {
-              const totalAmount = tokens.reduce((sum, t) => sum + t.amount, 0);
-              const totalValue = tokens.reduce((sum, t) => sum + t.usdValue, 0);
-              const firstToken = tokens[0];
-
-              return (
-                <button
-                  key={symbol}
-                  type="button"
-                  onClick={() => {
-                    const bestToken = tokens.reduce((best, current) =>
-                      current.usdValue > best.usdValue ? current : best
-                    );
-                    setSelectedToken(bestToken);
-                    const chainKey = bestToken.evmChain
-                      ? `${bestToken.chain}-${bestToken.evmChain}`
-                      : bestToken.chain;
-                    setSelectedTokenChain(chainKey);
-                    setError("");
-                  }}
-                  className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${
-                    selectedToken?.symbol === symbol
-                      ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/5"
-                      : "border-transparent hover:bg-[color:var(--color-depth)]/5"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <TokenLogo
-                      symbol={symbol}
-                      name={firstToken.name}
-                    />
-                    <div>
-                      <p className="font-semibold">{firstToken.name}</p>
-                      <p className="text-sm text-[color:var(--color-depth)]/60">
-                        {totalAmount.toLocaleString(undefined, {
-                          maximumFractionDigits: 6,
-                        })}{" "}
-                        {symbol}
-                      </p>
+            {groupedTokens.map((group) => (
+              <button
+                key={group.symbol}
+                type="button"
+                onClick={() => handleGroupSelect(group)}
+                className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${
+                  selectedGroup?.symbol === group.symbol
+                    ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/5"
+                    : "border-transparent hover:bg-[color:var(--color-depth)]/5"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <TokenLogo symbol={group.symbol} name={group.name} />
+                  <div>
+                    <p className="font-semibold">{group.name}</p>
+                     <div className="flex items-center gap-1 -space-x-2">
+                       {group.chains.map(chainToken =>
+                        chainToken.evmChain ? (
+                          <ChainLogo key={chainToken.evmChain} chain={chainToken.evmChain} />
+                        ) : chainToken.chain === 'Solana' ? (
+                          <ChainLogo key="solana" chain="solana" />
+                        ) : null
+                      )}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="font-semibold">
-                      ${totalValue.toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                      })}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
+                </div>
+                <div className="text-right">
+                  <p className="font-semibold">${group.totalUsdValue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                </div>
+              </button>
+            ))}
           </div>
         </div>
 
-        {selectedToken && selectedTokenChains.length > 1 && (
+        {selectedGroup && selectedGroup.chains.length > 1 && (
           <div>
-            <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
-              Select Chain
-            </label>
+            <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">Select Chain</label>
             <Select
-              value={selectedTokenChain || ""}
+              value={selectedToken ? (selectedToken.evmChain ? `${selectedToken.chain}-${selectedToken.evmChain}` : selectedToken.chain) : ""}
               onValueChange={handleChainSelect}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select a chain" />
               </SelectTrigger>
               <SelectContent>
-                {selectedTokenChains.map((token) => {
-                  const chainKey = token.evmChain
-                    ? `${token.chain}-${token.evmChain}`
-                    : token.chain;
-                  const chainLabel = token.evmChain
-                    ? token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1)
-                    : "Solana";
+                {selectedGroup.chains.map((token) => {
+                  const chainKey = token.evmChain ? `${token.chain}-${token.evmChain}` : token.chain;
+                  const chainLabel = token.evmChain ? token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1) : "Solana";
                   return (
                     <SelectItem key={chainKey} value={chainKey}>
                       <div className="flex items-center gap-2">
-                        <ChainLogo
-                          chain={token.evmChain || "solana"}
-                        />
-                        <span>
-                          {chainLabel} -{" "}
-                          {token.amount.toLocaleString(undefined, {
-                            maximumFractionDigits: 6,
-                          })}{" "}
-                          {token.symbol} ($
-                          {token.usdValue.toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                          })}
-                          )
-                        </span>
+                        <ChainLogo chain={token.evmChain || "solana"} />
+                        <span>{chainLabel} - {token.amount.toLocaleString(undefined, { maximumFractionDigits: 6, })} {token.symbol} (${token.usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, })})</span>
                       </div>
                     </SelectItem>
                   );
@@ -367,71 +337,25 @@ export function SendFlow() {
         )}
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
-            Recipient Address
-          </label>
-          <Input
-            type="text"
-            value={recipient}
-            onChange={(e) => {
-              setRecipient(e.target.value);
-              setError("");
-            }}
-            placeholder={
-              selectedToken?.chain === "Solana"
-                ? "Enter Solana address..."
-                : "0x..."
-            }
-            className="font-mono"
-          />
+          <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">Recipient Address</label>
+          <Input type="text" value={recipient} onChange={(e) => { setRecipient(e.target.value); setError(""); }} placeholder={selectedToken?.chain === "Solana" ? "Enter Solana address..." : "0x..."} className="font-mono" />
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">
-            Amount
-          </label>
+          <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">Amount</label>
           <div className="flex gap-2">
-            <Input
-              type="number"
-              value={amount}
-              onChange={(e) => {
-                setAmount(e.target.value);
-                setError("");
-              }}
-              placeholder="0.00"
-              step="any"
-            />
-            {selectedToken && (
-              <Button
-                variant="secondary"
-                onClick={() => setAmount(selectedToken.amount.toString())}
-              >
-                Max
-              </Button>
-            )}
+            <Input type="number" value={amount} onChange={(e) => { setAmount(e.target.value); setError(""); }} placeholder="0.00" step="any" />
+            {selectedToken && (<Button variant="secondary" onClick={() => setAmount(selectedToken.amount.toString())}>Max</Button>)}
           </div>
           {selectedToken && amount && selectedToken.pricePerToken && (
             <p className="mt-2 text-sm text-[color:var(--color-depth)]/60">
-              ≈ $
-              {(
-                parseFloat(amount) * selectedToken.pricePerToken
-              ).toLocaleString(undefined, {
-                minimumFractionDigits: 2,
-                maximumFractionDigits: 2,
-              })}
+              ≈ ${(parseFloat(amount) * selectedToken.pricePerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2, })}
             </p>
           )}
         </div>
 
-        {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3">
-            <p className="text-sm text-red-600">{error}</p>
-          </div>
-        )}
-
-        <Button onClick={handleNext} className="w-full" size="lg">
-          Continue
-        </Button>
+        {error && (<div className="rounded-lg border border-red-200 bg-red-50 p-3"><p className="text-sm text-red-600">{error}</p></div>)}
+        <Button onClick={handleNext} className="w-full" size="lg" disabled={!selectedToken}>Continue</Button>
       </div>
     </div>
   );

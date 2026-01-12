@@ -19,7 +19,7 @@ import {
   EVMChain,
 } from "./data";
 import { useApp } from "../app/AppContext";
-import { shortenAddress } from "./utils";
+import { shortenAddress, groupTokensBySymbol, GroupedToken } from "./utils";
 import { TokenDetailsModal } from "./TokenDetailsModal";
 import { Button } from "@/components/ui/button";
 // Web3Icons for token and network logos - optimized individual imports
@@ -45,7 +45,6 @@ import {
   NetworkSolana,
 } from "@web3icons/react";
 import { usePrivy } from "@privy-io/react-auth";
-import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { useTransactionHistory } from "@/hooks/useTransactionHistory";
 
 // Hexagonal Avatar Component
@@ -280,21 +279,26 @@ export function ChainLogo({ chain }: { chain: EVMChain | "solana" }) {
 
 
 function TokenList({
-  tokens,
+  groupedTokens,
   activeChain,
   allTokens,
   isLoading = false,
 }: {
-  tokens: ManualWalletState["tokens"];
+  groupedTokens: GroupedToken[];
   activeChain: Chain;
-  allTokens: ManualWalletState["tokens"];
+  allTokens: TokenBalance[];
   isLoading?: boolean;
 }) {
   const { setCurrentView } = useApp();
   const [selectedToken, setSelectedToken] = useState<TokenBalance | null>(null);
-  const filteredTokens = tokens.filter((token) => token.chain === activeChain);
-  const displayTokens = filteredTokens.slice(0, 7);
-  const hasMore = filteredTokens.length > 7;
+
+  // Filter based on activeChain. A token group is shown if any of its chains match.
+  const filteredGroupedTokens = groupedTokens.filter(group => 
+    group.chains.some(chainToken => chainToken.chain === activeChain)
+  );
+
+  const displayTokens = filteredGroupedTokens.slice(0, 7);
+  const hasMore = filteredGroupedTokens.length > 7;
 
   return (
     <>
@@ -307,7 +311,7 @@ function TokenList({
             <div className="h-10 w-10 animate-spin rounded-full border-2 border-[color:var(--color-accent)] border-t-transparent" />
             <p className="text-sm">Loading balances…</p>
           </div>
-        ) : filteredTokens.length === 0 ? (
+        ) : filteredGroupedTokens.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-4 px-2">
             <p className="text-sm text-[color:var(--color-depth)]/60 text-center">
               No tokens found. Make a Deposit
@@ -321,36 +325,38 @@ function TokenList({
           </div>
         ) : (
           <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto px-2">
-            {displayTokens.map((token) => (
+            {displayTokens.map((group) => (
               <button
-                key={`${token.symbol}-${token.chain}${token.evmChain ? `-${token.evmChain}` : ""}`}
-                onClick={() => setSelectedToken(token)}
+                key={group.symbol}
+                onClick={() => setSelectedToken(group.chains[0])}
                 className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
               >
                 <div className="flex items-center gap-3">
                   <TokenLogo
-                    symbol={token.symbol}
-                    name={token.name}
+                    symbol={group.symbol}
+                    name={group.name}
                   />
                   <div className="flex flex-col">
-                    <p className="font-semibold">{token.name}</p>
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm text-[color:var(--color-depth)]/60">
-                        {tokenAmountLabel(token)}
-                      </p>
-                      {token.evmChain && activeChain === "EVM" && (
-                        <ChainLogo chain={token.evmChain} />
+                    <p className="font-semibold">{group.name}</p>
+                    <div className="flex items-center gap-1 -space-x-2">
+                      {group.chains.map(chainToken =>
+                        chainToken.evmChain && chainToken.chain === activeChain ? (
+                          <ChainLogo key={chainToken.evmChain} chain={chainToken.evmChain} />
+                        ) : null
                       )}
+                       {group.chains.some(ct => ct.chain === 'Solana' && activeChain === 'Solana') && (
+                          <ChainLogo chain="solana" />
+                       )}
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
                   <p className="font-semibold">
-                    {currencyFormatter.format(token.usdValue)}
+                    {currencyFormatter.format(group.totalUsdValue)}
                   </p>
-                  {token.deltaNote && (
-                    <p className="text-sm text-[color:var(--color-depth)]/60">
-                      {token.deltaNote}
+                  {group.chains.length > 1 && (
+                     <p className="text-sm text-[color:var(--color-depth)]/60">
+                      {group.chains.length} chains
                     </p>
                   )}
                 </div>
@@ -448,26 +454,20 @@ function TransactionList({
   );
 }
 
-export default function ManualWallet() {
+export default function ManualWallet({ tokens, isLoading }: { tokens: TokenBalance[], isLoading: boolean }) {
   const { setCurrentView, activeChain, setActiveChain } = useApp();
   const {
     accountName,
     address,
     solanaAddress,
     chains,
-    transactions,
   } = manualWalletState;
   const [copied, setCopied] = useState(false);
   const { user } = usePrivy();
 
-  // Use Real Balances
-  // We assume 'ethereum' is the default for EVM view in this MVP
-  const { balances: realBalances, isLoading } = useTokenBalances(activeChain, 'ethereum');
-
-  // Combine real balances with default state structure if needed, or just use realBalances
-  // If loading or error, we might fallback to empty or show loading state. 
-  // For now, let's substitute 'tokens' with 'realBalances' if available.
-  const displayTokens = realBalances.length > 0 ? realBalances : manualWalletState.tokens;
+  // The tokens and isLoading state are now passed as props.
+  const displayTokens = tokens;
+  const groupedTokens = groupTokensBySymbol(displayTokens);
 
   let actualEvmAddress = address;
   let actualSolAddress = solanaAddress;
@@ -614,7 +614,7 @@ export default function ManualWallet() {
 
       {/* Token List Container */}
       <TokenList
-        tokens={displayTokens}
+        groupedTokens={groupedTokens}
         activeChain={activeChain}
         allTokens={displayTokens}
         isLoading={isLoading}
