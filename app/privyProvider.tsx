@@ -4,21 +4,11 @@ import { PrivyProvider } from '@privy-io/react-auth';
 import { mainnet, arbitrum, optimism, polygon, base, bsc } from 'viem/chains';
 import type { ReactNode } from 'react';
 
-// Use public RPC endpoints - Alchemy calls go through server-side API routes
-// This prevents API key exposure in client-side code
+// Use server-side RPC proxy for all chains
+// This rotates between Ankr, Infura, Alchemy, and public nodes
 function getRpcUrl(chainName: string): string {
-  // Use public RPC endpoints as fallback
-  // For Alchemy-specific calls, use /api/alchemy/rpc proxy
-  const publicRpcMap: Record<string, string> = {
-    ethereum: 'https://eth.llamarpc.com',
-    base: 'https://mainnet.base.org',
-    arbitrum: 'https://arb1.arbitrum.io/rpc',
-    optimism: 'https://mainnet.optimism.io',
-    polygon: 'https://polygon-rpc.com',
-    bsc: 'https://bsc-dataseed.binance.org',
-  };
-
-  return publicRpcMap[chainName] || '';
+  if (typeof window === 'undefined') return '';
+  return `${window.location.origin}/api/rpc?chain=${chainName}`;
 }
 
 // Create chain configurations with public RPC URLs

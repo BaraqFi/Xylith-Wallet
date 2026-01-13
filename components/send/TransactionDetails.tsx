@@ -1,10 +1,11 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { TransactionPreview } from "@/lib/services/transactionBuilder";
-import { TokenBalance } from "@/components/wallet/data";
-import { formatUnits } from "viem";
+import { TokenBalance, EVMChain } from "@/components/wallet/data";
+import { formatUnits, Address } from "viem";
 import { ChainLogo } from "../wallet/ManualWallet";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, AlertTriangle } from "lucide-react";
 
 interface TransactionDetailsProps {
   preview: TransactionPreview;
@@ -30,6 +31,37 @@ export function TransactionDetails({
   const balanceNum = selectedToken?.amount || 0;
   const isActuallyInsufficient = amountNum > balanceNum;
 
+  // Check if recipient is a contract address
+  const [isRecipientContract, setIsRecipientContract] = useState<boolean | null>(null);
+  const [checkingContract, setCheckingContract] = useState(false);
+
+  useEffect(() => {
+    if (!recipient || !selectedToken?.evmChain) {
+      setIsRecipientContract(null);
+      return;
+    }
+
+    setCheckingContract(true);
+    fetch("/api/security/recipient", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        address: recipient,
+        chain: selectedToken.evmChain,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        setIsRecipientContract(data.isContract || false);
+      })
+      .catch(() => {
+        setIsRecipientContract(null);
+      })
+      .finally(() => {
+        setCheckingContract(false);
+      });
+  }, [recipient, selectedToken?.evmChain]);
+
   return (
     <div className="space-y-4">
       {/* Token and Amount */}
@@ -52,6 +84,16 @@ export function TransactionDetails({
       <div className="rounded-xl border border-[color:var(--color-depth)]/10 p-4">
         <p className="text-sm text-[color:var(--color-depth)]/60 mb-1">Recipient</p>
         <p className="text-sm font-mono break-all">{recipient}</p>
+        {isRecipientContract && (
+          <div className="mt-3 rounded-lg border border-yellow-200 bg-yellow-50/50 dark:border-yellow-800 dark:bg-yellow-900/20 p-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+              <p className="text-xs text-yellow-800 dark:text-yellow-300">
+                This is a contract address, not a regular wallet. Ensure you trust this contract and are sending to the correct address.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Network */}

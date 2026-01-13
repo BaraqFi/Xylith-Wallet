@@ -1,28 +1,7 @@
 import { useState, useEffect } from "react";
-import { createPublicClient, http, parseAbiItem, Address } from "viem";
-import { mainnet, arbitrum, optimism, polygon, base, bsc } from "viem/chains";
-import { usePrivy } from "@privy-io/react-auth";
+import { parseAbiItem, Address } from "viem";
 import { EVMChain } from "@/components/wallet/data";
-import { getAlchemyRpcUrl } from "@/lib/services/alchemyClient";
-
-const chainMap: Record<EVMChain, any> = {
-    ethereum: mainnet,
-    arbitrum: arbitrum,
-    optimism: optimism,
-    polygon: polygon,
-    base: base,
-    bsc: bsc,
-};
-
-const localFork = {
-    id: 1337,
-    name: 'Local Mainnet Fork',
-    network: 'local-fork',
-    nativeCurrency: { name: 'Ethereum', symbol: 'ETH', decimals: 18 },
-    rpcUrls: {
-        default: { http: ['http://127.0.0.1:8545'] },
-    },
-} as const;
+import { getPublicRpcClient, getCustomRpcClient } from "@/lib/services/rpcConfig";
 
 export function useAllowance(
     tokenAddress: string | undefined,
@@ -52,29 +31,15 @@ export function useAllowance(
 
             setIsLoading(true);
             try {
-                const targetChain = chainMap[evmChain];
-                if (!targetChain) {
-                    throw new Error(`Unsupported EVM chain: ${evmChain}`);
-                }
-
                 // Only use local fork if explicitly enabled
                 const useLocalFork = process.env.NEXT_PUBLIC_USE_LOCAL_FORK === 'true' && 
                                      evmChain === 'ethereum' && 
                                      process.env.NODE_ENV === 'development';
 
-                let rpcUrl: string | undefined;
-                
-                if (useLocalFork) {
-                    rpcUrl = 'http://127.0.0.1:8545';
-                } else {
-                    // Use public RPC - Alchemy calls go through server-side API routes
-                    // Don't expose API keys in client-side code
-                }
-
-                const client = createPublicClient({
-                    chain: useLocalFork ? localFork : targetChain,
-                    transport: rpcUrl ? http(rpcUrl) : http()
-                });
+                // Use centralized RPC client
+                const client = useLocalFork
+                    ? getCustomRpcClient(evmChain, 'http://127.0.0.1:8545')
+                    : getPublicRpcClient(evmChain);
 
                 const res = await client.readContract({
                     address: tokenAddress as Address,

@@ -1,20 +1,9 @@
 import { Address, parseUnits, formatUnits, parseAbiItem, encodeFunctionData } from "viem";
-import { createPublicClient, http, createWalletClient, custom } from "viem";
-import { mainnet, arbitrum, optimism, polygon, base, bsc } from "viem/chains";
+import { createWalletClient, custom } from "viem";
 import { EVMChain, TokenBalance } from "@/components/wallet/data";
-import { getAlchemyRpcUrl } from "./alchemyClient";
+import { getPublicRpcClient } from "./rpcConfig";
 // Note: Alchemy RPC calls should go through /api/alchemy/rpc proxy
-// This file uses public RPC for transaction building
-
-// Map our internal chain IDs to Viem chains
-const chainMap: Record<EVMChain, any> = {
-  ethereum: mainnet,
-  arbitrum: arbitrum,
-  optimism: optimism,
-  polygon: polygon,
-  base: base,
-  bsc: bsc,
-};
+// This file uses centralized public RPC for transaction building
 
 export interface TransactionDetails {
   to: Address;
@@ -45,18 +34,11 @@ export async function buildNativeTransferTransaction(
   chain: EVMChain,
   fromAddress: Address
 ): Promise<TransactionDetails> {
-  const targetChain = chainMap[chain];
-  if (!targetChain) {
-    throw new Error(`Unsupported EVM chain: ${chain}`);
-  }
+  // Use centralized public RPC client
+  const client = getPublicRpcClient(chain);
+  const targetChain = client.chain;
 
-  // Use public RPC - Alchemy calls go through server-side API routes
-  const client = createPublicClient({
-    chain: targetChain,
-    transport: http(), // Use default public RPC
-  });
-
-  const value = parseUnits(amount, targetChain.nativeCurrency.decimals);
+  const value = parseUnits(amount, targetChain?.nativeCurrency?.decimals ?? 18);
 
   // Estimate gas
   const gasEstimate = await client.estimateGas({
@@ -93,16 +75,9 @@ export async function buildERC20TransferTransaction(
     throw new Error("Token contract address is required for ERC20 transfers");
   }
 
-  const targetChain = chainMap[chain];
-  if (!targetChain) {
-    throw new Error(`Unsupported EVM chain: ${chain}`);
-  }
-
-  // Use public RPC - Alchemy calls go through server-side API routes
-  const client = createPublicClient({
-    chain: targetChain,
-    transport: http(), // Use default public RPC
-  });
+  // Use centralized public RPC client
+  const client = getPublicRpcClient(chain);
+  const targetChain = client.chain;
 
   const decimals = token.decimals || 18;
   const value = parseUnits(amount, decimals);
@@ -147,16 +122,8 @@ export async function simulateTransaction(
   fromAddress: Address
 ): Promise<boolean> {
   try {
-    const targetChain = chainMap[chain];
-    if (!targetChain) {
-      throw new Error(`Unsupported EVM chain: ${chain}`);
-    }
-
-    const rpcUrl = getAlchemyRpcUrl(chain);
-    const client = createPublicClient({
-      chain: targetChain,
-      transport: rpcUrl ? http(rpcUrl) : http(),
-    });
+    // Use centralized public RPC client
+    const client = getPublicRpcClient(chain);
 
     // Try to call the transaction (simulation)
     await client.call({
@@ -183,7 +150,7 @@ export async function createTransactionPreview(
   chain: EVMChain,
   fromAddress: Address
 ): Promise<TransactionPreview> {
-  const isNative = 
+  const isNative =
     !token.contractAddress ||
     token.contractAddress === "0x0000000000000000000000000000000000000000";
 
@@ -191,7 +158,9 @@ export async function createTransactionPreview(
     ? await buildNativeTransferTransaction(recipient, amount, chain, fromAddress)
     : await buildERC20TransferTransaction(token, recipient, amount, chain, fromAddress);
 
-  const targetChain = chainMap[chain];
+  // Get chain info from RPC client
+  const client = getPublicRpcClient(chain);
+  const targetChain = client.chain;
   const gasEstimate = transactionData.gasEstimate || BigInt(0);
   const gasPrice = transactionData.gasPrice || BigInt(0);
 
@@ -201,9 +170,9 @@ export async function createTransactionPreview(
     token,
     chain,
     gasEstimate: formatUnits(gasEstimate, 0),
-    gasPrice: formatUnits(gasPrice, targetChain.nativeCurrency.decimals),
+    gasPrice: formatUnits(gasPrice, targetChain?.nativeCurrency?.decimals ?? 18),
     totalCost: transactionData.totalCost
-      ? formatUnits(transactionData.totalCost, targetChain.nativeCurrency.decimals)
+      ? formatUnits(transactionData.totalCost, targetChain?.nativeCurrency?.decimals ?? 18)
       : "0",
     transactionData,
   };

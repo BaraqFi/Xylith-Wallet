@@ -1,30 +1,19 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { createPublicClient, http, formatUnits, Address } from "viem";
-import { mainnet, arbitrum, optimism, polygon, base, bsc } from "viem/chains";
+import { formatUnits, Address } from "viem";
 import { usePrivy } from "@privy-io/react-auth";
 import {
-  TokenBalance,
-  defaultEvmTokens,
-  Chain,
-  EVMChain,
+    TokenBalance,
+    defaultEvmTokens,
+    Chain,
+    EVMChain,
 } from "@/components/wallet/data";
-import { 
-    getTokenBalancesFromAlchemy, 
+import {
+    getTokenBalancesFromAlchemy,
     getNativeBalanceFromAlchemy,
-    getTokenMetadataFromAlchemy 
+    getTokenMetadataFromAlchemy
 } from "@/lib/services/tokenIndexer";
-import { getAlchemyRpcUrl } from "@/lib/services/alchemyClient";
+import { getPublicRpcClient, getCustomRpcClient } from "@/lib/services/rpcConfig";
 import { getCachedData, setCachedData } from "@/lib/utils/cache";
-
-// Map our internal chain IDs to Viem chains
-const chainMap: Record<EVMChain, any> = {
-    ethereum: mainnet,
-    arbitrum: arbitrum,
-    optimism: optimism,
-    polygon: polygon,
-    base: base,
-    bsc: bsc,
-};
 
 // Local Fork Chain Definition (matches PrivyProvider)
 const localFork = {
@@ -59,7 +48,7 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
     const [balances, setBalances] = useState<TokenBalance[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    
+
     // Use ref to track if we're currently fetching to prevent duplicate requests
     const fetchingRef = useRef(false);
     // Use ref to track last fetch time per address+chain combo
@@ -75,18 +64,18 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
             // Check cache first
             const cacheKey = `xylith_cache_balances_${address.toLowerCase()}_${currentEvmChain}`;
             const cached = getCachedData<TokenBalance[]>(cacheKey, BALANCE_CACHE_TTL);
-            
+
             if (cached) {
                 setBalances(cached);
                 setIsLoading(false);
                 // Still fetch in background to update cache, but don't show loading
                 // Only if we haven't fetched recently (avoid duplicate requests)
                 const lastFetch = lastFetchRef.current;
-                const shouldFetch = !lastFetch || 
+                const shouldFetch = !lastFetch ||
                     lastFetch.address !== address.toLowerCase() ||
                     lastFetch.chain !== currentEvmChain ||
                     Date.now() - lastFetch.timestamp > BALANCE_CACHE_TTL;
-                
+
                 if (!shouldFetch || fetchingRef.current) {
                     return;
                 }
@@ -102,28 +91,10 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
             setError(null);
 
             try {
-                // 1. Determine Chain and Client
-                let targetChain: any;
-                let useAlchemy = true;
-
-                // Only use local fork if explicitly enabled via environment variable
-                const useLocalFork = process.env.NEXT_PUBLIC_USE_LOCAL_FORK === 'true' && 
-                                     currentEvmChain === 'ethereum' && 
-                                     process.env.NODE_ENV === 'development';
-
-                if (useLocalFork) {
-                    targetChain = localFork;
-                    useAlchemy = false; // Use local fork RPC for dev
-                } else {
-                    targetChain = chainMap[currentEvmChain];
-                }
-
-                if (!targetChain) {
-                    throw new Error(`Unsupported EVM chain: ${currentEvmChain}`);
-                }
-
-                const nativeDecimals = targetChain.nativeCurrency?.decimals ?? 18;
-                const nativeTokenAddress = NATIVE_TOKEN_ADDRESSES[currentEvmChain];
+                // 1. Determine if using local fork
+                const useLocalFork = process.env.NEXT_PUBLIC_USE_LOCAL_FORK === 'true' &&
+                    currentEvmChain === 'ethereum' &&
+                    process.env.NODE_ENV === 'development';
 
                 // 2. Get default token list for this chain
                 const defaultChainTokens = defaultEvmTokens.filter(
@@ -133,9 +104,10 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                 // 3. Fetch balances using Alchemy indexer API (more efficient)
                 let alchemyBalances: Map<string, string> = new Map();
                 let nativeBalanceHex = "0x0";
+                let useAlchemy = true;
 
                 // Always try Alchemy via server-side API (no client-side API key check needed)
-                if (useAlchemy) {
+                if (!useLocalFork) {
                     try {
                         // Fetch all token balances in one call
                         const tokenBalances = await getTokenBalancesFromAlchemy(address, currentEvmChain);
@@ -154,30 +126,23 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                         console.warn("Alchemy API failed, falling back to RPC:", alchemyError);
                         useAlchemy = false;
                     }
+                } else {
+                    useAlchemy = false;
                 }
 
-                // 4. Create client for fallback or metadata fetching
-                let rpcUrl: string | undefined;
-                
-                // Use public RPC endpoints - Alchemy calls go through API routes
-                // Don't expose API keys in client-side code
-                
-                // Only use local fork if explicitly enabled and available
-                if (!useAlchemy && useLocalFork) {
-                    rpcUrl = 'http://127.0.0.1:8545';
-                }
+                // 4. Create RPC client using centralized config
+                const client = useLocalFork
+                    ? getCustomRpcClient(currentEvmChain, 'http://127.0.0.1:8545')
+                    : getPublicRpcClient(currentEvmChain);
 
-                // Use public RPC for fallback calls
-                // Alchemy-specific calls already go through server-side API routes
-                const client = createPublicClient({
-                    chain: targetChain,
-                    transport: http() // Use default public RPC
-                });
+                const targetChain = client.chain;
+                const nativeDecimals = targetChain?.nativeCurrency?.decimals ?? 18;
+                const nativeTokenAddress = NATIVE_TOKEN_ADDRESSES[currentEvmChain];
 
                 // 5. Merge default tokens with Alchemy results
                 const mergedTokens: TokenBalance[] = await Promise.all(
                     defaultChainTokens.map(async (defaultToken) => {
-                        const isNative = 
+                        const isNative =
                             defaultToken.contractAddress === nativeTokenAddress ||
                             defaultToken.contractAddress === "0x0000000000000000000000000000000000000000";
 
@@ -206,7 +171,7 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                                 try {
                                     rawBalance = await client.readContract({
                                         address: defaultToken.contractAddress as Address,
-                                        abi: [{ 
+                                        abi: [{
                                             inputs: [{ name: 'account', type: 'address' }],
                                             name: 'balanceOf',
                                             outputs: [{ name: '', type: 'uint256' }],
@@ -294,7 +259,7 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                             if (metadata) {
                                 const decimals = metadata.decimals ?? 18;
                                 const amount = parseFloat(formatUnits(balance, decimals));
-                                
+
                                 mergedTokens.push({
                                     symbol: metadata.symbol || "UNKNOWN",
                                     name: metadata.name || "Unknown Token",
@@ -320,7 +285,7 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                 ];
 
                 setBalances(sortedTokens);
-                
+
                 // Cache the result
                 setCachedData(cacheKey, sortedTokens);
                 lastFetchRef.current = {

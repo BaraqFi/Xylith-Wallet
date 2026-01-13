@@ -35,6 +35,8 @@ import { useSwapQuote } from "@/hooks/useSwapQuote";
 import { useAllowance } from "@/hooks/useAllowance";
 import { OneInchClient } from "@/lib/1inch/client";
 import { useSwapTokenList } from "@/hooks/useSwapTokenList";
+import { useSwapSecurity, useTokenSecurity } from "@/hooks/useSecurityCheck";
+import { AlertTriangle, AlertCircle, Info } from "lucide-react";
 
 // OneInch V6 Router
 const AGGREGATION_ROUTER_V6 = "0x111111125421ca6dc452d289314280a0f8842a65";
@@ -208,6 +210,19 @@ export function SwapFlow() {
     user?.wallet?.address,
     amount,
     fromToken?.evmChain
+  );
+
+  // Security Checks
+  const swapSecurity = useSwapSecurity(quote, slippage, step === "confirm" && !!quote);
+  const fromTokenSecurity = useTokenSecurity(
+    fromToken?.contractAddress as any,
+    fromToken?.evmChain,
+    step === "confirm" && !!fromToken?.contractAddress && !!fromToken?.evmChain
+  );
+  const toTokenSecurity = useTokenSecurity(
+    toToken?.contractAddress as any,
+    toToken?.evmChain,
+    step === "confirm" && !!toToken?.contractAddress && !!toToken?.evmChain
   );
 
   // Effect: Update estimated amount when quote changes
@@ -729,6 +744,113 @@ export function SwapFlow() {
               </div>
             ))}
           </div>
+
+          {/* Security Warnings */}
+          {((swapSecurity.analysis?.warnings.length || 0) + 
+            (fromTokenSecurity.analysis?.warnings.length || 0) + 
+            (toTokenSecurity.analysis?.warnings.length || 0)) > 0 && (
+            <div className="space-y-2">
+              {swapSecurity.analysis?.warnings.map((warning, idx) => (
+                <div
+                  key={`swap-${idx}`}
+                  className={`rounded-lg border p-3 ${
+                    warning.severity === "error"
+                      ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
+                      : warning.severity === "warning"
+                      ? "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20"
+                      : "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    {warning.severity === "error" ? (
+                      <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
+                    ) : warning.severity === "warning" ? (
+                      <AlertTriangle className="h-5 w-5 flex-shrink-0 text-yellow-600 dark:text-yellow-400" />
+                    ) : (
+                      <Info className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+                    )}
+                    <p
+                      className={`text-sm ${
+                        warning.severity === "error"
+                          ? "text-red-800 dark:text-red-300"
+                          : warning.severity === "warning"
+                          ? "text-yellow-800 dark:text-yellow-300"
+                          : "text-blue-800 dark:text-blue-300"
+                      }`}
+                    >
+                      {warning.message}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {fromTokenSecurity.analysis?.warnings.map((warning, idx) => (
+                <div
+                  key={`from-token-${idx}`}
+                  className={`rounded-lg border p-3 ${
+                    warning.severity === "error"
+                      ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
+                      : warning.severity === "warning"
+                      ? "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20"
+                      : "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    {warning.severity === "error" ? (
+                      <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
+                    ) : warning.severity === "warning" ? (
+                      <AlertTriangle className="h-5 w-5 flex-shrink-0 text-yellow-600 dark:text-yellow-400" />
+                    ) : (
+                      <Info className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+                    )}
+                    <p
+                      className={`text-sm ${
+                        warning.severity === "error"
+                          ? "text-red-800 dark:text-red-300"
+                          : warning.severity === "warning"
+                          ? "text-yellow-800 dark:text-yellow-300"
+                          : "text-blue-800 dark:text-blue-300"
+                      }`}
+                    >
+                      <strong>From Token:</strong> {warning.message}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {toTokenSecurity.analysis?.warnings.map((warning, idx) => (
+                <div
+                  key={`to-token-${idx}`}
+                  className={`rounded-lg border p-3 ${
+                    warning.severity === "error"
+                      ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
+                      : warning.severity === "warning"
+                      ? "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20"
+                      : "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20"
+                  }`}
+                >
+                  <div className="flex items-start gap-2">
+                    {warning.severity === "error" ? (
+                      <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
+                    ) : warning.severity === "warning" ? (
+                      <AlertTriangle className="h-5 w-5 flex-shrink-0 text-yellow-600 dark:text-yellow-400" />
+                    ) : (
+                      <Info className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+                    )}
+                    <p
+                      className={`text-sm ${
+                        warning.severity === "error"
+                          ? "text-red-800 dark:text-red-300"
+                          : warning.severity === "warning"
+                          ? "text-yellow-800 dark:text-yellow-300"
+                          : "text-blue-800 dark:text-blue-300"
+                      }`}
+                    >
+                      <strong>To Token:</strong> {warning.message}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="flex gap-3 pt-4">
             <Button

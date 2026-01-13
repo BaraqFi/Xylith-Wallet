@@ -1,18 +1,7 @@
-import { Address, createPublicClient, http, parseAbiItem } from "viem";
-import { mainnet, arbitrum, optimism, polygon, base, bsc } from "viem/chains";
+import { Address, parseAbiItem } from "viem";
 import { EVMChain } from "@/components/wallet/data";
-import { getAlchemyRpcUrl } from "./alchemyClient";
+import { getPublicRpcClient } from "./rpcConfig";
 import { getTokenMetadataFromAlchemy } from "./tokenIndexer";
-
-// Map our internal chain IDs to Viem chains
-const chainMap: Record<EVMChain, any> = {
-  ethereum: mainnet,
-  arbitrum: arbitrum,
-  optimism: optimism,
-  polygon: polygon,
-  base: base,
-  bsc: bsc,
-};
 
 export interface TokenMetadata {
   name: string;
@@ -39,16 +28,8 @@ export async function fetchTokenMetadata(
     throw new Error("Invalid contract address format");
   }
 
-  const targetChain = chainMap[chain];
-  if (!targetChain) {
-    throw new Error(`Unsupported EVM chain: ${chain}`);
-  }
-
-  const rpcUrl = getAlchemyRpcUrl(chain);
-  const client = createPublicClient({
-    chain: targetChain,
-    transport: rpcUrl ? http(rpcUrl) : http(),
-  });
+  // Use centralized public RPC client
+  const client = getPublicRpcClient(chain);
 
   try {
     // Try Alchemy first (faster and includes logo)
@@ -109,18 +90,9 @@ export async function isContractAddress(
   address: Address,
   chain: EVMChain
 ): Promise<boolean> {
-  const targetChain = chainMap[chain];
-  if (!targetChain) {
-    return false;
-  }
-
-  const rpcUrl = getAlchemyRpcUrl(chain);
-  const client = createPublicClient({
-    chain: targetChain,
-    transport: rpcUrl ? http(rpcUrl) : http(),
-  });
-
   try {
+    // Use centralized public RPC client
+    const client = getPublicRpcClient(chain);
     const code = await client.getBytecode({ address });
     return code !== undefined && code !== "0x";
   } catch (error) {
