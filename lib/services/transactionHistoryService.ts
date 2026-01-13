@@ -6,7 +6,8 @@
  * 2. 1inch History API (fallback - may require premium tier)
  */
 
-import { Address, EVMChain } from "@/components/wallet/data";
+import { Address } from "viem";
+import { EVMChain } from "@/components/wallet/data";
 
 export interface TransactionHistoryItem {
   hash: string;

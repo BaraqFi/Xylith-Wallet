@@ -27,9 +27,9 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
   const { user } = usePrivy();
   const { wallets } = useWallets();
   const { buildTransaction, preview, isBuilding, error: buildError, clearPreview } = useTransactionBuilder();
-  
+
   const [step, setStep] = useState<SendStep>("form");
-  
+
   const [selectedGroup, setSelectedGroup] = useState<GroupedToken | null>(null);
   const [selectedToken, setSelectedToken] = useState<TokenBalance | null>(preselectedToken);
 
@@ -91,7 +91,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
       setError("Please enter a valid amount");
       return;
     }
-    
+
     const hasInsufficientBalance = parseFloat(amount) > selectedToken.amount;
     setInsufficientBalance(hasInsufficientBalance);
 
@@ -109,16 +109,41 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
     if (!hasInsufficientBalance) {
       setError("");
     }
-    
+
     try {
       await buildTransaction(selectedToken, recipient as Address, amount, selectedToken.evmChain, wallet.address as Address);
       setStep("confirm");
     } catch (err: any) {
       if (hasInsufficientBalance || err.message?.toLowerCase().includes("insufficient")) {
+        // Create a fallback preview so the user can see the details and the error
+        // Cast to any to bypass strict type checks for the fallback
+        const fallbackPreview: any = {
+          transactionData: { to: recipient, value: 0, data: "0x" },
+          recipient,
+          amount,
+          token: selectedToken!, // We checked !selectedToken earlier in handleNext, so this is safe
+          chain: selectedToken?.evmChain || "Ethereum",
+          gasEstimate: "Unknown",
+          gasPrice: "0",
+          totalCost: "0"
+        };
+
+        // We need to inject this fake preview into the component state.
+        // Since useTransactionBuilder doesn't expose a setter, we'll strip the preview check in the render 
+        // OR we can make buildTransaction return this fallback?
+        // Actually, we can just use a trick: bypass the check in render by checking for error state?
+        // No, TransactionDetails NEEDS data.
+
+        // Best hack: Render it here? No, we need to continue using the component structure.
+        // I will MODIFY the render check in SendFlow to allow this.
+        // Wait, I can't set "preview" state from here because it's inside the hook.
+
+        // Change: I will ignore the hook's preview if it's null AND we have insufficient balance,
+        // and instead pass a constructed object to TransactionDetails.
+
+        // To do that, I need to change lines 242 and 252.
+        // So for THIS block, I will just set the step. I will modify the RENDER logic in another chunk.
         setError("");
-        try {
-          await buildTransaction(selectedToken, recipient as Address, amount, selectedToken.evmChain, wallet.address as Address);
-        } catch {}
         setStep("confirm");
       } else {
         setError(err.message || "Failed to build transaction");
@@ -239,7 +264,8 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
   }
 
   if (step === "confirm") {
-    if (!preview) {
+    // If we have insufficient balance, we might not have a preview, but we still want to show the confirmation screen with the error.
+    if (!preview && !insufficientBalance) {
       return (
         <div className="wallet-card p-8">{renderHeader("Confirm Transaction")}<div className="py-8 text-center"><p className="text-[color:var(--color-depth)]/60">Loading transaction details...</p></div></div>
       );
@@ -249,12 +275,21 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         {renderHeader("Confirm Transaction")}
         {buildError && (<div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">{buildError}</div>)}
         <TransactionDetails
-          preview={preview}
+          preview={preview || {
+            transactionData: { to: recipient, value: 0, data: "0x" },
+            recipient,
+            amount,
+            token: selectedToken!,
+            chain: selectedToken?.evmChain || "Ethereum",
+            gasEstimate: "Unknown",
+            gasPrice: "0",
+            totalCost: "0"
+          } as any}
           selectedToken={selectedToken}
           insufficientBalance={insufficientBalance}
           onEdit={() => { clearPreview(); setStep("form"); setInsufficientBalance(false); }}
           onConfirm={handleConfirm}
-          isConfirming={step === "loading"}
+          isConfirming={false} // Loading state is handled by the parent component's "loading" step
         />
       </div>
     );
@@ -279,18 +314,17 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
                 key={group.symbol}
                 type="button"
                 onClick={() => handleGroupSelect(group)}
-                className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${
-                  selectedGroup?.symbol === group.symbol
-                    ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/5"
-                    : "border-transparent hover:bg-[color:var(--color-depth)]/5"
-                }`}
+                className={`flex w-full items-center justify-between rounded-lg border p-3 text-left transition ${selectedGroup?.symbol === group.symbol
+                  ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/5"
+                  : "border-transparent hover:bg-[color:var(--color-depth)]/5"
+                  }`}
               >
                 <div className="flex items-center gap-3">
                   <TokenLogo symbol={group.symbol} name={group.name} />
                   <div>
                     <p className="font-semibold">{group.name}</p>
-                     <div className="flex items-center gap-1 -space-x-2">
-                       {group.chains.map(chainToken =>
+                    <div className="flex items-center gap-1 -space-x-2">
+                      {group.chains.map(chainToken =>
                         chainToken.evmChain ? (
                           <ChainLogo key={chainToken.evmChain} chain={chainToken.evmChain} />
                         ) : chainToken.chain === 'Solana' ? (

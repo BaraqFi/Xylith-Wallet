@@ -3,16 +3,14 @@
 import { useApp } from "../app/AppContext";
 import { DarkModeToggle } from "../app/DarkModeToggle";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { X, Loader2, User, KeyRound, Save } from "lucide-react";
+import { X, Loader2, KeyRound } from "lucide-react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useState, useEffect, useRef } from "react";
 
 export function WalletSettingsScreen() {
   const { currentView, setCurrentView } = useApp();
-  const { user, exportWallet, logout } = usePrivy();
+  const { exportWallet, logout } = usePrivy();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const [userName, setUserName] = useState(user?.email?.split('@')[0] || '');
 
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -90,14 +88,6 @@ export function WalletSettingsScreen() {
     }
   };
 
-  const handleSaveName = () => {
-    // In a real app, you would use Privy's updateUser method
-    // For now, we'll just log it to demonstrate the concept
-    console.log("Saving user name:", userName);
-    // Example: await user.update({ ...user, name: userName });
-    // You could show a toast notification on success
-  };
-
   return (
     <div
       className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center"
@@ -121,26 +111,6 @@ export function WalletSettingsScreen() {
         </button>
         <h2 id="wallet-settings-title" className="text-xl font-bold mb-6">Wallet Settings</h2>
         <div className="space-y-6 pt-4">
-
-          {/* Profile Section */}
-          <div className="space-y-4">
-            <h3 className="text-sm font-semibold text-[color:var(--color-depth)]/60 border-b border-[color:var(--color-border)] pb-2">Profile</h3>
-            <div className="flex items-center justify-between">
-              <p className="font-medium text-[color:var(--color-depth)]">Name</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <User className="h-4 w-4 text-[color:var(--color-depth)]/60" />
-              <Input 
-                value={userName}
-                onChange={(e) => setUserName(e.target.value)}
-                placeholder="Enter your name"
-                className="flex-1"
-              />
-              <Button size="icon" onClick={handleSaveName}>
-                <Save className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
 
           {/* Security Section */}
           <div className="space-y-4">

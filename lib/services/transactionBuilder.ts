@@ -2,6 +2,7 @@ import { Address, parseUnits, formatUnits, parseAbiItem, encodeFunctionData } fr
 import { createPublicClient, http, createWalletClient, custom } from "viem";
 import { mainnet, arbitrum, optimism, polygon, base, bsc } from "viem/chains";
 import { EVMChain, TokenBalance } from "@/components/wallet/data";
+import { getAlchemyRpcUrl } from "./alchemyClient";
 // Note: Alchemy RPC calls should go through /api/alchemy/rpc proxy
 // This file uses public RPC for transaction building
 

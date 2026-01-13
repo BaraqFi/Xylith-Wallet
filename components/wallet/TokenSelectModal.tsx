@@ -32,7 +32,7 @@ export function TokenSelectModal({
   // Handle contract address search
   useEffect(() => {
     const query = searchQuery.trim();
-    
+
     // Reset CA token state if query changes
     if (!isValidContractAddress(query)) {
       setCaToken(null);
@@ -62,7 +62,11 @@ export function TokenSelectModal({
 
         // Fetch token metadata
         const metadata = await fetchTokenMetadata(query as Address, chain);
-        
+
+        if (!metadata) {
+          throw new Error("Could not fetch metadata");
+        }
+
         // Check if token already exists in list
         const existing = tokens.find(
           (t) => t.contractAddress?.toLowerCase() === query.toLowerCase()
@@ -100,6 +104,7 @@ export function TokenSelectModal({
 
   // Filter and search
   const filteredTokens = useMemo(() => {
+    const seenTokenKeys = new Set<string>();
     return tokens
       .filter((token) => {
         if (excludeSymbol && token.symbol === excludeSymbol) return false;
@@ -110,6 +115,13 @@ export function TokenSelectModal({
           token.name.toLowerCase().includes(query) ||
           token.contractAddress?.toLowerCase().includes(query)
         );
+      })
+      .filter((token) => {
+        // Deduplicate based on unique key (Symbol + Chain + EVMChain)
+        const key = `${token.symbol}-${token.chain}-${token.evmChain || ''}`;
+        if (seenTokenKeys.has(key)) return false;
+        seenTokenKeys.add(key);
+        return true;
       })
       .sort((a, b) => {
         const aHasBalance = a.amount > 0 || a.usdValue > 0;
@@ -122,7 +134,7 @@ export function TokenSelectModal({
         if (a.usdValue !== b.usdValue) {
           return b.usdValue - a.usdValue;
         }
-        
+
         // Then by symbol
         return a.symbol.localeCompare(b.symbol);
       });
@@ -134,11 +146,11 @@ export function TokenSelectModal({
   };
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--color-depth)]/40 p-4"
       onClick={onClose}
     >
-      <div 
+      <div
         className="wallet-card w-full max-w-md max-h-[80vh] flex flex-col p-4 sm:p-6"
         onClick={(e) => e.stopPropagation()}
       >
@@ -195,7 +207,9 @@ export function TokenSelectModal({
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-sm">{caToken.name}</p>
                       {isUnverified && (
-                        <AlertTriangle className="h-3 w-3 text-yellow-500" title="Unverified Token" />
+                        <div title="Unverified Token">
+                          <AlertTriangle className="h-3 w-3 text-yellow-500" />
+                        </div>
                       )}
                     </div>
                     <p className="text-xs text-[color:var(--color-depth)]/50 font-mono">
@@ -233,13 +247,13 @@ export function TokenSelectModal({
                   <TokenLogo symbol={token.symbol} name={token.name} size="sm" />
                   <div>
                     <p className="font-semibold text-sm">{token.name}</p>
-                     <p className="text-xs text-[color:var(--color-depth)]/60">
+                    <p className="text-xs text-[color:var(--color-depth)]/60">
                       {token.symbol}
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
-                   <p className="font-semibold text-sm">
+                  <p className="font-semibold text-sm">
                     {token.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })}
                   </p>
                   <p className="text-xs text-[color:var(--color-depth)]/60">
