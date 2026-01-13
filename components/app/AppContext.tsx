@@ -12,8 +12,10 @@ interface AppState {
   setShowAiAlert: (show: boolean) => void;
   dontShowAiAlert: boolean;
   setDontShowAiAlert: (dont: boolean) => void;
-  currentView: "wallet" | "send" | "receive" | "history" | "receipt" | "swap" | "settings";
+  currentView: "wallet" | "send" | "receive" | "history" | "receipt" | "swap" | "settings" | "token-details";
   setCurrentView: (view: AppState["currentView"]) => void;
+  selectedTokenDetails: TokenBalance | null;
+  setSelectedTokenDetails: (token: TokenBalance | null) => void;
   selectedTransactionId: string | null;
   setSelectedTransactionId: (id: string | null) => void;
   darkMode: boolean;
@@ -33,6 +35,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [showAiAlert, setShowAiAlert] = useState(false);
   const [dontShowAiAlert, setDontShowAiAlert] = useState(false);
   const [currentView, setCurrentView] = useState<AppState["currentView"]>("wallet");
+  const [selectedTokenDetails, setSelectedTokenDetails] = useState<TokenBalance | null>(null);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(true);
   const [preselectedToken, setPreselectedToken] = useState<TokenBalance | null>(null);
@@ -60,6 +63,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setSlippage,
         activeChain,
         setActiveChain,
+        selectedTokenDetails,
+        setSelectedTokenDetails,
       }}
     >
       {children}

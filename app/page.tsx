@@ -13,32 +13,97 @@ import { HistoryScreen } from "@/components/history/HistoryScreen";
 import { TransactionReceipt } from "@/components/history/TransactionReceipt";
 import { AiModePage } from "@/components/ai/AiModePage";
 import { WalletSettingsScreen } from "@/components/wallet/WalletSettingsModal";
+import { TokenDetailsView } from "@/components/wallet/TokenDetailsView";
 import AuthGate from "./AuthGate";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { defaultEvmTokens, defaultSolanaTokens } from "@/components/wallet/data";
 
 function WalletContent() {
-  const { mode, currentView, activeChain } = useApp();
-  
+  const { mode, currentView, activeChain, selectedTokenDetails } = useApp();
+
   // Lift useTokenBalances to the common ancestor
   // A more advanced implementation might pass the specific evmChain from context
   const { balances: realBalances, isLoading: isLoadingBalances } = useTokenBalances(
     activeChain,
     'ethereum' // Defaulting to ethereum for the hook
   );
-  
-  // Create a default list based on the active chain
-  const defaultTokens = activeChain === 'EVM' ? defaultEvmTokens : defaultSolanaTokens;
-  
-  // Use real balances if available, otherwise use the default list as a fallback
-  const displayTokens = realBalances.length > 0 ? realBalances : defaultTokens;
+
+  // FIX: Merge logic to ensure we always have both EVM and Solana tokens available
+  // regardless of which chain is "active". This enables the "Send" flow to see all tokens
+  // and the "Token List" to show cross-chain holdings (stacked logos).
+
+  const allTokens: any[] = [];
+
+  // 1. Add EVM Tokens (Real or Default)
+  if (activeChain === 'EVM') {
+    // Preserve the multi-chain structure of defaultEvmTokens, but update balances where found.
+    // If realBalances is empty (loading or error), we just use defaults.
+    // If realBalances exists (e.g. Ethereum balances), we update the Ethereum entries in default list.
+    // AND we must ensure we don't duplicate.
+
+    // Create a map of real balances for O(1) lookup
+    // Key: contractAddress-chain (since we might have same contract on diff chains? rare for defaults here)
+    // Actually, defaultEvmTokens are distinct by (symbol, evmChain).
+    // realBalances currently only returns for 'ethereum' because we pass 'ethereum' to hook.
+    // So we match on contractAddress (for same chain) or symbol?
+    // Safer: match on contractAddress lowercased if chain matches.
+
+    const balanceMap = new Map<string, any>();
+    realBalances.forEach(t => {
+      if (t.contractAddress) {
+        balanceMap.set(t.contractAddress.toLowerCase(), t);
+      }
+    });
+
+    // We iterate default tokens (which have all chains: Base, Arb, etc.)
+    // If we have a real balance for it, we use the real balance object (which has amount/usdValue).
+    // If not, we keep the default (amount=0).
+    const mergedEvmTokens = defaultEvmTokens.map(defToken => {
+      // Only update if the real balance corresponds to this default token
+      // check contract address match
+      const match = balanceMap.get(defToken.contractAddress?.toLowerCase() || "");
+      // CRITICAL FIX: Ensure the matched real token is for the SAME chain as the default token.
+      // Native tokens (ETH, BNB) often share '0x00...00' address across different chains.
+      if (match && match.evmChain === defToken.evmChain) {
+        // Found a real balance update. Use it.
+        return match;
+      }
+      return defToken;
+    });
+
+    allTokens.push(...mergedEvmTokens);
+
+    // Also push any "new" tokens found in realBalances that weren't in default list?
+    // (e.g. if user has some random ERC20 not in default list)
+    realBalances.forEach(t => {
+      const isDefault = defaultEvmTokens.some(d => d.contractAddress?.toLowerCase() === t.contractAddress?.toLowerCase());
+      if (!isDefault) {
+        allTokens.push(t);
+      }
+    });
+
+  } else {
+    // If not active, use defaults
+    allTokens.push(...defaultEvmTokens);
+  }
+
+  // 2. Add Solana Tokens (Default only for now as we don't have a Solana hook hooked up yet)
+  // If activeChain is Solana, useTokenBalances might be returning Solana tokens if implemented?
+  // Previous logic suggested useTokenBalances only handles EVM for now ('ethereum' hardcoded).
+  // So we just push defaultSolanaTokens.
+  allTokens.push(...defaultSolanaTokens);
 
   if (mode === "ai") {
     return <AiModePage />;
   }
+  if (currentView === "token-details") {
+    if (selectedTokenDetails) {
+      return <TokenDetailsView token={selectedTokenDetails} allTokens={allTokens} />;
+    }
+  }
   if (currentView === "send") {
-    // Pass live balances to SendFlow
-    return <SendFlow tokens={displayTokens} />;
+    // Pass ALL tokens to SendFlow so it can filter by chain
+    return <SendFlow tokens={allTokens} />;
   }
   if (currentView === "swap") {
     return <SwapFlow />;
@@ -49,8 +114,8 @@ function WalletContent() {
   if (currentView === "receipt") {
     return <TransactionReceipt />;
   }
-  // Pass live balances and loading state to ManualWallet
-  return <ManualWallet tokens={displayTokens} isLoading={isLoadingBalances} />;
+  // Pass ALL tokens to ManualWallet so it can group them (e.g. USDC on both chains)
+  return <ManualWallet tokens={allTokens} isLoading={isLoadingBalances} />;
 }
 
 function ReceiveScreenWrapper() {

@@ -20,7 +20,8 @@ import {
 } from "./data";
 import { useApp } from "../app/AppContext";
 import { shortenAddress, groupTokensBySymbol, GroupedToken } from "./utils";
-import { TokenDetailsModal } from "./TokenDetailsModal";
+
+// Removed TokenDetailsModal import
 import { Button } from "@/components/ui/button";
 // Web3Icons for token and network logos - optimized individual imports
 import {
@@ -289,11 +290,11 @@ function TokenList({
   allTokens: TokenBalance[];
   isLoading?: boolean;
 }) {
-  const { setCurrentView } = useApp();
-  const [selectedToken, setSelectedToken] = useState<TokenBalance | null>(null);
+  const { setCurrentView, setSelectedTokenDetails } = useApp();
+  // Removed local selectedToken state
 
   // Filter based on activeChain. A token group is shown if any of its chains match.
-  const filteredGroupedTokens = groupedTokens.filter(group => 
+  const filteredGroupedTokens = groupedTokens.filter(group =>
     group.chains.some(chainToken => chainToken.chain === activeChain)
   );
 
@@ -328,7 +329,10 @@ function TokenList({
             {displayTokens.map((group) => (
               <button
                 key={group.symbol}
-                onClick={() => setSelectedToken(group.chains[0])}
+                onClick={() => {
+                  setSelectedTokenDetails(group.chains[0]);
+                  setCurrentView("token-details");
+                }}
                 className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
               >
                 <div className="flex items-center gap-3">
@@ -344,9 +348,9 @@ function TokenList({
                           <ChainLogo key={chainToken.evmChain} chain={chainToken.evmChain} />
                         ) : null
                       )}
-                       {group.chains.some(ct => ct.chain === 'Solana' && activeChain === 'Solana') && (
-                          <ChainLogo chain="solana" />
-                       )}
+                      {group.chains.some(ct => ct.chain === 'Solana' && activeChain === 'Solana') && (
+                        <ChainLogo chain="solana" />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -354,11 +358,11 @@ function TokenList({
                   <p className="font-semibold">
                     {currencyFormatter.format(group.totalUsdValue)}
                   </p>
-                  {group.chains.length > 1 && (
-                     <p className="text-sm text-[color:var(--color-depth)]/60">
-                      {group.chains.length} chains
-                    </p>
-                  )}
+                  <p className="text-sm text-[color:var(--color-depth)]/60">
+                    {group.chains.reduce((sum, t) => sum + t.amount, 0).toLocaleString(undefined, {
+                      maximumFractionDigits: 4,
+                    })} {group.symbol}
+                  </p>
                 </div>
               </button>
             ))}
@@ -370,13 +374,7 @@ function TokenList({
           </div>
         )}
       </div>
-      {selectedToken && (
-        <TokenDetailsModal
-          token={selectedToken}
-          allTokens={allTokens}
-          onClose={() => setSelectedToken(null)}
-        />
-      )}
+
     </>
   );
 }
