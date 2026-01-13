@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useApp } from "../app/AppContext";
 import { TokenBalance, EVMChain } from "../wallet/data";
 import { groupTokensBySymbol, GroupedToken } from "../wallet/utils";
@@ -263,6 +263,13 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
     );
   }
 
+  // Log build errors to console (not displayed in UI)
+  useEffect(() => {
+    if (buildError) {
+      console.error("Transaction build error:", buildError);
+    }
+  }, [buildError]);
+
   if (step === "confirm") {
     // If we have insufficient balance, we might not have a preview, but we still want to show the confirmation screen with the error.
     if (!preview && !insufficientBalance) {
@@ -273,7 +280,6 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
     return (
       <div className="wallet-card p-8">
         {renderHeader("Confirm Transaction")}
-        {buildError && (<div className="mb-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">{buildError}</div>)}
         <TransactionDetails
           preview={preview || {
             transactionData: { to: recipient, value: 0, data: "0x" },

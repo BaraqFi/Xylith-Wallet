@@ -130,9 +130,17 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                                 ? "out"
                                 : "unknown";
 
-                    // Determine action type from category
+                    // Determine action type from enriched type or category
                     const category = item.category || "external";
-                    const action = direction === "in" ? "Receive" : "Send";
+                    const enrichedType = item.type;
+                    
+                    // Use enriched type if available, otherwise infer from category and direction
+                    let action: "Send" | "Receive" | "Swap";
+                    if (enrichedType === "swap") {
+                        action = "Swap";
+                    } else {
+                        action = direction === "in" ? "Receive" : "Send";
+                    }
 
                     // Parse timestamp (Alchemy returns milliseconds)
                     const timestampMs = item.timestamp || Date.now();
@@ -142,28 +150,41 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                     const valueHex = item.value || "0x0";
                     const tokenSymbol = item.asset || (category === "external" ? "ETH" : "TOKEN");
                     
-                    // Format amount
+                    // Format amount with enriched data
                     let tokenAmount = "0";
                     let amountLabel = "0";
                     
                     try {
-                        if (category === "external") {
-                            // Native token transfer - value is in wei (hex)
-                            const valueBigInt = BigInt(valueHex);
-                            tokenAmount = formatUnits(valueBigInt, 18).toString();
-                            amountLabel = `${parseFloat(tokenAmount).toFixed(6)} ${tokenSymbol}`;
+                        const decimals = item.tokenDecimals || (category === "external" ? 18 : 18);
+                        const valueBigInt = BigInt(valueHex);
+                        tokenAmount = formatUnits(valueBigInt, decimals).toString();
+                        
+                        // Use enriched token symbol if available
+                        const displaySymbol = item.tokenSymbol || tokenSymbol;
+                        const amountNum = parseFloat(tokenAmount);
+                        
+                        // Format amount with appropriate precision
+                        const formattedAmount = amountNum >= 1 
+                            ? amountNum.toFixed(4)
+                            : amountNum.toFixed(6);
+                        
+                        // Build amount label with fiat value if available
+                        if (item.fiatValue !== undefined && item.fiatValue > 0) {
+                            const fiatFormatted = item.fiatValue >= 1
+                                ? item.fiatValue.toFixed(2)
+                                : item.fiatValue.toFixed(4);
+                            amountLabel = direction === "in"
+                                ? `+${formattedAmount} ${displaySymbol} (~$${fiatFormatted})`
+                                : `-${formattedAmount} ${displaySymbol} (~$${fiatFormatted})`;
                         } else {
-                            // ERC20/ERC721/ERC1155 transfer
-                            // For ERC20, we'd need decimals from token metadata
-                            // For now, show raw value
-                            const valueBigInt = BigInt(valueHex);
-                            tokenAmount = valueBigInt.toString();
-                            amountLabel = `${tokenAmount} ${tokenSymbol}`;
+                            amountLabel = direction === "in"
+                                ? `+${formattedAmount} ${displaySymbol}`
+                                : `-${formattedAmount} ${displaySymbol}`;
                         }
                     } catch (e) {
                         console.warn("Error parsing transaction value:", e, item);
                         tokenAmount = valueHex;
-                        amountLabel = `${valueHex} ${tokenSymbol}`;
+                        amountLabel = `${valueHex} ${item.tokenSymbol || tokenSymbol}`;
                     }
 
                     const counterparty = 

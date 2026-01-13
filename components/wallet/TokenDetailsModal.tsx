@@ -12,7 +12,8 @@ import {
   DialogClose,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Copy, Check, X, Send, ArrowRightLeft } from "lucide-react";
+import { Copy, Check, X, Send, ArrowRightLeft, TrendingUp, TrendingDown } from "lucide-react";
+import { useTokenAnalytics } from "@/hooks/useTokenAnalytics";
 
 interface TokenDetailsModalProps {
   token: TokenBalance;
@@ -27,6 +28,14 @@ export function TokenDetailsModal({
 }: TokenDetailsModalProps) {
   const { setCurrentView, setPreselectedToken } = useApp();
   const [copied, setCopied] = useState(false);
+  
+  // Fetch token analytics
+  const { analytics, isLoading: analyticsLoading } = useTokenAnalytics(
+    token.symbol,
+    token.evmChain || "ethereum",
+    token.contractAddress,
+    !!token.evmChain // Only fetch for EVM tokens
+  );
 
   const tokenInstances = useMemo(
     () =>
@@ -122,8 +131,68 @@ export function TokenDetailsModal({
                   minimumFractionDigits: 2,
                 })}
               </p>
+              {analytics && analytics.priceChange24h !== undefined && (
+                <div className="mt-2 flex items-center gap-1 text-sm">
+                  {analytics.priceChange24h >= 0 ? (
+                    <TrendingUp className="h-4 w-4 text-green-500" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4 text-red-500" />
+                  )}
+                  <span
+                    className={
+                      analytics.priceChange24h >= 0
+                        ? "text-green-500"
+                        : "text-red-500"
+                    }
+                  >
+                    {analytics.priceChange24h >= 0 ? "+" : ""}
+                    {analytics.priceChange24h.toFixed(2)}%
+                  </span>
+                  <span className="text-[color:var(--color-depth)]/60">
+                    (24h)
+                  </span>
+                </div>
+              )}
             </div>
           </div>
+
+          {analytics && (
+            <div className="grid gap-4 md:grid-cols-3">
+              {analytics.currentPriceUsd !== undefined && (
+                <div className="rounded-lg border border-[color:var(--color-border)] p-4">
+                  <p className="text-sm text-[color:var(--color-depth)]/60">
+                    Current Price
+                  </p>
+                  <p className="mt-1 text-lg font-semibold">
+                    ${analytics.currentPriceUsd.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 6,
+                    })}
+                  </p>
+                </div>
+              )}
+              {analytics.marketCap !== undefined && (
+                <div className="rounded-lg border border-[color:var(--color-border)] p-4">
+                  <p className="text-sm text-[color:var(--color-depth)]/60">
+                    Market Cap
+                  </p>
+                  <p className="mt-1 text-lg font-semibold">
+                    ${(analytics.marketCap / 1e9).toFixed(2)}B
+                  </p>
+                </div>
+              )}
+              {analytics.volume24h !== undefined && (
+                <div className="rounded-lg border border-[color:var(--color-border)] p-4">
+                  <p className="text-sm text-[color:var(--color-depth)]/60">
+                    24h Volume
+                  </p>
+                  <p className="mt-1 text-lg font-semibold">
+                    ${(analytics.volume24h / 1e6).toFixed(2)}M
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="flex gap-3">
             <Button
@@ -210,26 +279,55 @@ export function TokenDetailsModal({
 
           <div className="rounded-lg border border-[color:var(--color-border)] p-4">
             <h3 className="mb-4 text-sm font-semibold text-[color:var(--color-depth)]">
-              Value (30d)
+              Price History (7d)
             </h3>
-            <div className="h-32 w-full">
-              <svg viewBox="0 0 300 120" className="h-full w-full">
-                <polyline
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className="text-[color:var(--color-accent)]"
-                  points={valueHistory
-                    .map(
-                      (v, i) =>
-                        `${(i / (valueHistory.length - 1)) * 280 + 10},${
-                          110 - ((v.value - minValue) / range) * 100
-                        }`
-                    )
-                    .join(" ")}
-                />
-              </svg>
-            </div>
+            {analyticsLoading ? (
+              <div className="flex h-32 items-center justify-center">
+                <p className="text-sm text-[color:var(--color-depth)]/60">
+                  Loading price data...
+                </p>
+              </div>
+            ) : analytics?.sparkline && analytics.sparkline.length > 0 ? (
+              <div className="h-32 w-full">
+                <svg viewBox="0 0 300 120" className="h-full w-full">
+                  <polyline
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="text-[color:var(--color-accent)]"
+                    points={analytics.sparkline
+                      .map((price, i) => {
+                        const minPrice = Math.min(...analytics.sparkline!);
+                        const maxPrice = Math.max(...analytics.sparkline!);
+                        const priceRange = maxPrice - minPrice || 1;
+                        return `${(i / (analytics.sparkline!.length - 1)) * 280 + 10},${
+                          110 - ((price - minPrice) / priceRange) * 100
+                        }`;
+                      })
+                      .join(" ")}
+                  />
+                </svg>
+              </div>
+            ) : (
+              <div className="h-32 w-full">
+                <svg viewBox="0 0 300 120" className="h-full w-full">
+                  <polyline
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="text-[color:var(--color-accent)]"
+                    points={valueHistory
+                      .map(
+                        (v, i) =>
+                          `${(i / (valueHistory.length - 1)) * 280 + 10},${
+                            110 - ((v.value - minValue) / range) * 100
+                          }`
+                      )
+                      .join(" ")}
+                  />
+                </svg>
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>

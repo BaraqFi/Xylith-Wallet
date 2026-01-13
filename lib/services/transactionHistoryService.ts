@@ -18,6 +18,13 @@ export interface TransactionHistoryItem {
   category: string;
   timestamp: number;
   blockNum: string;
+  // Enriched fields
+  tokenSymbol?: string;
+  tokenDecimals?: number;
+  fiatValue?: number;
+  fiatCurrency?: string;
+  type?: "send" | "receive" | "swap" | "approval" | "contractInteraction";
+  protocol?: string;
 }
 
 /**

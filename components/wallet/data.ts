@@ -8,6 +8,15 @@ export interface ChainBalance {
   nativeLabel: string;
 }
 
+export interface TokenAnalytics {
+  currentPriceUsd?: number;
+  priceChange24h?: number;
+  priceChange7d?: number;
+  marketCap?: number;
+  volume24h?: number;
+  sparkline?: number[]; // Array of prices for last 7 days
+}
+
 export interface TokenBalance {
   symbol: string;
   name: string;
@@ -20,6 +29,7 @@ export interface TokenBalance {
   contractAddress?: string;
   pricePerToken?: number;
   decimals?: number;
+  analytics?: TokenAnalytics;
 }
 
 export interface WalletTransaction {

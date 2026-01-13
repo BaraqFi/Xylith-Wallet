@@ -1,35 +1,12 @@
 "use client";
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useApp } from "../app/AppContext";
 import { manualWalletState, Chain } from "../wallet/data";
 import { Button } from "@/components/ui/button";
 import { Copy, Check, X, AlertTriangle } from "lucide-react";
-
-function QRCodeGrid({ address }: { address: string }) {
-  const grid = useMemo(() => {
-    const seed = address
-      .split("")
-      .reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    return Array.from({ length: 144 }).map((_, i) => {
-      const hash = (seed + i) * ((i % 10) + 1);
-      return hash % 3 === 0;
-    });
-  }, [address]);
-  return (
-    <div className="grid grid-cols-12 gap-0.5">
-      {grid.map((isDark, i) => (
-        <div
-          key={i}
-          className={`aspect-square ${
-            isDark ? "bg-[color:var(--color-depth)]" : "bg-transparent"
-          }`}
-        />
-      ))}
-    </div>
-  );
-}
+import { QRCodeSVG } from "qrcode.react";
 
 export function ReceiveScreen() {
   const { currentView, setCurrentView, activeChain, setActiveChain } = useApp();
@@ -231,10 +208,15 @@ export function ReceiveScreen() {
 
           {showQr ? (
             <div className="flex flex-col items-center gap-4 rounded-lg border border-[color:var(--color-border)] p-6">
-              <div className="flex items-center justify-center rounded-lg bg-white p-2">
-                <div className="h-48 w-48">
-                  <QRCodeGrid address={address} />
-                </div>
+              <div className="flex items-center justify-center rounded-lg bg-white p-4">
+                <QRCodeSVG
+                  value={address}
+                  size={192}
+                  level="M"
+                  includeMargin={false}
+                  fgColor="#000000"
+                  bgColor="#ffffff"
+                />
               </div>
               <p className="text-center text-sm text-[color:var(--color-depth)]/60">
                 Scan this QR code to receive {selectedChain} assets

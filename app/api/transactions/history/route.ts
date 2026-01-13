@@ -96,20 +96,114 @@ export async function GET(req: NextRequest) {
         }
 
         const transfers = data.result?.transfers || [];
-        const transactions = transfers.map((transfer: any) => ({
-            hash: transfer.hash,
-            from: transfer.from,
-            to: transfer.to,
-            value: transfer.value || "0",
-            asset: transfer.asset,
-            category: transfer.category,
-            timestamp: transfer.metadata?.blockTimestamp 
-                ? new Date(transfer.metadata.blockTimestamp).getTime()
-                : Date.now(),
-            blockNum: transfer.blockNum || "0x0",
-        }));
+        
+        // Enrich transactions with token metadata and fiat values
+        const enrichedTransactions = await Promise.all(
+            transfers.map(async (transfer: any) => {
+                const category = transfer.category || "external";
+                const isNative = category === "external";
+                const contractAddress = isNative ? undefined : transfer.rawContract?.address;
+                
+                // Determine transaction type
+                let type: "send" | "receive" | "swap" | "approval" | "contractInteraction" = "send";
+                if (category === "erc20" || category === "erc721" || category === "erc1155") {
+                    // Could be swap, approval, or regular transfer - we'll detect swaps later
+                    type = "send";
+                } else if (category === "external") {
+                    // Check if it's a contract interaction
+                    const toAddress = transfer.to?.toLowerCase();
+                    if (toAddress && toAddress !== transfer.from?.toLowerCase()) {
+                        // Could be contract interaction - simplified for now
+                        type = "send";
+                    }
+                }
 
-        return NextResponse.json({ items: transactions });
+                // Get token metadata if ERC20
+                let tokenSymbol = transfer.asset || (isNative ? "ETH" : "TOKEN");
+                let tokenDecimals = isNative ? 18 : undefined;
+                
+                if (!isNative && contractAddress) {
+                    try {
+                        // Fetch token metadata via API route
+                        const metadataResponse = await fetch(
+                            `${req.nextUrl.origin}/api/alchemy/token-metadata`,
+                            {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                    contractAddress,
+                                    chain,
+                                }),
+                            }
+                        );
+                        
+                        if (metadataResponse.ok) {
+                            const metadataData = await metadataResponse.json();
+                            if (metadataData.metadata) {
+                                tokenSymbol = metadataData.metadata.symbol || tokenSymbol;
+                                tokenDecimals = metadataData.metadata.decimals || 18;
+                            }
+                        }
+                    } catch (error) {
+                        console.warn("Failed to fetch token metadata:", error);
+                    }
+                }
+
+                // Calculate fiat value (simplified - uses current price)
+                // In production, you'd want historical prices
+                let fiatValue: number | undefined;
+                if (transfer.value && tokenDecimals) {
+                    try {
+                        const valueBigInt = BigInt(transfer.value);
+                        const amount = Number(valueBigInt) / Math.pow(10, tokenDecimals);
+                        
+                        // Fetch current price for fiat value estimate
+                        // Note: This is an estimate - real historical prices would be better
+                        if (tokenSymbol && tokenSymbol !== "ETH") {
+                            try {
+                                const priceResponse = await fetch(
+                                    `${req.nextUrl.origin}/api/token/analytics?symbol=${tokenSymbol}&chain=${chain}`
+                                );
+                                if (priceResponse.ok) {
+                                    const priceData = await priceResponse.json();
+                                    if (priceData.analytics?.currentPriceUsd) {
+                                        fiatValue = amount * priceData.analytics.currentPriceUsd;
+                                    }
+                                }
+                            } catch (error) {
+                                // Ignore price fetch errors
+                            }
+                        } else if (tokenSymbol === "ETH") {
+                            // For ETH, use a rough estimate (in production, use historical price API)
+                            // For now, we'll leave fiatValue undefined and calculate on frontend
+                        }
+                    } catch (error) {
+                        console.warn("Failed to calculate fiat value:", error);
+                    }
+                }
+
+                return {
+                    hash: transfer.hash,
+                    from: transfer.from,
+                    to: transfer.to,
+                    value: transfer.value || "0",
+                    asset: transfer.asset,
+                    category: transfer.category,
+                    timestamp: transfer.metadata?.blockTimestamp 
+                        ? new Date(transfer.metadata.blockTimestamp).getTime()
+                        : Date.now(),
+                    blockNum: transfer.blockNum || "0x0",
+                    // Enriched fields
+                    tokenSymbol,
+                    tokenDecimals,
+                    fiatValue,
+                    fiatCurrency: "USD",
+                    type,
+                };
+            })
+        );
+
+        return NextResponse.json({ items: enrichedTransactions });
     } catch (error: any) {
         console.error("Transaction history error:", error);
         return NextResponse.json(
