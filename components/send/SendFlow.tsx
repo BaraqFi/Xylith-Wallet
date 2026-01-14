@@ -14,11 +14,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Check, X, Loader2, ArrowLeft } from "lucide-react";
+import { Check, X, Loader2, ArrowLeft, AlertCircle } from "lucide-react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { createWalletClient, custom, Address } from "viem";
 import { useTransactionBuilder } from "@/hooks/useTransactionBuilder";
 import { TransactionDetails } from "./TransactionDetails";
+import { solanaClient } from "@/lib/solana/client";
+import { SystemProgram, PublicKey, Transaction } from "@solana/web3.js";
+import { getAssociatedTokenAddress, createTransferInstruction } from "@solana/spl-token";
 
 type SendStep = "form" | "confirm" | "loading" | "success" | "error";
 
@@ -95,10 +98,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
     const hasInsufficientBalance = parseFloat(amount) > selectedToken.amount;
     setInsufficientBalance(hasInsufficientBalance);
 
-    if (!isEvm || !selectedToken.evmChain) {
-      setError("Solana transactions not yet implemented");
-      return;
-    }
+    /* Solana block removed */
 
     const wallet = wallets.find((w) => w.walletClientType === 'privy') || wallets[0];
     if (!wallet?.address) {
@@ -111,7 +111,9 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
     }
 
     try {
-      await buildTransaction(selectedToken, recipient as Address, amount, selectedToken.evmChain, wallet.address as Address);
+      if (isEvm && selectedToken.evmChain) {
+        await buildTransaction(selectedToken, recipient as Address, amount, selectedToken.evmChain, wallet.address as Address);
+      }
       setStep("confirm");
     } catch (err: any) {
       if (hasInsufficientBalance || err.message?.toLowerCase().includes("insufficient")) {
@@ -151,8 +153,31 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
     }
   };
 
+  // Helper function to get chain ID from token (same as SwapFlow)
+  const getChainId = (t: TokenBalance | null): number => {
+    if (!t) return 1;
+    if (t.chain === 'Solana') return 0;
+    switch (t.evmChain) {
+      case 'ethereum': return 1;
+      case 'base': return 8453;
+      case 'arbitrum': return 42161;
+      case 'optimism': return 10;
+      case 'polygon': return 137;
+      case 'bsc': return 56;
+      default: return 1;
+    }
+  };
+
   const handleConfirm = async () => {
-    if (!preview || !selectedToken?.evmChain) {
+    if (!selectedToken) {
+      setError("Token not selected");
+      return;
+    }
+
+    const isEvm = selectedToken.chain === "EVM";
+
+    // EVM transactions require preview
+    if (isEvm && (!preview || !selectedToken.evmChain)) {
       setError("Transaction preview not available");
       return;
     }
@@ -166,22 +191,106 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         throw new Error("Wallet not connected");
       }
 
-      const provider = await wallet.getEthereumProvider();
-      const walletClient = createWalletClient({
-        chain: { id: preview.transactionData.to ? 1 : 1 } as any,
-        transport: custom(provider)
-      });
+      if (isEvm && selectedToken.evmChain && preview) {
+        // --- EVM Transaction ---
+        const chainId = getChainId(selectedToken);
+        const provider = await wallet.getEthereumProvider();
+        const walletClient = createWalletClient({
+          chain: { id: chainId } as any,
+          transport: custom(provider)
+        });
 
-      const hash = await walletClient.sendTransaction({
-        account: wallet.address as Address,
-        to: preview.transactionData.to,
-        value: preview.transactionData.value,
-        data: preview.transactionData.data,
-      } as any);
+        const hash = await walletClient.sendTransaction({
+          account: wallet.address as Address,
+          to: preview.transactionData.to,
+          value: preview.transactionData.value,
+          data: preview.transactionData.data,
+        } as any);
 
-      setTxHash(hash);
-      setStep("success");
-      clearPreview();
+        setTxHash(hash);
+        setStep("success");
+        clearPreview();
+      } else {
+        // --- Solana Transaction ---
+        const solanaWallet = wallets.find(w => (w as any).chainType === 'solana');
+        if (!solanaWallet) {
+          throw new Error("Solana wallet not connected");
+        }
+
+        const fromPubkey = new PublicKey(wallet.address);
+        const toPubkey = new PublicKey(recipient);
+        const decimals = selectedToken.decimals ?? 9;
+        const amountLamports = Math.floor(parseFloat(amount) * Math.pow(10, decimals));
+
+        // Check if it's native SOL or SPL token
+        const isNativeSOL = !selectedToken.contractAddress ||
+          selectedToken.contractAddress === "So11111111111111111111111111111111111111112";
+
+        let transaction: Transaction;
+
+        if (isNativeSOL) {
+          // Native SOL transfer
+          transaction = new Transaction().add(
+            SystemProgram.transfer({
+              fromPubkey: fromPubkey,
+              toPubkey: toPubkey,
+              lamports: amountLamports,
+            })
+          );
+        } else {
+          // SPL Token transfer
+          if (!selectedToken.contractAddress) {
+            throw new Error("Token contract address is required for SPL token transfers");
+          }
+          const mintPubkey = new PublicKey(selectedToken.contractAddress);
+          const fromTokenAccount = await getAssociatedTokenAddress(
+            mintPubkey,
+            fromPubkey
+          );
+          const toTokenAccount = await getAssociatedTokenAddress(
+            mintPubkey,
+            toPubkey
+          );
+
+          transaction = new Transaction().add(
+            createTransferInstruction(
+              fromTokenAccount,
+              toTokenAccount,
+              fromPubkey,
+              amountLamports
+            )
+          );
+        }
+
+        // Get recent blockhash
+        const response = await fetch(process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'getLatestBlockhash',
+            params: [{ commitment: 'confirmed' }],
+          }),
+        });
+        const blockhashData = await response.json();
+        if (blockhashData.error) throw new Error(blockhashData.error.message);
+
+        transaction.recentBlockhash = blockhashData.result.value.blockhash;
+        transaction.feePayer = fromPubkey;
+
+        // Sign transaction
+        const signedTx = await (solanaWallet as any).signTransaction(transaction);
+
+        // Send transaction
+        const serializedTx = signedTx.serialize();
+        const signature = await solanaClient.sendRawTransaction(
+          Buffer.from(serializedTx).toString('base64')
+        );
+
+        setTxHash(signature);
+        setStep("success");
+      }
     } catch (err: any) {
       console.error("Transaction failed:", err);
       setError(err.message || "Transaction failed");
@@ -286,7 +395,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
             recipient,
             amount,
             token: selectedToken!,
-            chain: selectedToken?.evmChain || "Ethereum",
+            chain: selectedToken?.evmChain || (selectedToken?.chain === 'Solana' ? 'Solana' : "Ethereum"),
             gasEstimate: "Unknown",
             gasPrice: "0",
             totalCost: "0"

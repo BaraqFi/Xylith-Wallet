@@ -23,9 +23,9 @@ export function TokenDetailsView({
     // Fetch token analytics
     const { analytics, isLoading: analyticsLoading } = useTokenAnalytics(
         token.symbol,
-        token.evmChain || "ethereum",
+        token.evmChain || (token.chain === 'Solana' ? 'solana' : 'ethereum'),
         token.contractAddress,
-        !!token.evmChain // Only fetch for EVM tokens
+        true // Enable for all (Solana + EVM)
     );
 
     const tokenInstances = useMemo(

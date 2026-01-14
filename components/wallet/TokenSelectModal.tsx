@@ -14,6 +14,7 @@ interface TokenSelectModalProps {
   onClose: () => void;
   excludeSymbol?: string;
   chain?: EVMChain; // Optional chain for CA-based search
+  chainFilter?: string | null; // Optional filter to restrict tokens to a specific chain type (e.g. "Solana" or "EVM")
 }
 
 export function TokenSelectModal({
@@ -22,6 +23,7 @@ export function TokenSelectModal({
   onClose,
   excludeSymbol,
   chain,
+  chainFilter,
 }: TokenSelectModalProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [caToken, setCaToken] = useState<TokenBalance | null>(null);
@@ -107,7 +109,13 @@ export function TokenSelectModal({
     const seenTokenKeys = new Set<string>();
     return tokens
       .filter((token) => {
+        // 1. Exclude Symbol
         if (excludeSymbol && token.symbol === excludeSymbol) return false;
+
+        // 2. Chain Filter
+        if (chainFilter && token.chain !== chainFilter) return false;
+
+        // 3. Search Query
         const query = searchQuery.toLowerCase();
         if (!query) return true; // Include all if no search query
         return (
@@ -138,7 +146,7 @@ export function TokenSelectModal({
         // Then by symbol
         return a.symbol.localeCompare(b.symbol);
       });
-  }, [tokens, searchQuery, excludeSymbol]);
+  }, [tokens, searchQuery, excludeSymbol, chainFilter]);
 
   const handleTokenClick = (token: TokenBalance) => {
     onSelect(token);

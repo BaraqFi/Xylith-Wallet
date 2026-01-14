@@ -14,9 +14,9 @@ export async function POST(req: NextRequest) {
             );
         }
 
-        const chain = chainRaw as EVMChain;
-        // Basic validation of chain (could be more robust if we exported the EVMChain values)
-        const validChains = ['ethereum', 'base', 'arbitrum', 'optimism', 'polygon', 'bsc'];
+        const chain = chainRaw as any; // Cast to any first to check against valid strings
+        // Basic validation of chain
+        const validChains = ['ethereum', 'base', 'arbitrum', 'optimism', 'polygon', 'bsc', 'solana'];
         if (!validChains.includes(chain)) {
             return NextResponse.json(
                 { error: `Unsupported chain: ${chain}` },

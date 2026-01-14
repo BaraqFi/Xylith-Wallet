@@ -27,16 +27,19 @@ const ANALYTICS_CACHE_TTL = 5 * 60 * 1000;
 // Cache TTL: 1 hour for price history (less frequent updates)
 const HISTORY_CACHE_TTL = 60 * 60 * 1000;
 
+export type AnalyticsChain = EVMChain | 'solana';
+
 /**
  * Map EVM chains to CoinGecko platform IDs
  */
-const COINGECKO_PLATFORM_MAP: Record<EVMChain, string> = {
+const COINGECKO_PLATFORM_MAP: Record<AnalyticsChain, string> = {
   ethereum: "ethereum",
   base: "base",
   arbitrum: "arbitrum-one",
   optimism: "optimistic-ethereum",
   polygon: "polygon-pos",
   bsc: "binance-smart-chain",
+  solana: "solana",
 };
 
 /**
@@ -53,6 +56,9 @@ const COINGECKO_TOKEN_ID_MAP: Record<string, string> = {
   ARB: "arbitrum",
   OP: "optimism",
   BNB: "binancecoin",
+  SOL: "solana",
+  RAY: "raydium",
+  JUP: "jupiter-exchange-solana",
 };
 
 /**
@@ -77,11 +83,11 @@ function getCoinGeckoTokenId(symbol: string, contractAddress?: string): string |
  */
 export async function getTokenAnalytics(
   symbol: string,
-  chain: EVMChain,
+  chain: AnalyticsChain,
   contractAddress?: string
 ): Promise<TokenAnalytics | null> {
   const cacheKey = `xylith_analytics_${chain}_${symbol}_${contractAddress || "native"}`;
-  
+
   // Check cache first
   const cached = getCachedData<TokenAnalytics>(cacheKey, ANALYTICS_CACHE_TTL);
   if (cached) {
@@ -143,12 +149,12 @@ export async function getTokenAnalytics(
  */
 export async function getTokenPriceHistory(
   symbol: string,
-  chain: EVMChain,
+  chain: AnalyticsChain,
   contractAddress?: string,
   days: number = 7
 ): Promise<PriceHistoryPoint[] | null> {
   const cacheKey = `xylith_history_${chain}_${symbol}_${contractAddress || "native"}_${days}`;
-  
+
   // Check cache first
   const cached = getCachedData<PriceHistoryPoint[]>(cacheKey, HISTORY_CACHE_TTL);
   if (cached) {
@@ -199,7 +205,7 @@ export async function getTokenPriceHistory(
  */
 export async function getTokenSparkline(
   symbol: string,
-  chain: EVMChain,
+  chain: AnalyticsChain,
   contractAddress?: string
 ): Promise<number[] | null> {
   const history = await getTokenPriceHistory(symbol, chain, contractAddress, 7);

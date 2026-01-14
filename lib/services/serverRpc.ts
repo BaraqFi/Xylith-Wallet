@@ -6,31 +6,35 @@ import { EVMChain } from "@/components/wallet/data";
  */
 
 // Supported RPC Providers
-type RpcProvider = 'ankr' | 'infura' | 'alchemy' | 'public_llama' | 'public_official';
+type RpcProvider = 'ankr' | 'infura' | 'alchemy' | 'public_llama' | 'public_official' | 'helius';
 
 interface RpcEndpoint {
     provider: RpcProvider;
     url: string;
 }
 
+export type SupportedRpcChain = EVMChain | 'solana';
+
 // Map internal chain names to provider-specific slugs
-const CHAIN_SLUGS: Record<EVMChain, { ankr: string; infura: string; alchemy: string; llama: string }> = {
+const CHAIN_SLUGS: Record<SupportedRpcChain, { ankr: string; infura: string; alchemy: string; llama: string }> = {
     ethereum: { ankr: 'eth', infura: 'mainnet', alchemy: 'eth-mainnet', llama: 'eth' },
     base: { ankr: 'base', infura: 'base-mainnet', alchemy: 'base-mainnet', llama: 'base' },
     arbitrum: { ankr: 'arbitrum', infura: 'arbitrum-mainnet', alchemy: 'arb-mainnet', llama: 'arbitrum' },
     optimism: { ankr: 'optimism', infura: 'optimism-mainnet', alchemy: 'opt-mainnet', llama: 'optimism' },
     polygon: { ankr: 'polygon', infura: 'polygon-mainnet', alchemy: 'polygon-mainnet', llama: 'polygon' },
-    bsc: { ankr: 'bsc', infura: '', alchemy: 'bsc-mainnet', llama: 'bsc' }, // Infura doesn't support BSC standardly
+    bsc: { ankr: 'bsc', infura: '', alchemy: 'bsc-mainnet', llama: 'bsc' },
+    solana: { ankr: 'solana', infura: '', alchemy: 'solana-mainnet', llama: 'solana' },
 };
 
 // Official public nodes as last resort
-const PUBLIC_OFFICIAL: Record<EVMChain, string> = {
-    ethereum: 'https://sys.merkle.io/eth-mainnet', // Reliable public node
+const PUBLIC_OFFICIAL: Record<SupportedRpcChain, string> = {
+    ethereum: 'https://sys.merkle.io/eth-mainnet',
     base: 'https://mainnet.base.org',
     arbitrum: 'https://arb1.arbitrum.io/rpc',
     optimism: 'https://mainnet.optimism.io',
     polygon: 'https://polygon-rpc.com',
     bsc: 'https://bsc-dataseed.binance.org',
+    solana: 'https://api.mainnet-beta.solana.com',
 };
 
 // Global rotation index (simple round-robin per chain)
@@ -38,11 +42,19 @@ const rotationIndex: Record<string, number> = {};
 
 /**
  * Build list of available RPC endpoints for a chain, based on available API keys.
- * Priorities: Ankr -> Infura -> Alchemy -> Public
+ * Priorities: Helius (Solana) -> Ankr -> Infura -> Alchemy -> Public
  */
-function getAvailableEndpoints(chain: EVMChain): RpcEndpoint[] {
+function getAvailableEndpoints(chain: SupportedRpcChain): RpcEndpoint[] {
     const endpoints: RpcEndpoint[] = [];
     const slugs = CHAIN_SLUGS[chain];
+
+    // 0. Helius (Solana Only)
+    if (chain === 'solana' && process.env.HELIUS_API_KEY) {
+        endpoints.push({
+            provider: 'helius',
+            url: `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
+        });
+    }
 
     // 1. Ankr (Premium / Standard)
     if (process.env.ANKR_API_KEY) {
@@ -69,10 +81,12 @@ function getAvailableEndpoints(chain: EVMChain): RpcEndpoint[] {
     }
 
     // 4. Llama (Public - Reliable)
-    endpoints.push({
-        provider: 'public_llama',
-        url: `https://${slugs.llama}.llamarpc.com`
-    });
+    if (slugs.llama) {
+        endpoints.push({
+            provider: 'public_llama',
+            url: `https://${slugs.llama}.llamarpc.com`
+        });
+    }
 
     // 5. Official Public (Last Resort)
     endpoints.push({
@@ -86,7 +100,7 @@ function getAvailableEndpoints(chain: EVMChain): RpcEndpoint[] {
 /**
  * Get the next RPC URL for a chain using rotation logic.
  */
-export function getRotatedRpcUrl(chain: EVMChain): string {
+export function getRotatedRpcUrl(chain: SupportedRpcChain): string {
     const endpoints = getAvailableEndpoints(chain);
     if (endpoints.length === 0) {
         throw new Error(`No RPC endpoints available for ${chain}`);
@@ -103,7 +117,6 @@ export function getRotatedRpcUrl(chain: EVMChain): string {
     // Rotate for next time
     rotationIndex[chain] = (rotationIndex[chain] + 1) % endpoints.length;
 
-    // console.log(`[RPC Rotation] Using ${current.provider} for ${chain}`);
     return current.url;
 }
 
@@ -111,7 +124,7 @@ export function getRotatedRpcUrl(chain: EVMChain): string {
  * Execute an RPC request through the rotated proxy.
  * Handles fetch logic and basic error wrapping.
  */
-export async function executeRpcRequest(chain: EVMChain, method: string, params: any[]) {
+export async function executeRpcRequest(chain: SupportedRpcChain, method: string, params: any[]) {
     const url = getRotatedRpcUrl(chain);
 
     const response = await fetch(url, {
@@ -125,7 +138,6 @@ export async function executeRpcRequest(chain: EVMChain, method: string, params:
             method,
             params,
         }),
-        // Add a reasonable timeout? Next.js fetch defaults are usually okay, but for RPC we might want faster failover in future.
     });
 
     if (!response.ok) {

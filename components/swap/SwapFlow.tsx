@@ -28,15 +28,18 @@ import {
   ArrowUpDown,
   Settings,
 } from "lucide-react";
-import { usePrivy } from "@privy-io/react-auth";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { formatUnits, parseUnits, encodeFunctionData, parseAbi } from "viem";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { useSwapQuote } from "@/hooks/useSwapQuote";
+import { useSolanaSwapQuote } from "@/hooks/useSolanaSwapQuote";
 import { useAllowance } from "@/hooks/useAllowance";
 import { OneInchClient } from "@/lib/1inch/client";
 import { useSwapTokenList } from "@/hooks/useSwapTokenList";
 import { useSwapSecurity, useTokenSecurity } from "@/hooks/useSecurityCheck";
 import { AlertTriangle, AlertCircle, Info } from "lucide-react";
+import { solanaClient } from "@/lib/solana/client";
+import { VersionedTransaction } from "@solana/web3.js";
 
 // OneInch V6 Router
 const AGGREGATION_ROUTER_V6 = "0x111111125421ca6dc452d289314280a0f8842a65";
@@ -156,33 +159,31 @@ export function SwapFlow() {
   const [showToTokenModal, setShowToTokenModal] = useState(false);
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [percentage, setPercentage] = useState(0);
-  const { user } = usePrivy();
 
-  // Real Data Hooks
-  // Default to Ethereum for token list if no fromToken is selected to determine chain
+  const { user, sendTransaction } = usePrivy();
+  const { wallets } = useWallets();
+
+  // Determine active chain context
   const activeChainForBalances = fromToken ? fromToken.chain : "EVM";
   const activeEvmChainForBalances = fromToken && fromToken.evmChain ? fromToken.evmChain : "ethereum";
 
   const { balances: userTokenBalances } = useTokenBalances(activeChainForBalances, activeEvmChainForBalances);
 
-  // Get comprehensive token list from 1inch (only for EVM chains)
+  // Get comprehensive token list from 1inch (only for EVM chains to supplement)
   const { tokens: swapTokenList, isLoading: isLoadingTokenList } = useSwapTokenList(
     activeEvmChainForBalances,
     userTokenBalances
   );
 
-  // Use swap token list if available, otherwise fall back to user balances
+  // If Solana, we mainly rely on user balances + default list for now (handled in hook)
   const tokens = activeChainForBalances === "EVM" && swapTokenList.length > 0
     ? swapTokenList
     : userTokenBalances;
 
-  // Quote Hook
-  // We need to pass the chainId as a number. 
-  // Map our string chains to IDs or store IDs in token data.
-  // For MVP: Ethereum=1, Base=8453 etc.
+  // --- EVM Quote Hook ---
   const getChainId = (t: TokenBalance | null) => {
     if (!t) return 1;
-    if (t.chain === 'Solana') return 0; // Not supported for 1inch EVM swap yet
+    if (t.chain === 'Solana') return 0;
     switch (t.evmChain) {
       case 'ethereum': return 1;
       case 'base': return 8453;
@@ -194,7 +195,13 @@ export function SwapFlow() {
     }
   };
 
-  const { quote, swapTx, isLoading: isQuoteLoading, error: quoteError, fetchSwapTransaction } = useSwapQuote({
+  const {
+    quote: evmQuote,
+    swapTx: evmSwapTx,
+    isLoading: isEvmQuoteLoading,
+    error: evmQuoteError,
+    fetchSwapTransaction: fetchEvmSwap
+  } = useSwapQuote({
     fromToken,
     toToken,
     amount,
@@ -203,7 +210,60 @@ export function SwapFlow() {
     address: user?.wallet?.address,
   });
 
-  // Allowance Hook
+  // --- Solana Quote Hook ---
+  // Find Solana wallet address
+  // We prioritize embedded first, then any linked. Note: embedded wallet *is* in linked accounts.
+  // Actually, useWallets returns connected wallets. 
+  // For embedded, it should be in wallets if connected (Privy handles this).
+  const solanaWallet = wallets.find(w => (w as any).chainType === 'solana');
+  const solanaAddress = solanaWallet?.address;
+
+  const {
+    quote: solQuote,
+    swapTx: solSwapTx, // Base64 string from hook
+    isLoading: isSolQuoteLoading,
+    error: solQuoteError,
+    fetchSwapTransaction: fetchSolSwap
+  } = useSolanaSwapQuote({
+    fromToken,
+    toToken,
+    amount,
+    fromAddress: solanaAddress,
+    slippage,
+  });
+
+  // Derived state based on active chain
+  const isSolanaSwap = fromToken?.chain === 'Solana';
+  const quote = isSolanaSwap ? solQuote : evmQuote;
+  const isQuoteLoading = isSolanaSwap ? isSolQuoteLoading : isEvmQuoteLoading;
+  const quoteError = isSolanaSwap ? solQuoteError : evmQuoteError;
+
+  // Update estimated amount
+  useEffect(() => {
+    if (quote && toToken) {
+      if (isSolanaSwap) {
+        // Jupiter quote: outAmount is in atomic units (string/number)
+        // Need to format using toToken decimals
+        const outAmount = quote.outAmount || quote.dstAmount;
+        const decimals = toToken.decimals || 6; // Default to 6 for USDC/USDT often, SOL is 9.
+        if (outAmount) {
+          const val = formatUnits(BigInt(outAmount), decimals);
+          setEstimatedAmount(val);
+        }
+      } else {
+        // 1inch quote: dstAmount (wei)
+        const decimals = toToken.decimals || 18;
+        if (quote.dstAmount) {
+          const val = formatUnits(BigInt(quote.dstAmount), decimals);
+          setEstimatedAmount(val);
+        }
+      }
+    } else {
+      if (!isQuoteLoading && !quote) setEstimatedAmount("");
+    }
+  }, [quote, toToken, isQuoteLoading, isSolanaSwap]);
+
+  // Allowance Hook (EVM only)
   const { allowance, refetch: refetchAllowance } = useAllowance(
     fromToken?.contractAddress,
     AGGREGATION_ROUTER_V6,
@@ -212,8 +272,8 @@ export function SwapFlow() {
     fromToken?.evmChain
   );
 
-  // Security Checks
-  const swapSecurity = useSwapSecurity(quote, slippage, step === "confirm" && !!quote);
+  // Security Checks (EVM Only for now, skipping for Solana MVP)
+  const swapSecurity = useSwapSecurity(evmQuote, slippage, step === "confirm" && !!evmQuote);
   const fromTokenSecurity = useTokenSecurity(
     fromToken?.contractAddress as any,
     fromToken?.evmChain,
@@ -225,38 +285,20 @@ export function SwapFlow() {
     step === "confirm" && !!toToken?.contractAddress && !!toToken?.evmChain
   );
 
-  // Effect: Update estimated amount when quote changes
-  useEffect(() => { // Warning: need import useEffect
-    if (quote && toToken) {
-      // quote.dstAmount is in Wei. Need to format to decimals.
-      // We assume we know decimals from toToken (default 18 if missing)
-      const decimals = toToken.decimals || 18;
-      const val = formatUnits(BigInt(quote.dstAmount), decimals);
-      setEstimatedAmount(val);
-    } else {
-      if (!isQuoteLoading && !quote) setEstimatedAmount("");
-    }
-  }, [quote, toToken, isQuoteLoading]);
 
-  // Replace manualWalletState.tokens with real 'tokens'
-  // Filter out zero-value tokens for swap (only show tokens with balance)
+  // Token Filtering & Grouping
   const tokensWithBalance = tokens.filter(t => t.amount > 0 || t.usdValue > 0);
 
   const groupedTokens = tokensWithBalance.reduce((acc, token) => {
     const key = token.symbol;
-    if (!acc[key]) {
-      acc[key] = [];
-    }
+    if (!acc[key]) acc[key] = [];
     acc[key].push(token);
     return acc;
   }, {} as Record<string, TokenBalance[]>);
 
-  const fromTokenChains = fromToken ? groupedTokens[fromToken.symbol] || [] : [];
-  const toTokenChains = toToken ? groupedTokens[toToken.symbol] || [] : [];
-
-  // Get real balance from tokens array
   const getRealBalance = (token: TokenBalance | null): number => {
     if (!token) return 0;
+    // Find matching token in the FRESH token list (tokens)
     const realToken = tokens.find(
       (t) =>
         t.symbol === token.symbol &&
@@ -282,7 +324,6 @@ export function SwapFlow() {
     setAmount(newAmount);
     setEstimatedAmount(newEstimatedAmount);
     setError("");
-    // Reset percentage when swapping
     if (toToken) {
       const newPercentage = newAmount && toToken.amount > 0
         ? (parseFloat(newAmount) / toToken.amount) * 100
@@ -295,7 +336,6 @@ export function SwapFlow() {
 
   const handleAmountChange = (value: string) => {
     setAmount(value);
-    // Update percentage based on amount
     if (fromToken && value && parseFloat(value) > 0) {
       const balance = getRealBalance(fromToken);
       const newPercentage = balance > 0 ? (parseFloat(value) / balance) * 100 : 0;
@@ -303,20 +343,17 @@ export function SwapFlow() {
     } else {
       setPercentage(0);
     }
-
-    // We rely on useSwapQuote to update estimatedAmount
-    setEstimatedAmount(""); // Clear until quote arrives
+    setEstimatedAmount(""); // Clear until quote
   };
 
   const handlePercentageChange = (value: number) => {
     setPercentage(value);
     if (fromToken && value > 0) {
       const newAmount = (realFromTokenBalance * value) / 100;
+      // Truncate based on decimals to avoid dust issues
+      // Simple 6 decimals for now as safe bet
       setAmount(newAmount.toFixed(6));
-
-      if (toToken) {
-        setEstimatedAmount(""); // Clear until quote arrives
-      }
+      if (toToken) setEstimatedAmount("");
     } else {
       setAmount("");
       setEstimatedAmount("");
@@ -329,6 +366,13 @@ export function SwapFlow() {
       ? `${token.chain}-${token.evmChain}`
       : token.chain;
     setFromTokenChain(chainKey);
+
+    // Reset ToToken if chain compatibility issue (Isolation)
+    if (toToken && toToken.chain !== token.chain) {
+      setToToken(null);
+      setToTokenChain(null);
+    }
+
     setAmount("");
     setEstimatedAmount("");
     setPercentage(0);
@@ -337,6 +381,11 @@ export function SwapFlow() {
   };
 
   const handleToTokenSelect = (token: TokenBalance) => {
+    // Chain Isolation Check
+    if (fromToken && fromToken.chain !== token.chain) {
+      // This shouldn't be possible if modal filters correctly, but safety check
+      return;
+    }
     setToToken(token);
     const chainKey = token.evmChain
       ? `${token.chain}-${token.evmChain}`
@@ -346,69 +395,20 @@ export function SwapFlow() {
     setError("");
   };
 
-  const handleFromChainSelect = (chainKey: string) => {
-    if (!fromToken) return;
-    const tokenOnChain = fromTokenChains.find((t) => {
-      const key = t.evmChain ? `${t.chain}-${t.evmChain}` : t.chain;
-      return key === chainKey;
-    });
-    if (tokenOnChain) {
-      setFromToken(tokenOnChain);
-      setFromTokenChain(chainKey);
-      // Recalculate amount and percentage if amount is set
-      if (amount && parseFloat(amount) > 0) {
-        const newPercentage = (parseFloat(amount) / tokenOnChain.amount) * 100;
-        setPercentage(Math.min(100, Math.max(0, Math.round(newPercentage))));
-      }
-      if (
-        amount &&
-        toToken &&
-        tokenOnChain.pricePerToken &&
-        toToken.pricePerToken
-      ) {
-        const fromValue = parseFloat(amount) * tokenOnChain.pricePerToken;
-        const estimated = fromValue / toToken.pricePerToken;
-        setEstimatedAmount(estimated.toFixed(6));
-      }
-    }
-  };
-
-  const handleToChainSelect = (chainKey: string) => {
-    if (!toToken) return;
-    const tokenOnChain = toTokenChains.find((t) => {
-      const key = t.evmChain ? `${t.chain}-${t.evmChain}` : t.chain;
-      return key === chainKey;
-    });
-    if (tokenOnChain) {
-      setToToken(tokenOnChain);
-      setToTokenChain(chainKey);
-      if (
-        amount &&
-        fromToken &&
-        fromToken.pricePerToken &&
-        tokenOnChain.pricePerToken
-      ) {
-        const fromValue = parseFloat(amount) * fromToken.pricePerToken;
-        const estimated = fromValue / tokenOnChain.pricePerToken;
-        setEstimatedAmount(estimated.toFixed(6));
-      }
-    }
-  };
-
   const handleNext = () => {
     if (!fromToken || !toToken) {
       setError("Please select both tokens");
       return;
     }
-    if (fromToken.chain === "Solana" || toToken.chain === "Solana") {
-      setError("Solana swaps are not yet supported");
+    if (fromToken.chain !== toToken.chain) {
+      setError("Cross-chain swaps are not currently supported using this interface");
       return;
     }
     if (
       fromToken.symbol === toToken.symbol &&
       fromTokenChain === toTokenChain
     ) {
-      setError("Cannot swap the same token on the same chain");
+      setError("Cannot swap the same token");
       return;
     }
     if (!amount || parseFloat(amount) <= 0) {
@@ -419,19 +419,27 @@ export function SwapFlow() {
       setError("Insufficient balance");
       return;
     }
+
+    // Check Quote Error
+    if (quoteError) {
+      // More specific error message if available
+      setError("Unable to fetch a quote. The pair might have low liquidity or API limits.");
+      return;
+    }
+
     setError("");
     setStep("confirm");
   };
 
-  const { sendTransaction } = usePrivy();
   const [isApproving, setIsApproving] = useState(false);
 
+  // EVM Approval
   const handleApprove = async () => {
-    if (!fromToken || !fromToken.contractAddress) return;
+    if (!fromToken || !fromToken.contractAddress || isSolanaSwap) return;
     const isNativeToken =
       fromToken.contractAddress.toLowerCase() ===
       "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-    if (isNativeToken) return; // Native tokens don't need approval
+    if (isNativeToken) return;
 
     setIsApproving(true);
     try {
@@ -448,13 +456,10 @@ export function SwapFlow() {
         chainId: getChainId(fromToken),
       });
 
-      console.log("Approve Tx Sent:", txHash);
-      // We can wait for receipt here or just wait for allowance hook to update (polling)
-      // For MVP UI, assume success after short delay/confirmation
       setTimeout(() => {
         refetchAllowance();
         setIsApproving(false);
-      }, 5000); // 5 sec delay to allow for update (naive)
+      }, 5000);
     } catch (err) {
       console.error("Approve Failed:", err);
       setIsApproving(false);
@@ -465,26 +470,50 @@ export function SwapFlow() {
     setStep("loading");
 
     try {
-      // 1. Fetch Fresh Swap Data (Calldata)
-      const txData = await fetchSwapTransaction();
-      if (!txData || !txData.tx) {
-        throw new Error("Failed to prepare transaction");
+      if (isSolanaSwap) {
+        // --- SOLANA SWAP ---
+        if (!solanaWallet) throw new Error("Solana wallet not connected");
+
+        // 1. Fetch Transaction Buffer (Base64)
+        const txBase64 = await fetchSolSwap();
+        if (!txBase64) throw new Error("Failed to prepare Solana transaction");
+
+        // 2. Deserialize
+        const txBuffer = Buffer.from(txBase64, 'base64');
+        const transaction = VersionedTransaction.deserialize(txBuffer);
+
+        // 3. Sign
+        // solanaWallet from useWallets has signTransaction
+        const signedTx = await (solanaWallet as any).signTransaction(transaction);
+
+        // 4. Send (Broadcast)
+        // Serialize signed transaction
+        const serializedTx = signedTx.serialize();
+        const signature = await solanaClient.sendRawTransaction(
+          Buffer.from(serializedTx).toString('base64')
+        );
+
+        console.log("Solana Swap Executed:", signature);
+        setStep("success");
+
+      } else {
+        // --- EVM SWAP ---
+        const txData = await fetchEvmSwap();
+        if (!txData || !txData.tx) throw new Error("Failed to prepare transaction");
+
+        const txHash = await sendTransaction({
+          to: txData.tx.to,
+          data: txData.tx.data,
+          value: BigInt(txData.tx.value),
+          chainId: getChainId(fromToken),
+        });
+
+        console.log("EVM Swap Executed:", txHash);
+        setStep("success");
       }
-
-      // 2. Send Transaction via Privy
-      // Privy expects: to, value, data, chainId?
-      // 1inch returns tx.to, tx.data, tx.value (wei hex)
-      const txHash = await sendTransaction({
-        to: txData.tx.to,
-        data: txData.tx.data,
-        value: BigInt(txData.tx.value), // viem expects bigint or hex string? Privy expects number/string/bigint
-        chainId: getChainId(fromToken),
-      });
-
-      console.log("Swap Executed:", txHash);
-      setStep("success");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Swap Failed:", err);
+      setError(err.message || "Swap failed");
       setStep("error");
     }
   };
@@ -512,46 +541,20 @@ export function SwapFlow() {
     return "Solana";
   };
 
-  const isCrossChain =
-    fromToken &&
-    toToken &&
-    (fromToken.chain !== toToken.chain ||
-      (fromToken.evmChain &&
-        toToken.evmChain &&
-        fromToken.evmChain !== toToken.evmChain));
-
-  // Use real gas data from quote if available
+  // Gas Estimation Logic
   const formatGasEstimate = () => {
-    if (quote?.gas && quote?.gasPrice) {
-      const gasInGwei = BigInt(quote.gasPrice) / BigInt(1e9);
-      const gasCost = (Number(quote.gas) * Number(gasInGwei)) / 1e9;
-      return `~${gasCost.toFixed(4)} ETH (${quote.gas} gas)`;
+    if (isSolanaSwap) return "~0.000005 SOL"; // Typical Solana gas
+    if (evmQuote?.gas && evmQuote?.gasPrice) {
+      const gasInGwei = BigInt(evmQuote.gasPrice) / BigInt(1e9);
+      const gasCost = (Number(evmQuote.gas) * Number(gasInGwei)) / 1e9;
+      return `~${gasCost.toFixed(4)} ETH`;
     }
-    return isCrossChain ? "~$15-25" : "~$5-10";
+    return "~$5-10";
   };
 
   const gasEstimate = formatGasEstimate();
-  const timeEstimate = isCrossChain ? "5-15 min" : "1-3 min";
-
-  // Get route from quote protocols
-  const getRoute = () => {
-    if (quote?.protocols && Array.isArray(quote.protocols) && quote.protocols.length > 0) {
-      // Extract protocol names from the nested structure
-      const protocolNames = new Set<string>();
-      const extractProtocols = (protocols: any[]): void => {
-        protocols.forEach((p: any) => {
-          if (p.name) protocolNames.add(p.name);
-          if (Array.isArray(p)) extractProtocols(p);
-          if (p.subProtocols) extractProtocols(p.subProtocols);
-        });
-      };
-      extractProtocols(quote.protocols);
-      if (protocolNames.size > 0) {
-        return Array.from(protocolNames).join(", ");
-      }
-    }
-    return isCrossChain ? "Rubic/Jupiter" : "Uniswap/Curve";
-  };
+  const timeEstimate = isSolanaSwap ? "< 1 min" : "1-3 min";
+  const routeLabel = isSolanaSwap ? "Jupiter" : "1inch";
 
   const renderHeader = (title: string) => (
     <div className="mb-6 flex items-center justify-between">
@@ -585,7 +588,7 @@ export function SwapFlow() {
             Processing swap...
           </p>
           <p className="text-sm text-[color:var(--color-depth)]/60">
-            {isCrossChain ? "Executing cross-chain swap" : "Executing swap"}
+            Executing swap on {isSolanaSwap ? "Solana" : "EVM"}
           </p>
         </div>
       </div>
@@ -607,13 +610,13 @@ export function SwapFlow() {
             <div className="flex items-center justify-between">
               <p className="text-sm text-[color:var(--color-depth)]/60">Swapped</p>
               <p className="font-semibold">
-                {amount} {fromToken?.symbol} on {getChainLabel(fromToken!)}
+                {amount} {fromToken?.symbol}
               </p>
             </div>
             <div className="flex items-center justify-between">
               <p className="text-sm text-[color:var(--color-depth)]/60">Received</p>
               <p className="font-semibold">
-                {estimatedAmount} {toToken?.symbol} on {getChainLabel(toToken!)}
+                {estimatedAmount} {toToken?.symbol}
               </p>
             </div>
           </div>
@@ -635,6 +638,9 @@ export function SwapFlow() {
           </div>
           <p className="text-lg font-semibold text-[color:var(--color-depth)]">
             Swap could not be completed
+          </p>
+          <p className="text-sm text-center text-[color:var(--color-depth)]/60 px-4">
+            {error}
           </p>
           <div className="mt-4 flex gap-3">
             <Button variant="outline" onClick={() => setStep("form")}>
@@ -720,384 +726,179 @@ export function SwapFlow() {
           </div>
 
           <div className="space-y-3 rounded-xl border border-[color:var(--color-border)] p-4">
-            {[
-              {
-                label: "Swap Type",
-                value: isCrossChain ? "Cross-Chain" : "Same-Chain",
-              },
-              { label: "Estimated Gas", value: gasEstimate },
-              { label: "Estimated Time", value: timeEstimate },
-              {
-                label: "Route",
-                value: getRoute(),
-              },
-              {
-                label: "Slippage Tolerance",
-                value: `${slippage}%`,
-              },
-            ].map(({ label, value }) => (
-              <div key={label} className="flex items-center justify-between">
-                <p className="text-sm text-[color:var(--color-depth)]/60">
-                  {label}
-                </p>
-                <p className="font-semibold text-sm">{value}</p>
-              </div>
-            ))}
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-[color:var(--color-depth)]/60">Route</p>
+              <p className="font-semibold text-sm">{routeLabel}</p>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-[color:var(--color-depth)]/60">Net. Fee</p>
+              <p className="font-semibold text-sm">{gasEstimate}</p>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-[color:var(--color-depth)]/60">Time</p>
+              <p className="font-semibold text-sm">{timeEstimate}</p>
+            </div>
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-[color:var(--color-depth)]/60">Slippage</p>
+              <p className="font-semibold text-sm">{slippage}%</p>
+            </div>
           </div>
 
-          {/* Security Warnings */}
-          {((swapSecurity.analysis?.warnings.length || 0) +
-            (fromTokenSecurity.analysis?.warnings.length || 0) +
-            (toTokenSecurity.analysis?.warnings.length || 0)) > 0 && (
-              <div className="space-y-2">
-                {swapSecurity.analysis?.warnings.map((warning, idx) => (
-                  <div
-                    key={`swap-${idx}`}
-                    className={`rounded-lg border p-3 ${warning.severity === "error"
-                      ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
-                      : warning.severity === "warning"
-                        ? "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20"
-                        : "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20"
-                      }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {warning.severity === "error" ? (
-                        <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
-                      ) : warning.severity === "warning" ? (
-                        <AlertTriangle className="h-5 w-5 flex-shrink-0 text-yellow-600 dark:text-yellow-400" />
-                      ) : (
-                        <Info className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
-                      )}
-                      <p
-                        className={`text-sm ${warning.severity === "error"
-                          ? "text-red-800 dark:text-red-300"
-                          : warning.severity === "warning"
-                            ? "text-yellow-800 dark:text-yellow-300"
-                            : "text-blue-800 dark:text-blue-300"
-                          }`}
-                      >
-                        {warning.message}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {fromTokenSecurity.analysis?.warnings.map((warning, idx) => (
-                  <div
-                    key={`from-token-${idx}`}
-                    className={`rounded-lg border p-3 ${warning.severity === "error"
-                      ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
-                      : warning.severity === "warning"
-                        ? "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20"
-                        : "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20"
-                      }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {warning.severity === "error" ? (
-                        <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
-                      ) : warning.severity === "warning" ? (
-                        <AlertTriangle className="h-5 w-5 flex-shrink-0 text-yellow-600 dark:text-yellow-400" />
-                      ) : (
-                        <Info className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
-                      )}
-                      <p
-                        className={`text-sm ${warning.severity === "error"
-                          ? "text-red-800 dark:text-red-300"
-                          : warning.severity === "warning"
-                            ? "text-yellow-800 dark:text-yellow-300"
-                            : "text-blue-800 dark:text-blue-300"
-                          }`}
-                      >
-                        <strong>From Token:</strong> {warning.message}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-                {toTokenSecurity.analysis?.warnings.map((warning, idx) => (
-                  <div
-                    key={`to-token-${idx}`}
-                    className={`rounded-lg border p-3 ${warning.severity === "error"
-                      ? "border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/20"
-                      : warning.severity === "warning"
-                        ? "border-yellow-200 bg-yellow-50 dark:border-yellow-800 dark:bg-yellow-900/20"
-                        : "border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/20"
-                      }`}
-                  >
-                    <div className="flex items-start gap-2">
-                      {warning.severity === "error" ? (
-                        <AlertCircle className="h-5 w-5 flex-shrink-0 text-red-600 dark:text-red-400" />
-                      ) : warning.severity === "warning" ? (
-                        <AlertTriangle className="h-5 w-5 flex-shrink-0 text-yellow-600 dark:text-yellow-400" />
-                      ) : (
-                        <Info className="h-5 w-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
-                      )}
-                      <p
-                        className={`text-sm ${warning.severity === "error"
-                          ? "text-red-800 dark:text-red-300"
-                          : warning.severity === "warning"
-                            ? "text-yellow-800 dark:text-yellow-300"
-                            : "text-blue-800 dark:text-blue-300"
-                          }`}
-                      >
-                        <strong>To Token:</strong> {warning.message}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-          <div className="flex gap-3 pt-4">
+          {/* EVM Approvals */}
+          {!isSolanaSwap && !isApproving && allowance !== undefined && allowance < parseFloat(amount) && (
             <Button
-              variant="outline"
-              onClick={() => setStep("form")}
-              className="flex-1"
+              onClick={handleApprove}
+              className="w-full bg-[color:var(--color-accent)]"
+              disabled={isApproving}
             >
-              <ArrowLeft className="mr-2 h-4 w-4" /> Back
+              {isApproving ? "Approving..." : `Approve ${fromToken?.symbol}`}
             </Button>
+          )}
 
-            {(() => {
-              if (!fromToken) return null;
-              const isNativeToken =
-                !fromToken.contractAddress ||
-                fromToken.contractAddress.toLowerCase() ===
-                "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-              if (isNativeToken) {
-                return (
-                  <Button onClick={handleConfirm} className="flex-1">
-                    Confirm Swap
-                  </Button>
-                );
-              }
+          {/* Confirm Button */}
+          {(!isSolanaSwap && allowance !== undefined && allowance < parseFloat(amount)) ? null : (
+            <Button onClick={handleConfirm} className="w-full bg-[color:var(--color-accent)]">
+              Confirm Swap
+            </Button>
+          )}
 
-              const allowanceValue =
-                typeof allowance === "bigint" ? allowance : BigInt(allowance ?? 0);
-              const needsApproval =
-                allowanceValue < parseUnits(amount || "0", fromToken.decimals || 18);
+          <Button variant="ghost" onClick={() => setStep("form")} className="w-full">
+            Back
+          </Button>
 
-              return needsApproval ? (
-                <Button onClick={handleApprove} disabled={isApproving} className="flex-1">
-                  {isApproving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {isApproving ? "Approving..." : `Approve ${fromToken.symbol}`}
-                </Button>
-              ) : (
-                <Button onClick={handleConfirm} className="flex-1">
-                  Confirm Swap
-                </Button>
-              );
-            })()}
-          </div>
         </div>
       </div>
     );
   }
 
+  // Form Step
   return (
-    <div className="wallet-card p-6 md:p-8">
+    <div className="wallet-card p-4 sm:p-8">
       {renderHeader("Swap")}
-      <div className="space-y-4">
-        {/* From Section */}
-        <div className="rounded-xl border border-[color:var(--color-border)] p-4 space-y-4">
-          <div className="flex justify-between items-center">
-            <span className="text-sm text-[color:var(--color-depth)]/60">From</span>
-            {fromToken && (
-              <span className="text-sm text-[color:var(--color-depth)]/60">
-                Balance: {realFromTokenBalance.toLocaleString(undefined, {
-                  maximumFractionDigits: 6,
-                })}
-              </span>
-            )}
-          </div>
 
-          <div className="flex gap-3">
-            <button
-              onClick={() => setShowFromTokenModal(true)}
-              className="flex items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 hover:bg-[color:var(--color-depth)]/5 transition flex-1 justify-between"
-            >
-              <div className="flex items-center gap-2">
+      <div className="space-y-4">
+        {/* FROM Token */}
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <label className="text-sm font-medium text-[color:var(--color-depth)]/60">
+              From
+            </label>
+            <span className="text-sm text-[color:var(--color-depth)]/60">
+              Balance: {realFromTokenBalance.toFixed(4)}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <div className="w-[140px] flex-shrink-0">
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2 px-3"
+                onClick={() => setShowFromTokenModal(true)}
+              >
                 {fromToken ? (
                   <>
                     <TokenLogo symbol={fromToken.symbol} name={fromToken.name} size="sm" />
-                    <span className="font-semibold text-sm">{fromToken.symbol}</span>
+                    <span className="truncate">{fromToken.symbol}</span>
                   </>
                 ) : (
-                  <span className="text-sm text-[color:var(--color-depth)]/60">Select Token</span>
+                  "Select"
                 )}
-              </div>
-              <svg className="h-4 w-4 text-[color:var(--color-depth)]/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+              </Button>
+            </div>
             <Input
               type="number"
+              placeholder="0.00"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
-              placeholder="0.00"
-              className="flex-1 text-right text-sm"
+              className="flex-1 text-right font-mono text-lg"
             />
           </div>
-
-          {/* Percentage Slider */}
-          {fromToken && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs text-[color:var(--color-depth)]/60">
-                <span>0%</span>
-                <span className="font-semibold">{percentage}%</span>
-                <span>100%</span>
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={percentage}
-                onChange={(e) => handlePercentageChange(parseInt(e.target.value))}
-                className="w-full h-2 bg-[color:var(--color-depth)]/10 rounded-lg appearance-none cursor-pointer"
-                style={{
-                  background: `linear-gradient(to right, #62d7dd 0%, #62d7dd ${percentage}%, rgba(112, 111, 110, 0.1) ${percentage}%, rgba(112, 111, 110, 0.1) 100%)`
-                }}
-              />
-            </div>
-          )}
-
-          {/* Chain Selector for Multi-chain tokens */}
-          {fromToken && fromTokenChains.length > 1 && (
-            <Select
-              onValueChange={handleFromChainSelect}
-              value={
-                fromToken.evmChain
-                  ? `${fromToken.chain}-${fromToken.evmChain}`
-                  : fromToken.chain
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select Chain" />
-              </SelectTrigger>
-              <SelectContent>
-                {fromTokenChains.map((token) => {
-                  const chainKey = token.evmChain
-                    ? `${token.chain}-${token.evmChain}`
-                    : token.chain;
-                  const chainLabel =
-                    token.evmChain
-                      ? token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1)
-                      : "Solana";
-                  return (
-                    <SelectItem key={chainKey} value={chainKey}>
-                      <div className="flex items-center gap-2">
-                        <ChainLogo chain={token.evmChain || "solana"} />
-                        {chainLabel}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          )}
+          {/* Percentage buttons */}
+          <div className="flex gap-2 justify-end">
+            {[25, 50, 75, 100].map((pct) => (
+              <button
+                key={pct}
+                onClick={() => handlePercentageChange(pct)}
+                className={`text-xs px-2 py-1 rounded-md transition-colors ${percentage === pct
+                  ? "bg-[color:var(--color-accent)]/20 text-[color:var(--color-accent)]"
+                  : "bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10"
+                  }`}
+              >
+                {pct}%
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Swap Button */}
-        <div className="flex justify-center">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={handleSwapTokens}
-            className="rounded-full"
-          >
-            <ArrowUpDown className="h-4 w-4" />
+        <div className="flex justify-center py-2">
+          <Button variant="ghost" size="icon" onClick={handleSwapTokens} className="rounded-full bg-[color:var(--color-depth)]/5">
+            <ArrowUpDown className="h-5 w-5" />
           </Button>
         </div>
 
-        {/* To Section */}
-        <div className="rounded-xl border border-[color:var(--color-border)] p-4 space-y-4">
-          <span className="text-sm text-[color:var(--color-depth)]/60">To</span>
-
-          <div className="flex gap-3">
-            <button
-              onClick={() => setShowToTokenModal(true)}
-              className="flex items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 hover:bg-[color:var(--color-depth)]/5 transition flex-1 justify-between"
-            >
-              <div className="flex items-center gap-2">
+        {/* TO Token */}
+        <div className="space-y-2">
+          <div className="flex justify-between">
+            <label className="text-sm font-medium text-[color:var(--color-depth)]/60">
+              To
+            </label>
+          </div>
+          <div className="flex gap-2">
+            <div className="w-[140px] flex-shrink-0">
+              <Button
+                variant="outline"
+                className="w-full justify-start gap-2 px-3"
+                onClick={() => setShowToTokenModal(true)}
+              >
                 {toToken ? (
                   <>
                     <TokenLogo symbol={toToken.symbol} name={toToken.name} size="sm" />
-                    <span className="font-semibold text-sm">{toToken.symbol}</span>
+                    <span className="truncate">{toToken.symbol}</span>
                   </>
                 ) : (
-                  <span className="text-sm text-[color:var(--color-depth)]/60">Select Token</span>
+                  "Select"
                 )}
-              </div>
-              <svg className="h-4 w-4 text-[color:var(--color-depth)]/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
+              </Button>
+            </div>
             <Input
-              type="number"
-              value={estimatedAmount}
-              placeholder="0.00"
-              className="flex-1 text-right text-sm"
               readOnly
+              placeholder="0.00"
+              value={estimatedAmount}
+              className="flex-1 text-right font-mono text-lg bg-[color:var(--color-depth)]/5"
             />
           </div>
-
-          {/* Chain Selector for Multi-chain tokens */}
-          {toToken && toTokenChains.length > 1 && (
-            <Select
-              onValueChange={handleToChainSelect}
-              value={
-                toToken.evmChain
-                  ? `${toToken.chain}-${toToken.evmChain}`
-                  : toToken.chain
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select Chain" />
-              </SelectTrigger>
-              <SelectContent>
-                {toTokenChains.map((token) => {
-                  const chainKey = token.evmChain
-                    ? `${token.chain}-${token.evmChain}`
-                    : token.chain;
-                  const chainLabel =
-                    token.evmChain
-                      ? token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1)
-                      : "Solana";
-                  return (
-                    <SelectItem key={chainKey} value={chainKey}>
-                      <div className="flex items-center gap-2">
-                        <ChainLogo chain={token.evmChain || "solana"} />
-                        {chainLabel}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          )}
         </div>
 
+        {/* Info / Error */}
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-900/20">
-            <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+          <div className="p-3 rounded-lg bg-red-100 text-red-700 text-sm flex gap-2 items-center">
+            <AlertCircle className="h-4 w-4" />
+            {error}
+          </div>
+        )}
+
+        {/* Quote Loading */}
+        {isQuoteLoading && (
+          <div className="flex justify-center p-2">
+            <Loader2 className="h-5 w-5 animate-spin text-[color:var(--color-depth)]/40" />
           </div>
         )}
 
         <Button
           onClick={handleNext}
-          disabled={!fromToken || !toToken || !amount}
-          className="w-full"
-          size="lg"
+          className="w-full h-12 text-lg bg-[color:var(--color-accent)]"
+          disabled={!fromToken || !toToken || !amount || parseFloat(amount) <= 0 || !!error || isQuoteLoading}
         >
-          Continue
+          Review Swap
         </Button>
       </div>
 
-      {/* Token Select Modals */}
+      {/* Modals */}
       {showFromTokenModal && (
         <TokenSelectModal
-          tokens={tokensWithBalance}
+          tokens={userTokenBalances} // Only show user's tokens (and defaults) for "From"
           onSelect={handleFromTokenSelect}
           onClose={() => setShowFromTokenModal(false)}
-          excludeSymbol={toToken?.symbol}
-          chain={activeEvmChainForBalances}
+          chainFilter={null} // Allow picking any chain for FROM
         />
       )}
 
@@ -1106,12 +907,10 @@ export function SwapFlow() {
           tokens={tokens}
           onSelect={handleToTokenSelect}
           onClose={() => setShowToTokenModal(false)}
-          excludeSymbol={fromToken?.symbol}
-          chain={activeEvmChainForBalances}
+          chainFilter={fromToken ? fromToken.chain : null} // Restrict TO context
         />
       )}
 
-      {/* Slippage Settings Dialog */}
       <Dialog open={showSlippageSettings} onOpenChange={setShowSlippageSettings}>
         <SlippageSettings
           slippage={slippage}

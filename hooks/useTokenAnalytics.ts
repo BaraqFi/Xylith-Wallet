@@ -14,7 +14,7 @@ export interface UseTokenAnalyticsResult {
  */
 export function useTokenAnalytics(
   symbol: string,
-  chain: EVMChain,
+  chain: EVMChain | 'solana',
   contractAddress?: string,
   enabled: boolean = true
 ): UseTokenAnalyticsResult {
