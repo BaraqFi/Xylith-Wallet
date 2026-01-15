@@ -16,6 +16,7 @@ import {
 import { getPublicRpcClient, getCustomRpcClient } from "@/lib/services/rpcConfig";
 import { getCachedData, setCachedData } from "@/lib/utils/cache";
 import { solanaClient } from "@/lib/solana/client";
+import { getTokenPricesBatch } from "@/lib/services/tokenAnalyticsService";
 
 // Local Fork Chain Definition (matches PrivyProvider)
 const localFork = {
@@ -138,18 +139,62 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                     // Create a map of found mints
                     const foundSpls = new Map(splAccounts.map(a => [a.mint, a]));
 
-                    // Update defaults
-                    mergedTokens.forEach(t => {
+
+
+                    // Update defaults and fetch analytics
+                    mergedTokens.forEach((t) => {
                         if (t.contractAddress && foundSpls.has(t.contractAddress)) {
                             const account = foundSpls.get(t.contractAddress)!;
                             const amount = parseFloat(account.amount) / Math.pow(10, account.decimals);
                             t.amount = amount;
-                            t.usdValue = amount * (t.pricePerToken || 0);
+                            // Price update happens in batch below
                         }
                     });
 
-                    // OPTIONAL: Add unknown SPL tokens found in wallet?
-                    // For now, keeping it simple to strict list + found
+                    // Add unknown SPL tokens found in wallet with analytics
+                    for (const [mint, account] of foundSpls.entries()) {
+                        const exists = mergedTokens.some(t => t.contractAddress === mint);
+                        if (!exists) {
+                            const decimals = account.decimals;
+                            const amount = parseFloat(account.amount) / Math.pow(10, decimals);
+
+                            if (amount > 0) {
+                                mergedTokens.push({
+                                    symbol: "UNKNOWN",
+                                    name: `Unknown (${mint.slice(0, 4)}...${mint.slice(-4)})`,
+                                    chain: "Solana",
+                                    amount,
+                                    usdValue: 0,
+                                    contractAddress: mint,
+                                    decimals: decimals,
+                                    pricePerToken: 0,
+                                });
+                            }
+                        }
+                    }
+
+                    // --- BATCH PRICE FETCH FOR SOLANA ---
+                    // Fetch prices for all tokens that have balance > 0 (or all defaults)
+                    try {
+                        const prices = await getTokenPricesBatch(
+                            mergedTokens.map(t => ({ symbol: t.symbol, contractAddress: t.contractAddress }))
+                        );
+
+                        mergedTokens.forEach(t => {
+                            if (prices[t.symbol]) {
+                                t.pricePerToken = prices[t.symbol];
+                                t.usdValue = t.amount * t.pricePerToken;
+                                // Initialize analytics structure with just price (chart lazy loaded later)
+                                t.analytics = {
+                                    currentPriceUsd: t.pricePerToken,
+                                    priceChange24h: 0,
+                                    priceChange7d: 0
+                                };
+                            }
+                        });
+                    } catch (err) {
+                        console.warn("Failed to fetch batch prices:", err);
+                    }
 
                     newBalances = mergedTokens;
 
@@ -276,21 +321,50 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                                 if (metadata) {
                                     const decimals = metadata.decimals ?? 18;
                                     const amount = parseFloat(formatUnits(balance, decimals));
+
+                                    // Analytics fetched in batch below
+                                    const pricePerToken = 0;
+                                    const usdValue = 0; // Updated in batch
+
                                     mergedTokens.push({
                                         symbol: metadata.symbol || "UNKNOWN",
                                         name: metadata.name || "Unknown Token",
                                         chain: "EVM",
                                         evmChain: currentEvmChain,
                                         amount,
-                                        usdValue: 0,
+                                        usdValue,
                                         contractAddress: contractAddr,
                                         decimals,
                                         logo: metadata.logo,
+                                        pricePerToken,
                                     });
                                 }
                             }
                         }
                     }
+
+                    // --- BATCH PRICE FETCH FOR EVM ---
+                    try {
+                        const prices = await getTokenPricesBatch(
+                            mergedTokens.map(t => ({ symbol: t.symbol, contractAddress: t.contractAddress }))
+                        );
+
+                        mergedTokens.forEach(t => {
+                            if (prices[t.symbol]) {
+                                t.pricePerToken = prices[t.symbol];
+                                t.usdValue = t.amount * t.pricePerToken;
+                                // Initialize analytics structure with just price (chart lazy loaded later)
+                                t.analytics = {
+                                    currentPriceUsd: t.pricePerToken,
+                                    priceChange24h: 0,
+                                    priceChange7d: 0
+                                };
+                            }
+                        });
+                    } catch (err) {
+                        console.warn("Failed to fetch batch prices:", err);
+                    }
+
                     newBalances = mergedTokens;
                 }
 

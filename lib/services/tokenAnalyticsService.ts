@@ -47,18 +47,93 @@ const COINGECKO_PLATFORM_MAP: Record<AnalyticsChain, string> = {
  * For native tokens and major tokens, we can use symbol-based lookup
  */
 const COINGECKO_TOKEN_ID_MAP: Record<string, string> = {
+  // Ethereum
   ETH: "ethereum",
   USDC: "usd-coin",
   USDT: "tether",
   WBTC: "wrapped-bitcoin",
   DAI: "dai",
-  MATIC: "matic-network",
+  LINK: "chainlink",
+  UNI: "uniswap",
+  AAVE: "aave",
+  PEPE: "pepe",
+  SHIB: "shiba-inu",
+  CRV: "curve-dao-token",
+  MKR: "maker",
+
+  // Base
+  BRETT: "brett-base",
+  DEGEN: "degen-base",
+  AERO: "aerodrome-finance",
+  BSX: "bsx-base",
+  TOSHI: "toshi",
+  MOONWELL: "moonwell-artemis",
+
+  // Arbitrum
   ARB: "arbitrum",
+  GMX: "gmx",
+  RDNT: "radiant-capital",
+  MAGIC: "magic",
+  GRAIL: "camelot-token",
+  STG: "stargate-finance",
+
+  // Optimism
   OP: "optimism",
+  VELO: "velodrome-finance",
+  SNX: "havven",
+  SONNE: "sonne",
+  THALES: "thales",
+
+  // Polygon
+  MATIC: "matic-network",
+  POL: "polygon-ecosystem-token",
+  WETH: "weth",
+  RENDER: "render-token",
+  QUICK: "quickswap",
+  GHST: "aavegotchi",
+
+  // BSC
   BNB: "binancecoin",
+  CAKE: "pancakeswap-token",
+  XRP: "ripple",
+  BUSD: "binance-usd",
+  ALPACA: "alpaca-finance",
+
+  // Solana
   SOL: "solana",
   RAY: "raydium",
   JUP: "jupiter-exchange-solana",
+  BONK: "bonk",
+  WIF: "dogwifcoin",
+  PYTH: "pyth-network",
+  JTO: "jito-governance-token",
+  POPCAT: "popcat",
+};
+
+/**
+ * Map common token symbols to CoinCap IDs (Fallback)
+ */
+const COINCAP_ID_MAP: Record<string, string> = {
+  ETH: "ethereum",
+  BTC: "bitcoin",
+  USDC: "usd-coin",
+  USDT: "tether",
+  BNB: "binance-coin",
+  SOL: "solana",
+  XRP: "xrp",
+  DOGE: "dogecoin",
+  ADA: "cardano",
+  AVAX: "avalanche",
+  MATIC: "polygon",
+  DOT: "polkadot",
+  TRX: "tron",
+  LTC: "litecoin",
+  LINK: "chainlink",
+  BCH: "bitcoin-cash",
+  XLM: "stellar",
+  UNI: "uniswap",
+  ATOM: "cosmos",
+  XMR: "monero",
 };
 
 /**
@@ -76,6 +151,92 @@ function getCoinGeckoTokenId(symbol: string, contractAddress?: string): string |
   // For unknown tokens, return null (will need contract address lookup)
   // CoinGecko has an API endpoint for contract address lookup, but it requires API key for rate limits
   return null;
+}
+
+function getCoinCapId(symbol: string): string | null {
+  return COINCAP_ID_MAP[symbol.toUpperCase()] || null;
+}
+
+/**
+ * Fetch current prices for multiple tokens (Batch)
+ * Falls back to CoinCap if CoinGecko fails
+ */
+export async function getTokenPricesBatch(
+  tokens: { symbol: string; contractAddress?: string }[],
+  currency: string = "usd"
+): Promise<Record<string, number>> {
+  const prices: Record<string, number> = {};
+  const coinGeckoIds: string[] = [];
+  const tokenMap: Record<string, string[]> = {}; // geckoid -> [symbols]
+
+  // 1. Prepare CoinGecko IDs
+  for (const token of tokens) {
+    const id = getCoinGeckoTokenId(token.symbol, token.contractAddress);
+    if (id) {
+      if (!tokenMap[id]) tokenMap[id] = [];
+      tokenMap[id].push(token.symbol);
+      if (!coinGeckoIds.includes(id)) coinGeckoIds.push(id);
+    }
+  }
+
+  // 2. Try CoinGecko Batch Fetch
+  if (coinGeckoIds.length > 0) {
+    try {
+      const idsParam = coinGeckoIds.join(",");
+      const url = `https://api.coingecko.com/api/v3/simple/price?ids=${idsParam}&vs_currencies=${currency}`;
+
+      const response = await fetch(url, { next: { revalidate: 120 } }); // 2 min cache
+
+      if (response.ok) {
+        const data = await response.json();
+        for (const [id, priceData] of Object.entries(data)) {
+          const price = (priceData as any)[currency];
+          if (price) {
+            const symbols = tokenMap[id];
+            symbols?.forEach(sym => {
+              prices[sym] = price;
+            });
+          }
+        }
+      } else {
+        console.warn("CoinGecko Batch Failed:", response.status);
+      }
+    } catch (err) {
+      console.error("CoinGecko Batch Error:", err);
+    }
+  }
+
+  // 3. Fallback to CoinCap for missing prices (Major tokens only)
+  const missingTokens = tokens.filter(t => prices[t.symbol] === undefined);
+  if (missingTokens.length > 0) {
+    // CoinCap doesn't support batch "ids" in the same way, but it has a rate limit roughly 200/min.
+    // For now, we'll try to just catch the major ones if CoinGecko failed completely
+    // Or simpler: Use CoinCap Assets endpoint which returns top 100.
+
+    try {
+      const response = await fetch("https://api.coincap.io/v2/assets?limit=100", { next: { revalidate: 60 } });
+      if (response.ok) {
+        const data = await response.json();
+        const assets = data.data; // Array of { id, symbol, priceUsd ... }
+
+        for (const token of missingTokens) {
+          const capId = getCoinCapId(token.symbol);
+          // Also match by symbol if map fails
+          const asset = assets.find((a: any) =>
+            (capId && a.id === capId) || a.symbol === token.symbol.toUpperCase()
+          );
+
+          if (asset) {
+            prices[token.symbol] = parseFloat(asset.priceUsd);
+          }
+        }
+      }
+    } catch (err) {
+      console.error("CoinCap Fallback Error:", err);
+    }
+  }
+
+  return prices;
 }
 
 /**

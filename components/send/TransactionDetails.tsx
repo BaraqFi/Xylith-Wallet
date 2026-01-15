@@ -25,7 +25,7 @@ export function TransactionDetails({
   isConfirming = false,
 }: TransactionDetailsProps) {
   const { recipient, amount, token, chain, gasEstimate, gasPrice, totalCost } = preview;
-  
+
   // Check if balance is actually insufficient
   const amountNum = parseFloat(amount);
   const balanceNum = selectedToken?.amount || 0;
@@ -128,12 +128,12 @@ export function TransactionDetails({
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-[color:var(--color-depth)]/70">Gas Price:</span>
-          <span className="font-semibold">{parseFloat(gasPrice).toFixed(6)} ETH</span>
+          <span className="font-semibold">{parseFloat(gasPrice).toFixed(9)} {chain === 'Solana' ? 'SOL' : (token.evmChain === 'bsc' ? 'BNB' : (token.evmChain === 'polygon' ? 'MATIC' : 'ETH'))}</span>
         </div>
         <div className="pt-2 border-t border-[color:var(--color-depth)]/10">
           <div className="flex justify-between">
             <span className="text-sm font-semibold text-[color:var(--color-depth)]">Total Cost:</span>
-            <span className="text-sm font-semibold">{parseFloat(totalCost).toFixed(6)} ETH</span>
+            <span className="text-sm font-semibold">{parseFloat(totalCost).toFixed(6)} {chain === 'Solana' ? 'SOL' : (token.evmChain === 'bsc' ? 'BNB' : (token.evmChain === 'polygon' ? 'MATIC' : 'ETH'))}</span>
           </div>
         </div>
       </div>

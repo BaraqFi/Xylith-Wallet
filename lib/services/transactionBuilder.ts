@@ -1,6 +1,6 @@
 import { Address, parseUnits, formatUnits, parseAbiItem, encodeFunctionData } from "viem";
 import { createWalletClient, custom } from "viem";
-import { EVMChain, TokenBalance } from "@/components/wallet/data";
+import { EVMChain, TokenBalance, Chain } from "@/components/wallet/data";
 import { getPublicRpcClient } from "./rpcConfig";
 // Note: Alchemy RPC calls should go through /api/alchemy/rpc proxy
 // This file uses centralized public RPC for transaction building
@@ -18,7 +18,7 @@ export interface TransactionPreview {
   recipient: Address;
   amount: string;
   token: TokenBalance;
-  chain: EVMChain;
+  chain: EVMChain | "Solana";
   gasEstimate: string;
   gasPrice: string;
   totalCost: string;

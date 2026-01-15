@@ -125,31 +125,61 @@ export function getRotatedRpcUrl(chain: SupportedRpcChain): string {
  * Handles fetch logic and basic error wrapping.
  */
 export async function executeRpcRequest(chain: SupportedRpcChain, method: string, params: any[]) {
-    const url = getRotatedRpcUrl(chain);
+    // Get all available endpoints instead of just one
+    const endpoints = getAvailableEndpoints(chain);
 
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            id: 1,
-            jsonrpc: '2.0',
-            method,
-            params,
-        }),
-    });
-
-    if (!response.ok) {
-        throw new Error(`RPC Provider refused connection: ${response.statusText}`);
+    if (endpoints.length === 0) {
+        throw new Error(`No RPC endpoints available for ${chain}`);
     }
 
-    const data = await response.json();
+    let lastError: Error | null = null;
 
-    // Forward upstream errors if present
-    if (data.error) {
-        throw new Error(`RPC Error: ${data.error.message}`);
+    // Try each endpoint in order
+    for (const endpoint of endpoints) {
+        try {
+            const response = await fetch(endpoint.url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    id: 1,
+                    jsonrpc: '2.0',
+                    method,
+                    params,
+                }),
+                signal: AbortSignal.timeout(10000) // 10s timeout
+            });
+
+            if (!response.ok) {
+                console.warn(`RPC Provider ${endpoint.provider} refused connection: ${response.statusText}`);
+                throw new Error(`RPC Provider refused connection: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            // Forward upstream errors if present
+            if (data.error) {
+                // Determine if error is retryable? 
+                // Mostly yes for things like "Too Many Requests", but "Method not found" or "Invalid params" shouldn't change per provider.
+                // For now, let's assume we return the error unless it's a rate limit.
+                // Actually, "Forbidden" usually comes as 403 HTTP status, handled above.
+                // JSON-RPC errors might be internal.
+                // If it's a rate limit error (code -32005 or similar), might be worth retrying.
+                // But generally, if we get a valid JSON-RPC response, we return it.
+                // data.error.message
+                throw new Error(`RPC Error: ${data.error.message}`);
+            }
+
+            return data.result;
+
+        } catch (err: any) {
+            console.warn(`RPC Provider ${endpoint.provider} failed:`, err.message);
+            lastError = err;
+            // Continue to next endpoint
+        }
     }
 
-    return data.result;
+    // If loop finishes, all failed
+    throw new Error(`All RPC endpoints failed for ${chain}. Last error: ${lastError?.message}`);
 }

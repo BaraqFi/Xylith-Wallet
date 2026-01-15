@@ -298,8 +298,8 @@ function TokenList({
     group.chains.some(chainToken => chainToken.chain === activeChain)
   );
 
-  const displayTokens = filteredGroupedTokens.slice(0, 7);
-  const hasMore = filteredGroupedTokens.length > 7;
+  // Show ALL tokens - no limit
+  const displayTokens = filteredGroupedTokens;
 
   return (
     <>
@@ -366,11 +366,7 @@ function TokenList({
                 </div>
               </button>
             ))}
-            {hasMore && (
-              <p className="text-xs text-center text-[color:var(--color-depth)]/60 py-2">
-                Scroll to view more tokens
-              </p>
-            )}
+            {/* Scroll indicator removed */}
           </div>
         )}
       </div>
