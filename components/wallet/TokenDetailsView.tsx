@@ -3,7 +3,8 @@
 import { useState, useMemo } from "react";
 import { useApp } from "../app/AppContext";
 import { TokenBalance } from "./data";
-import { ChainLogo, TokenLogo } from "./ManualWallet";
+import { TokenLogo } from "./ManualWallet";
+import { ChainLogo } from "./ChainLogo";
 import { Button } from "@/components/ui/button";
 import { Copy, Check, ArrowLeft, Send, ArrowRightLeft, TrendingUp, TrendingDown } from "lucide-react";
 import { useTokenAnalytics } from "@/hooks/useTokenAnalytics";

@@ -2,7 +2,8 @@
 
 import { useApp } from "../app/AppContext";
 import { manualWalletState, WalletTransaction } from "../wallet/data";
-import { ChainLogo, TokenLogo } from "../wallet/ManualWallet";
+import { TokenLogo } from "../wallet/ManualWallet";
+import { ChainLogo } from "../wallet/ChainLogo";
 
 export function TransactionReceipt() {
   const { setCurrentView, selectedTransactionId } = useApp();
@@ -54,13 +55,12 @@ export function TransactionReceipt() {
           <div>
             <p className="text-sm text-[color:var(--color-depth)]/60">Status</p>
             <p
-              className={`mt-1 text-lg font-semibold ${
-                transaction.status === "confirmed"
+              className={`mt-1 text-lg font-semibold ${transaction.status === "confirmed"
                   ? "text-green-600"
                   : transaction.status === "pending"
                     ? "text-yellow-600"
                     : "text-red-600"
-              }`}
+                }`}
             >
               {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}
             </p>
@@ -95,7 +95,7 @@ export function TransactionReceipt() {
               <p className="font-semibold">
                 {transaction.evmChain
                   ? transaction.evmChain.charAt(0).toUpperCase() +
-                    transaction.evmChain.slice(1)
+                  transaction.evmChain.slice(1)
                   : transaction.chain}
               </p>
             </div>

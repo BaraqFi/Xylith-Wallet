@@ -3,7 +3,8 @@
 import { useState, useMemo } from "react";
 import { useApp } from "../app/AppContext";
 import { TokenBalance } from "./data";
-import { ChainLogo, TokenLogo } from "./ManualWallet";
+import { ChainLogo } from "./ChainLogo";
+import { TokenLogo } from "./ManualWallet";
 import {
   Dialog,
   DialogContent,

@@ -23,6 +23,13 @@ import { shortenAddress, groupTokensBySymbol, GroupedToken } from "./utils";
 
 // Removed TokenDetailsModal import
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 // Web3Icons for token and network logos - optimized individual imports
 import {
   TokenETH,
@@ -37,16 +44,11 @@ import {
   TokenSOL,
   TokenRAY,
   TokenJUP,
-  NetworkEthereum,
-  NetworkBinanceSmartChain,
-  NetworkBase,
-  NetworkArbitrumOne,
-  NetworkOptimism,
-  NetworkPolygon,
-  NetworkSolana,
 } from "@web3icons/react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useTransactionHistory } from "@/hooks/useTransactionHistory";
+import { ChainLogo } from "./ChainLogo";
+import { ChainSelectorSheet } from "./ChainSelectorSheet";
 
 // Hexagonal Avatar Component
 function HexagonalAvatar({
@@ -214,69 +216,7 @@ export function TokenLogo({
   );
 }
 
-export function ChainLogo({ chain }: { chain: EVMChain | "solana" }) {
-  // Map chain names to Web3Icons Network component names
-  const networkIconMap: Record<string, string> = {
-    ethereum: "NetworkEthereum",
-    bsc: "NetworkBinanceSmartChain",
-    base: "NetworkBase",
-    arbitrum: "NetworkArbitrumOne",
-    optimism: "NetworkOptimism",
-    polygon: "NetworkPolygon",
-    solana: "NetworkSolana",
-  };
 
-  const iconName = networkIconMap[chain];
-  // Map network icon names to actual components for better tree-shaking
-  const networkComponentMap: Record<string, ComponentType<any>> = {
-    NetworkEthereum,
-    NetworkBinanceSmartChain,
-    NetworkBase,
-    NetworkArbitrumOne,
-    NetworkOptimism,
-    NetworkPolygon,
-    NetworkSolana,
-  };
-  const IconComponent = iconName ? networkComponentMap[iconName] : null;
-
-  if (IconComponent) {
-    return (
-      <div className="flex h-4 w-4 items-center justify-center overflow-hidden" title={chain}>
-        <IconComponent variant="branded" size={16} className="h-4 w-4" />
-      </div>
-    );
-  }
-
-  // Fallback
-  const chainColors: Record<string, string> = {
-    ethereum: "bg-blue-500",
-    bsc: "bg-yellow-500",
-    base: "bg-blue-400",
-    arbitrum: "bg-cyan-500",
-    optimism: "bg-red-500",
-    polygon: "bg-purple-500",
-    solana: "bg-purple-400",
-  };
-
-  const chainInitials: Record<string, string> = {
-    ethereum: "ETH",
-    bsc: "BSC",
-    base: "BASE",
-    arbitrum: "ARB",
-    optimism: "OP",
-    polygon: "MATIC",
-    solana: "SOL",
-  };
-
-  return (
-    <div
-      className={`flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold text-white ${chainColors[chain] || "bg-gray-500"}`}
-      title={chain}
-    >
-      {chainInitials[chain]?.[0] || "?"}
-    </div>
-  );
-}
 
 
 function TokenList({
@@ -290,23 +230,86 @@ function TokenList({
   allTokens: TokenBalance[];
   isLoading?: boolean;
 }) {
-  const { setCurrentView, setSelectedTokenDetails } = useApp();
+  const { setCurrentView, setSelectedTokenDetails, setActiveChain } = useApp();
   // Removed local selectedToken state
 
   // Filter based on activeChain. A token group is shown if any of its chains match.
-  const filteredGroupedTokens = groupedTokens.filter(group =>
-    group.chains.some(chainToken => chainToken.chain === activeChain)
-  );
+  // Additional filter for specific EVM chain if selected
+  const [evmChainFilter, setEvmChainFilter] = useState<EVMChain | "all">("all");
 
-  // Show ALL tokens - no limit
-  const displayTokens = filteredGroupedTokens;
+  const filteredGroupedTokens = groupedTokens.filter(group => {
+    // 1. Must have balance on the active chain type (EVM vs Solana)
+    const hasActiveChainType = group.chains.some(chainToken => chainToken.chain === activeChain);
+    if (!hasActiveChainType) return false;
+
+    // 2. If EVM and filter is active, must have balance on that specific chain
+    if (activeChain === "EVM" && evmChainFilter !== "all") {
+      return group.chains.some(t => t.chain === "EVM" && t.evmChain === evmChainFilter);
+    }
+
+    return true;
+  });
+
+  // Calculate total value displayed
+  // If filtered by specific chain, show value for that chain only? 
+  // User asked for "display only assets on a particular supported chain".
+  // So if I select "Arbitrum", I should only see Arbitrum assets.
+
+  // Mapping for display
+  const displayTokens = filteredGroupedTokens.map(group => {
+    // If filtering by specific EVM chain, we might want to adjust the displayed "totalUsdValue" and "amount" 
+    // to reflect ONLY that chain's portion.
+    if (activeChain === "EVM" && evmChainFilter !== "all") {
+      const chainToken = group.chains.find(t => t.evmChain === evmChainFilter);
+      if (chainToken) {
+        return {
+          ...group,
+          totalUsdValue: chainToken.usdValue || 0,
+          amount: chainToken.amount, // This is just for display logic if we used it, but group has list.
+          // We need to be careful. The list item displays specific chain logos.
+          chains: [chainToken] // Only show this chain
+        };
+      }
+    }
+    return group;
+  });
+
+
 
   return (
     <>
       <div className="wallet-card flex flex-col gap-4 p-4 sm:p-6">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-[color:var(--color-depth)]/65 px-2">
-          Token List
-        </h2>
+        <div className="flex items-center justify-between px-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-[color:var(--color-depth)]/65">
+            Token List
+          </h2>
+          <ChainSelectorSheet
+            selectedChain={activeChain}
+            selectedEvmChain={evmChainFilter}
+            tokens={allTokens}
+            includeAllOption={true}
+            onSelectChain={(chain, evmChain) => {
+              if (chain === "Solana") {
+                setActiveChain("Solana");
+                // When switching to Solana, filter is irrelevant/reset?
+                // Or we keep it "all" for when we switch back.
+              } else {
+                setActiveChain("EVM");
+                if (evmChain) setEvmChainFilter(evmChain as any);
+              }
+            }}
+            trigger={
+              <Button variant="outline" className="h-8 gap-2 rounded-full px-3 border-[color:var(--color-border)] bg-transparent hover:bg-[color:var(--color-depth)]/5 text-xs">
+                <span className="font-medium">
+                  {activeChain === "Solana"
+                    ? "Solana"
+                    : (evmChainFilter === "all" ? "All Networks" : evmChainFilter.charAt(0).toUpperCase() + evmChainFilter.slice(1))}
+                </span>
+                <ArrowDown className="h-3 w-3 opacity-50" />
+              </Button>
+            }
+          />
+        </div>
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-8 gap-3 px-2 text-[color:var(--color-depth)]/70">
             <div className="h-10 w-10 animate-spin rounded-full border-2 border-[color:var(--color-accent)] border-t-transparent" />
@@ -370,7 +373,6 @@ function TokenList({
           </div>
         )}
       </div>
-
     </>
   );
 }

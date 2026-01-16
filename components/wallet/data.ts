@@ -192,3 +192,13 @@ export const manualWalletState: ManualWalletState = {
   transactions: [], // Empty - real transactions come from useTransactionHistory hook
 };
 
+export const SUPPORTED_CHAINS: { label: string; value: EVMChain | "solana"; type: "EVM" | "Solana" }[] = [
+  { label: "Ethereum", value: "ethereum", type: "EVM" },
+  { label: "Solana", value: "solana", type: "Solana" },
+  { label: "Base", value: "base", type: "EVM" },
+  { label: "Arbitrum", value: "arbitrum", type: "EVM" },
+  { label: "Optimism", value: "optimism", type: "EVM" },
+  { label: "Polygon", value: "polygon", type: "EVM" },
+  { label: "BNB Smart Chain", value: "bsc", type: "EVM" },
+];
+

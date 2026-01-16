@@ -2,18 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { useApp } from "../app/AppContext";
-import { TokenBalance } from "../wallet/data";
-import { ChainLogo, TokenLogo } from "../wallet/ManualWallet";
+import { TokenBalance, SUPPORTED_CHAINS } from "../wallet/data";
+import { ChainLogo } from "../wallet/ChainLogo";
+import { TokenLogo } from "../wallet/ManualWallet";
+import { ChainSelectorSheet } from "../wallet/ChainSelectorSheet";
 import { TokenSelectModal } from "../wallet/TokenSelectModal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -21,12 +16,20 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import {
   Check,
   X,
   Loader2,
   ArrowLeft,
   ArrowUpDown,
   Settings,
+  ChevronDown,
 } from "lucide-react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { formatUnits, parseUnits, encodeFunctionData, parseAbi } from "viem";
@@ -40,6 +43,8 @@ import { useSwapSecurity, useTokenSecurity } from "@/hooks/useSecurityCheck";
 import { AlertTriangle, AlertCircle, Info } from "lucide-react";
 import { solanaClient } from "@/lib/solana/client";
 import { VersionedTransaction } from "@solana/web3.js";
+import { Chain, EVMChain } from "../wallet/data"; // Ensure Chain type is imported
+import { useSolanaTokenList } from "@/hooks/useSolanaTokenList";
 
 // OneInch V6 Router
 const AGGREGATION_ROUTER_V6 = "0x111111125421ca6dc452d289314280a0f8842a65";
@@ -136,21 +141,41 @@ function SlippageSettings({
   );
 }
 
+
+
 export function SwapFlow() {
-  const { setCurrentView, preselectedToken, setPreselectedToken, slippage, setSlippage } = useApp();
+  const { setCurrentView, preselectedToken, setPreselectedToken, slippage, setSlippage, activeChain: appActiveChain } = useApp();
+
+  // Initialize selectedChain based on preselectedToken or appActiveChain
+  // Helper to resolve initial state
+  const getInitialChain = (): { chain: Chain; evmChain?: EVMChain } => {
+    if (preselectedToken) {
+      return {
+        chain: preselectedToken.chain,
+        evmChain: preselectedToken.evmChain
+      };
+    }
+    // Default to app active chain context
+    if (appActiveChain === "Solana") {
+      return { chain: "Solana" };
+    }
+    // Default to Ethereum for EVM if no specific chain is set in context (context only has "EVM")
+    return { chain: "EVM", evmChain: "ethereum" };
+  };
+
+  const initialChainState = getInitialChain();
+  const [selectedChain, setSelectedChain] = useState<Chain>(initialChainState.chain);
+  const [selectedEvmChain, setSelectedEvmChain] = useState<EVMChain | undefined>(initialChainState.evmChain);
+
   const [step, setStep] = useState<SwapStep>("form");
   const [fromToken, setFromToken] = useState<TokenBalance | null>(
     preselectedToken
   );
   const [toToken, setToToken] = useState<TokenBalance | null>(null);
-  const [fromTokenChain, setFromTokenChain] = useState<string | null>(() => {
-    if (preselectedToken) {
-      return preselectedToken.evmChain
-        ? `${preselectedToken.chain}-${preselectedToken.evmChain}`
-        : preselectedToken.chain;
-    }
-    return null;
-  });
+  const [fromTokenChain, setFromTokenChain] = useState<string | null>(initialChainState.evmChain
+    ? `${initialChainState.chain}-${initialChainState.evmChain}`
+    : initialChainState.chain
+  );
   const [toTokenChain, setToTokenChain] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [estimatedAmount, setEstimatedAmount] = useState("");
@@ -164,8 +189,10 @@ export function SwapFlow() {
   const { wallets } = useWallets();
 
   // Determine active chain context
-  const activeChainForBalances = fromToken ? fromToken.chain : "EVM";
-  const activeEvmChainForBalances = fromToken && fromToken.evmChain ? fromToken.evmChain : "ethereum";
+  // We use the selected chain states for driving fetching
+  const activeChainForBalances = selectedChain;
+  // If selected chain is EVM, use the specific EVM chain. Fallback to ethereum if undefined (shouldn't happen if logic is correct)
+  const activeEvmChainForBalances = selectedChain === "EVM" ? (selectedEvmChain || "ethereum") : "ethereum";
 
   const { balances: userTokenBalances } = useTokenBalances(activeChainForBalances, activeEvmChainForBalances);
 
@@ -176,9 +203,38 @@ export function SwapFlow() {
   );
 
   // If Solana, we mainly rely on user balances + default list for now (handled in hook)
+  // If EVM, use swap token list
   const tokens = activeChainForBalances === "EVM" && swapTokenList.length > 0
     ? swapTokenList
     : userTokenBalances;
+
+  // Fetch Jupiter Strict List for Solana "To" selection
+  const { tokens: solanaTokenList } = useSolanaTokenList();
+
+  // Helper to get total value per chain
+  const getChainTotalValue = (chainLabel: string, chainType: "EVM" | "Solana", chainValue: string | EVMChain) => {
+    return userTokenBalances
+      .filter(t => {
+        if (chainType === "Solana") return t.chain === "Solana";
+        return t.chain === "EVM" && t.evmChain === chainValue;
+      })
+      .reduce((sum, t) => sum + (t.usdValue || 0), 0);
+  };
+
+  // Filter tokens strictly by the selected chain to ensure the modal only shows relevant tokens
+  const filteredTokensForChain = tokens.filter(t => {
+    if (selectedChain === 'Solana') return t.chain === 'Solana';
+    if (selectedChain === 'EVM') return t.chain === 'EVM' && t.evmChain === selectedEvmChain;
+    return false;
+  });
+
+  // Strict "From" token list: Only tokens with balance > 0
+  const fromTokenList = filteredTokensForChain.filter(t => t.amount > 0);
+
+  // "To" token list:
+  // EVM: Use cached 1inch list (filteredTokensForChain is already heavily populated for EVM)
+  // Solana: Use Jupiter Strict List
+  const toTokenList = selectedChain === 'Solana' ? solanaTokenList : filteredTokensForChain;
 
   // --- EVM Quote Hook ---
   const getChainId = (t: TokenBalance | null) => {
@@ -353,11 +409,39 @@ export function SwapFlow() {
       // Truncate based on decimals to avoid dust issues
       // Simple 6 decimals for now as safe bet
       setAmount(newAmount.toFixed(6));
+
       if (toToken) setEstimatedAmount("");
     } else {
       setAmount("");
       setEstimatedAmount("");
     }
+  };
+
+  const handleChainChange = (chainType: "EVM" | "Solana", evmChain?: EVMChain) => {
+    setSelectedChain(chainType);
+    if (evmChain) {
+      setSelectedEvmChain(evmChain);
+    } else {
+      setSelectedEvmChain(undefined);
+    }
+
+    // Clear tokens if they don't match the new chain
+    // We check if the fromToken matches the new chain. If NOT, clear it.
+    if (fromToken) {
+      const isSameChain = fromToken.chain === chainType && (!evmChain || fromToken.evmChain === evmChain);
+      if (!isSameChain) {
+        setFromToken(null);
+        setFromTokenChain(null);
+        setAmount(""); // Reset amount on chain switch
+      }
+    }
+
+    // Always clear ToToken on chain switch to prevent mismatch (unless we implement cross-chain later)
+    setToToken(null);
+    setToTokenChain(null);
+    setEstimatedAmount("");
+    setPercentage(0);
+    setError("");
   };
 
   const handleFromTokenSelect = (token: TokenBalance) => {
@@ -367,8 +451,10 @@ export function SwapFlow() {
       : token.chain;
     setFromTokenChain(chainKey);
 
-    // Reset ToToken if chain compatibility issue (Isolation)
-    if (toToken && toToken.chain !== token.chain) {
+    // No need to reset chain state here as the modal is already filtered by current chain state
+
+    // Reset ToToken if chain compatibility issue (should be guarded by filtering anyway)
+    if (toToken && (toToken.chain !== token.chain || toToken.evmChain !== token.evmChain)) {
       setToToken(null);
       setToTokenChain(null);
     }
@@ -379,6 +465,7 @@ export function SwapFlow() {
     setError("");
     setPreselectedToken(null);
   };
+
 
   const handleToTokenSelect = (token: TokenBalance) => {
     // Chain Isolation Check
@@ -543,7 +630,7 @@ export function SwapFlow() {
 
   // Gas Estimation Logic
   const formatGasEstimate = () => {
-    if (isSolanaSwap) return "~0.000005 SOL"; // Typical Solana gas
+    if (selectedChain === 'Solana') return "~0.000005 SOL"; // Typical Solana gas
     if (evmQuote?.gas && evmQuote?.gasPrice) {
       const gasInGwei = BigInt(evmQuote.gasPrice) / BigInt(1e9);
       const gasCost = (Number(evmQuote.gas) * Number(gasInGwei)) / 1e9;
@@ -553,14 +640,41 @@ export function SwapFlow() {
   };
 
   const gasEstimate = formatGasEstimate();
-  const timeEstimate = isSolanaSwap ? "< 1 min" : "1-3 min";
-  const routeLabel = isSolanaSwap ? "Jupiter" : "1inch";
+  const timeEstimate = selectedChain === 'Solana' ? "< 1 min" : "1-3 min";
+  const routeLabel = selectedChain === 'Solana' ? "Jupiter" : "1inch";
+
+  // Helper to get current chain label/logo
+  const getCurrentChainOption = () => {
+    if (selectedChain === 'Solana') return SUPPORTED_CHAINS.find(c => c.value === 'solana');
+    return SUPPORTED_CHAINS.find(c => c.value === selectedEvmChain);
+  };
+  const currentChainOption = getCurrentChainOption();
 
   const renderHeader = (title: string) => (
     <div className="mb-6 flex items-center justify-between">
-      <h2 className="text-2xl font-semibold text-[color:var(--color-depth)]">
-        {title}
-      </h2>
+      {/* Chain Selector (Top Center/Left) */}
+      {title === "Swap" ? (
+        <div className="flex items-center gap-2">
+          <ChainSelectorSheet
+            selectedChain={selectedChain}
+            selectedEvmChain={selectedEvmChain}
+            tokens={userTokenBalances}
+            onSelectChain={(chain, evmChain) => handleChainChange(chain, evmChain as EVMChain)}
+            trigger={
+              <Button variant="outline" className="h-9 gap-2 rounded-full px-3 border-[color:var(--color-border)] bg-transparent hover:bg-[color:var(--color-depth)]/5">
+                <ChainLogo chain={selectedEvmChain || (selectedChain === 'Solana' ? 'solana' : 'ethereum')} />
+                <span className="text-sm font-medium">{currentChainOption?.label || "Select Chain"}</span>
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </Button>
+            }
+          />
+        </div>
+      ) : (
+        <h2 className="text-2xl font-semibold text-[color:var(--color-depth)]">
+          {title}
+        </h2>
+      )}
+
       <div className="flex items-center gap-2">
         {title === "Swap" && (
           <Button
@@ -579,6 +693,7 @@ export function SwapFlow() {
     </div>
   );
 
+
   if (step === "loading") {
     return (
       <div className="wallet-card p-8">
@@ -588,7 +703,7 @@ export function SwapFlow() {
             Processing swap...
           </p>
           <p className="text-sm text-[color:var(--color-depth)]/60">
-            Executing swap on {isSolanaSwap ? "Solana" : "EVM"}
+            Executing swap on {selectedChain === "Solana" ? "Solana" : "EVM"}
           </p>
         </div>
       </div>
@@ -895,21 +1010,24 @@ export function SwapFlow() {
       {/* Modals */}
       {showFromTokenModal && (
         <TokenSelectModal
-          tokens={userTokenBalances} // Only show user's tokens (and defaults) for "From"
+          tokens={fromTokenList}
           onSelect={handleFromTokenSelect}
           onClose={() => setShowFromTokenModal(false)}
-          chainFilter={null} // Allow picking any chain for FROM
+          chain={selectedEvmChain}
+          chainFilter={selectedChain}
         />
       )}
 
       {showToTokenModal && (
         <TokenSelectModal
-          tokens={tokens}
+          tokens={toTokenList}
           onSelect={handleToTokenSelect}
           onClose={() => setShowToTokenModal(false)}
-          chainFilter={fromToken ? fromToken.chain : null} // Restrict TO context
+          chain={selectedEvmChain}
+          chainFilter={selectedChain}
         />
       )}
+
 
       <Dialog open={showSlippageSettings} onOpenChange={setShowSlippageSettings}>
         <SlippageSettings

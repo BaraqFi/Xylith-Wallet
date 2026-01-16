@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { TransactionPreview } from "@/lib/services/transactionBuilder";
 import { TokenBalance, EVMChain } from "@/components/wallet/data";
 import { formatUnits, Address } from "viem";
-import { ChainLogo } from "../wallet/ManualWallet";
+import { ChainLogo } from "../wallet/ChainLogo";
 import { AlertCircle, AlertTriangle } from "lucide-react";
 
 interface TransactionDetailsProps {
