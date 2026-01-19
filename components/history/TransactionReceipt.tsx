@@ -2,7 +2,7 @@
 
 import { useApp } from "../app/AppContext";
 import { manualWalletState, WalletTransaction } from "../wallet/data";
-import { TokenLogo } from "../wallet/ManualWallet";
+import { TokenLogo } from "../wallet/TokenLogo";
 import { ChainLogo } from "../wallet/ChainLogo";
 
 export function TransactionReceipt() {
@@ -56,10 +56,10 @@ export function TransactionReceipt() {
             <p className="text-sm text-[color:var(--color-depth)]/60">Status</p>
             <p
               className={`mt-1 text-lg font-semibold ${transaction.status === "confirmed"
-                  ? "text-green-600"
-                  : transaction.status === "pending"
-                    ? "text-yellow-600"
-                    : "text-red-600"
+                ? "text-green-600"
+                : transaction.status === "pending"
+                  ? "text-yellow-600"
+                  : "text-red-600"
                 }`}
             >
               {transaction.status.charAt(0).toUpperCase() + transaction.status.slice(1)}

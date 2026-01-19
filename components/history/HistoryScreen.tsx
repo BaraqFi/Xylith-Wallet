@@ -3,7 +3,7 @@
 import { useApp } from "../app/AppContext";
 import { WalletTransaction } from "../wallet/data";
 import { shortenAddress } from "../wallet/utils";
-import { TokenLogo } from "../wallet/ManualWallet";
+import { TokenLogo } from "../wallet/TokenLogo";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ArrowDown, ArrowUp, ArrowRightLeft } from "lucide-react";
 import { useMemo } from "react";
@@ -69,13 +69,13 @@ export function HistoryScreen() {
   // Group transactions by day
   const groupedTransactions = useMemo(() => {
     const groups: Record<string, WalletTransaction[]> = {};
-    
+
     transactions.forEach((tx) => {
       const date = new Date(tx.timestamp);
       const today = new Date();
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
-      
+
       let groupKey: string;
       if (date.toDateString() === today.toDateString()) {
         groupKey = "Today";
@@ -91,13 +91,13 @@ export function HistoryScreen() {
           groupKey = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
         }
       }
-      
+
       if (!groups[groupKey]) {
         groups[groupKey] = [];
       }
       groups[groupKey].push(tx);
     });
-    
+
     return groups;
   }, [transactions]);
 

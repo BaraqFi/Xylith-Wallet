@@ -4,7 +4,7 @@ import { useState, useMemo } from "react";
 import { useApp } from "../app/AppContext";
 import { TokenBalance } from "./data";
 import { ChainLogo } from "./ChainLogo";
-import { TokenLogo } from "./ManualWallet";
+import { TokenLogo } from "./TokenLogo";
 import {
   Dialog,
   DialogContent,
@@ -29,7 +29,7 @@ export function TokenDetailsModal({
 }: TokenDetailsModalProps) {
   const { setCurrentView, setPreselectedToken } = useApp();
   const [copied, setCopied] = useState(false);
-  
+
   // Fetch token analytics
   const { analytics, isLoading: analyticsLoading } = useTokenAnalytics(
     token.symbol,
@@ -301,9 +301,8 @@ export function TokenDetailsModal({
                         const minPrice = Math.min(...analytics.sparkline!);
                         const maxPrice = Math.max(...analytics.sparkline!);
                         const priceRange = maxPrice - minPrice || 1;
-                        return `${(i / (analytics.sparkline!.length - 1)) * 280 + 10},${
-                          110 - ((price - minPrice) / priceRange) * 100
-                        }`;
+                        return `${(i / (analytics.sparkline!.length - 1)) * 280 + 10},${110 - ((price - minPrice) / priceRange) * 100
+                          }`;
                       })
                       .join(" ")}
                   />
@@ -320,8 +319,7 @@ export function TokenDetailsModal({
                     points={valueHistory
                       .map(
                         (v, i) =>
-                          `${(i / (valueHistory.length - 1)) * 280 + 10},${
-                            110 - ((v.value - minValue) / range) * 100
+                          `${(i / (valueHistory.length - 1)) * 280 + 10},${110 - ((v.value - minValue) / range) * 100
                           }`
                       )
                       .join(" ")}

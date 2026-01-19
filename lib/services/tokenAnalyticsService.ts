@@ -111,32 +111,6 @@ const COINGECKO_TOKEN_ID_MAP: Record<string, string> = {
 };
 
 /**
- * Map common token symbols to CoinCap IDs (Fallback)
- */
-const COINCAP_ID_MAP: Record<string, string> = {
-  ETH: "ethereum",
-  BTC: "bitcoin",
-  USDC: "usd-coin",
-  USDT: "tether",
-  BNB: "binance-coin",
-  SOL: "solana",
-  XRP: "xrp",
-  DOGE: "dogecoin",
-  ADA: "cardano",
-  AVAX: "avalanche",
-  MATIC: "polygon",
-  DOT: "polkadot",
-  TRX: "tron",
-  LTC: "litecoin",
-  LINK: "chainlink",
-  BCH: "bitcoin-cash",
-  XLM: "stellar",
-  UNI: "uniswap",
-  ATOM: "cosmos",
-  XMR: "monero",
-};
-
-/**
  * Get CoinGecko token ID from contract address and chain
  * For now, we'll use symbol-based lookup for major tokens
  * In production, you might want to use CoinGecko's contract address API
@@ -151,10 +125,6 @@ function getCoinGeckoTokenId(symbol: string, contractAddress?: string): string |
   // For unknown tokens, return null (will need contract address lookup)
   // CoinGecko has an API endpoint for contract address lookup, but it requires API key for rate limits
   return null;
-}
-
-function getCoinCapId(symbol: string): string | null {
-  return COINCAP_ID_MAP[symbol.toUpperCase()] || null;
 }
 
 /**
@@ -206,36 +176,7 @@ export async function getTokenPricesBatch(
     }
   }
 
-  // 3. Fallback to CoinCap for missing prices (Major tokens only)
-  const missingTokens = tokens.filter(t => prices[t.symbol] === undefined);
-  if (missingTokens.length > 0) {
-    // CoinCap doesn't support batch "ids" in the same way, but it has a rate limit roughly 200/min.
-    // For now, we'll try to just catch the major ones if CoinGecko failed completely
-    // Or simpler: Use CoinCap Assets endpoint which returns top 100.
-
-    try {
-      const response = await fetch("https://api.coincap.io/v2/assets?limit=100", { next: { revalidate: 60 } });
-      if (response.ok) {
-        const data = await response.json();
-        const assets = data.data; // Array of { id, symbol, priceUsd ... }
-
-        for (const token of missingTokens) {
-          const capId = getCoinCapId(token.symbol);
-          // Also match by symbol if map fails
-          const asset = assets.find((a: any) =>
-            (capId && a.id === capId) || a.symbol === token.symbol.toUpperCase()
-          );
-
-          if (asset) {
-            prices[token.symbol] = parseFloat(asset.priceUsd);
-          }
-        }
-      }
-    } catch (err) {
-      console.error("CoinCap Fallback Error:", err);
-    }
-  }
-
+  // 3. Fallback removed (User Request)
   return prices;
 }
 

@@ -75,6 +75,50 @@ export class SolanaClient {
     // Fetch SPL Token Accounts
     async getTokenAccounts(address: string): Promise<TokenAccount[]> {
         try {
+            // User requested to use Alchemy for this specific call as Chainstack may fail for all tokens
+            const alchemyKey = process.env.ALCHEMY_SOLANA_KEY;
+            let customRpcUrl = null;
+
+            if (alchemyKey) {
+                if (typeof window === 'undefined') {
+                    customRpcUrl = `https://solana-mainnet.g.alchemy.com/v2/${alchemyKey}`;
+                }
+                // Note: Client-side proxy logic uses the generic server RPC handler, 
+                // we might need to update the proxy handler if we strictly want Alchemy there too.
+                // For now, we assume this runs primarily server-side or via proxy that defaults correctly.
+                // If we are server side:
+            }
+
+            // For this specific method, if we are server-side and have alchemy, use it directly via a fresh fetch 
+            // instead of the generic rpcCall which might pick Chainstack.
+            if (typeof window === 'undefined' && alchemyKey) {
+                const response = await fetch(`https://solana-mainnet.g.alchemy.com/v2/${alchemyKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'getTokenAccountsByOwner',
+                        params: [
+                            address,
+                            { programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' },
+                            { encoding: 'jsonParsed' },
+                        ],
+                    }),
+                });
+                const data = await response.json();
+                if (data.error) throw new Error(data.error.message);
+
+                return data.result.value.map((item: any) => ({
+                    pubkey: item.pubkey,
+                    mint: item.account.data.parsed.info.mint,
+                    owner: item.account.data.parsed.info.owner,
+                    amount: item.account.data.parsed.info.tokenAmount.amount,
+                    decimals: item.account.data.parsed.info.tokenAmount.decimals,
+                }));
+            }
+
+            // Fallback to standard flow if client-side or no alchemy key
             const result = await this.rpcCall('getTokenAccountsByOwner', [
                 address,
                 { programId: 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' },

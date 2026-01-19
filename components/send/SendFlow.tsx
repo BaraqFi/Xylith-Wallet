@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useApp } from "../app/AppContext";
 import { TokenBalance, EVMChain } from "../wallet/data";
 import { groupTokensBySymbol, GroupedToken } from "../wallet/utils";
-import { TokenLogo } from "../wallet/ManualWallet";
+import { TokenLogo } from "../wallet/TokenLogo";
 import { ChainLogo } from "../wallet/ChainLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
