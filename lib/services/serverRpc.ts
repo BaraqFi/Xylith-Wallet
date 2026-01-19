@@ -48,13 +48,31 @@ function getAvailableEndpoints(chain: SupportedRpcChain): RpcEndpoint[] {
     const endpoints: RpcEndpoint[] = [];
     const slugs = CHAIN_SLUGS[chain];
 
-    // 0. Helius (Solana Only)
+    // 0. Chainstack (Solana Mainnet Primary)
+    if (chain === 'solana' && process.env.CHAINSTACK_SOLANA_MAINNET_RPC) {
+        endpoints.push({
+            // reusing 'helius' provider type for now as it's just a label for solana logging
+            provider: 'helius',
+            url: process.env.CHAINSTACK_SOLANA_MAINNET_RPC
+        });
+    }
+
+    // 0.5 Helius (Solana Only)
     if (chain === 'solana' && process.env.HELIUS_API_KEY) {
         endpoints.push({
             provider: 'helius',
             url: `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
         });
     }
+
+    // 0.6 Alchemy (Solana Fallback specific key)
+    if (chain === 'solana' && process.env.ALCHEMY_SOLANA_KEY) {
+        endpoints.push({
+            provider: 'alchemy',
+            url: `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_SOLANA_KEY}`
+        });
+    }
+
 
     // 1. Ankr (Premium / Standard)
     if (process.env.ANKR_API_KEY) {
@@ -88,11 +106,16 @@ function getAvailableEndpoints(chain: SupportedRpcChain): RpcEndpoint[] {
         });
     }
 
-    // 5. Official Public (Last Resort)
-    endpoints.push({
-        provider: 'public_official',
-        url: PUBLIC_OFFICIAL[chain]
-    });
+    // 5. Official Public (Last Resort) -- Limit usage for Solana
+    if (chain !== 'solana') {
+        endpoints.push({
+            provider: 'public_official',
+            url: PUBLIC_OFFICIAL[chain]
+        });
+    } else {
+        // Solana-specific Fallbacks (if no optimized providers)
+        // We avoid the generic public implementation for Solana mainnet as it's often rate-limited for DApps.
+    }
 
     return endpoints;
 }
@@ -103,6 +126,8 @@ function getAvailableEndpoints(chain: SupportedRpcChain): RpcEndpoint[] {
 export function getRotatedRpcUrl(chain: SupportedRpcChain): string {
     const endpoints = getAvailableEndpoints(chain);
     if (endpoints.length === 0) {
+        // Fallback for Solana if no keys are present (development/testing only)
+        if (chain === 'solana') return 'https://api.mainnet-beta.solana.com';
         throw new Error(`No RPC endpoints available for ${chain}`);
     }
 
@@ -129,6 +154,21 @@ export async function executeRpcRequest(chain: SupportedRpcChain, method: string
     const endpoints = getAvailableEndpoints(chain);
 
     if (endpoints.length === 0) {
+        // Last ditch effort for Solana
+        if (chain === 'solana') {
+            try {
+                const response = await fetch('https://api.mainnet-beta.solana.com', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: 1, jsonrpc: '2.0', method, params }),
+                });
+                const data = await response.json();
+                if (data.error) throw new Error(data.error.message);
+                return data.result;
+            } catch (e) {
+                throw new Error(`All RPC endpoints failed for ${chain}. Last error: ${e}`);
+            }
+        }
         throw new Error(`No RPC endpoints available for ${chain}`);
     }
 
@@ -160,14 +200,6 @@ export async function executeRpcRequest(chain: SupportedRpcChain, method: string
 
             // Forward upstream errors if present
             if (data.error) {
-                // Determine if error is retryable? 
-                // Mostly yes for things like "Too Many Requests", but "Method not found" or "Invalid params" shouldn't change per provider.
-                // For now, let's assume we return the error unless it's a rate limit.
-                // Actually, "Forbidden" usually comes as 403 HTTP status, handled above.
-                // JSON-RPC errors might be internal.
-                // If it's a rate limit error (code -32005 or similar), might be worth retrying.
-                // But generally, if we get a valid JSON-RPC response, we return it.
-                // data.error.message
                 throw new Error(`RPC Error: ${data.error.message}`);
             }
 

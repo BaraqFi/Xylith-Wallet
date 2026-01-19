@@ -25,10 +25,12 @@ export class SolanaClient {
     private async rpcCall(method: string, params: any[]) {
         if (typeof window === 'undefined') {
             // Server-side: use direct RPC URL from env if possible, or fail if not configured
-            // But this client is mainly used client-side.
-            // If used server-side, we should use fetch to the real RPC.
-            // For simplicity, let's assume client-side usage mostly.
-            const rpcUrl = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+            // Use the Chainstack RPC for server-side calls if available
+            const rpcUrl = process.env.CHAINSTACK_SOLANA_MAINNET_RPC ||
+                (process.env.ALCHEMY_SOLANA_KEY ? `https://solana-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_SOLANA_KEY}` : null) ||
+                process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
+                'https://api.mainnet-beta.solana.com';
+
             const response = await fetch(rpcUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
