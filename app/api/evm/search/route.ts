@@ -48,7 +48,9 @@ function setCachedResults(key: string, data: any[]): void {
     // Limit cache size to prevent memory issues
     if (searchCache.size > 1000) {
         const firstKey = searchCache.keys().next().value;
-        searchCache.delete(firstKey);
+        if (firstKey) {
+            searchCache.delete(firstKey);
+        }
     }
     searchCache.set(key, { data, timestamp: Date.now() });
 }
@@ -78,7 +80,7 @@ async function searchCoinGecko(query: string, chain: EVMChain): Promise<any[]> {
             .filter((coin: any) => {
                 // Check if coin is on the requested platform
                 const platforms = coin.platforms || {};
-                return Object.keys(platforms).some(p => 
+                return Object.keys(platforms).some(p =>
                     p.toLowerCase().includes(platform.toLowerCase().split('-')[0])
                 );
             })
