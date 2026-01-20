@@ -181,7 +181,71 @@ export async function getTokenPricesBatch(
 }
 
 /**
- * Fetch token analytics from CoinGecko
+ * Fetch token analytics from Moralis (for EVM tokens)
+ * Moralis metadata endpoint includes market cap, supply, and other analytics
+ */
+async function getMoralisAnalytics(
+  contractAddress: string,
+  chain: EVMChain
+): Promise<TokenAnalytics | null> {
+  const MORALIS_API_KEY = process.env.MORALIS_API_KEY;
+  if (!MORALIS_API_KEY) return null;
+
+  try {
+    const CHAIN_MAP: Record<EVMChain, string> = {
+      ethereum: "eth",
+      base: "base",
+      arbitrum: "arbitrum",
+      optimism: "optimism",
+      polygon: "polygon",
+      bsc: "bsc",
+    };
+
+    const moralisChain = CHAIN_MAP[chain] || "eth";
+    const url = `https://deep-index.moralis.io/api/v2.2/erc20/metadata?chain=${moralisChain}&addresses%5B0%5D=${contractAddress}`;
+
+    const response = await fetch(url, {
+      headers: {
+        accept: "application/json",
+        "X-API-Key": MORALIS_API_KEY,
+      },
+      next: { revalidate: 300 }, // Cache for 5 minutes
+    });
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!data || data.length === 0) return null;
+
+    const token = data[0];
+    
+    // Moralis provides market cap and supply data
+    const marketCap = token.market_cap ? parseFloat(token.market_cap) : undefined;
+    const circulatingSupply = token.circulating_supply ? parseFloat(token.circulating_supply) : undefined;
+    
+    // Calculate price from market cap and supply if available
+    let currentPriceUsd = 0;
+    if (marketCap && circulatingSupply && circulatingSupply > 0) {
+      currentPriceUsd = marketCap / circulatingSupply;
+    }
+
+    return {
+      currentPriceUsd,
+      priceChange24h: 0, // Moralis doesn't provide this in metadata endpoint
+      priceChange7d: 0, // Moralis doesn't provide this in metadata endpoint
+      marketCap,
+      volume24h: undefined, // Not available in metadata endpoint
+      sparkline: undefined,
+    };
+  } catch (error) {
+    console.warn("Moralis analytics fetch failed:", error);
+    return null;
+  }
+}
+
+/**
+ * Fetch token analytics from CoinGecko or Moralis
+ * Priority: Moralis (for EVM with contract) > CoinGecko
  */
 export async function getTokenAnalytics(
   symbol: string,
@@ -196,16 +260,50 @@ export async function getTokenAnalytics(
     return cached;
   }
 
+  // 1. Try Moralis first for EVM tokens with contract address
+  if (contractAddress && chain !== 'solana') {
+    const moralisAnalytics = await getMoralisAnalytics(contractAddress, chain as EVMChain);
+    if (moralisAnalytics && moralisAnalytics.currentPriceUsd > 0) {
+      // Enhance with CoinGecko price changes if available
+      const tokenId = getCoinGeckoTokenId(symbol, contractAddress);
+      if (tokenId) {
+        try {
+          const url = `https://api.coingecko.com/api/v3/simple/price?ids=${tokenId}&vs_currencies=usd&include_24hr_change=true&include_7d_change=true`;
+          const response = await fetch(url, { next: { revalidate: 300 } });
+          if (response.ok) {
+            const data = await response.json();
+            const tokenData = data[tokenId];
+            if (tokenData) {
+              moralisAnalytics.priceChange24h = tokenData.usd_24h_change || 0;
+              moralisAnalytics.priceChange7d = tokenData.usd_7d_change || 0;
+              // Use CoinGecko price if available (more accurate)
+              if (tokenData.usd) {
+                moralisAnalytics.currentPriceUsd = tokenData.usd;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to enhance with CoinGecko data:", err);
+        }
+      }
+
+      // Fetch sparkline from CoinGecko
+      const sparkline = await getTokenSparkline(symbol, chain, contractAddress);
+      moralisAnalytics.sparkline = sparkline || undefined;
+
+      setCachedData(cacheKey, moralisAnalytics);
+      return moralisAnalytics;
+    }
+  }
+
+  // 2. Fallback to CoinGecko
   const tokenId = getCoinGeckoTokenId(symbol, contractAddress);
   if (!tokenId) {
-    // Token not found in our mapping - return null
-    // In production, you could use CoinGecko's contract address API here
     return null;
   }
 
   try {
     // CoinGecko free API endpoint
-    // Using /simple/price endpoint which doesn't require API key
     const url = `https://api.coingecko.com/api/v3/simple/price?ids=${tokenId}&vs_currencies=usd&include_24hr_change=true&include_7d_change=true&include_market_cap=true&include_24hr_vol=true`;
 
     const response = await fetch(url, {

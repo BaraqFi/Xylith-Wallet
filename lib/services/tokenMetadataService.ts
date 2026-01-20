@@ -18,7 +18,36 @@ export function isValidContractAddress(address: string): boolean {
 }
 
 /**
+ * Fetch token metadata from Moralis (primary) with CoinGecko fallback
+ */
+async function getTokenMetadataFromMoralis(
+  contractAddress: Address,
+  chain: EVMChain
+): Promise<TokenMetadata | null> {
+  try {
+    const response = await fetch("/api/moralis/token-metadata", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ contractAddress, chain }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data = await response.json();
+    return data.metadata || null;
+  } catch (error) {
+    console.error("Error fetching token metadata from Moralis:", error);
+    return null;
+  }
+}
+
+/**
  * Fetch token metadata from contract address
+ * Priority: Moralis > CoinGecko (via Moralis API route) > Alchemy > RPC
  */
 export async function fetchTokenMetadata(
   contractAddress: Address,
@@ -28,11 +57,18 @@ export async function fetchTokenMetadata(
     throw new Error("Invalid contract address format");
   }
 
-  // Use centralized public RPC client
-  const client = getPublicRpcClient(chain);
-
+  // 1. Try Moralis first (primary source with CoinGecko fallback built-in)
   try {
-    // Try Alchemy first (faster and includes logo)
+    const moralisMetadata = await getTokenMetadataFromMoralis(contractAddress, chain);
+    if (moralisMetadata && moralisMetadata.name && moralisMetadata.symbol) {
+      return moralisMetadata;
+    }
+  } catch (error) {
+    console.warn("Moralis metadata fetch failed, trying Alchemy:", error);
+  }
+
+  // 2. Fallback to Alchemy
+  try {
     const alchemyMetadata = await getTokenMetadataFromAlchemy(contractAddress, chain);
     if (alchemyMetadata && alchemyMetadata.name && alchemyMetadata.symbol) {
       return {
@@ -46,7 +82,8 @@ export async function fetchTokenMetadata(
     console.warn("Alchemy metadata fetch failed, falling back to RPC:", error);
   }
 
-  // Fallback to direct RPC calls
+  // 3. Final fallback to direct RPC calls
+  const client = getPublicRpcClient(chain);
   try {
     const [name, symbol, decimals] = await Promise.all([
       client.readContract({

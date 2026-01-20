@@ -4,9 +4,8 @@ import { useState, useMemo, useEffect } from "react";
 import { TokenBalance, EVMChain } from "./data";
 import { TokenLogo } from "./TokenLogo";
 import { Input } from "@/components/ui/input";
-import { X, Search, Check, Loader2, AlertTriangle } from "lucide-react";
-import { fetchTokenMetadata, isValidContractAddress, isContractAddress } from "@/lib/services/tokenMetadataService";
-import { Address } from "viem";
+import { X, Search, Check, Loader2 } from "lucide-react";
+import { isValidContractAddress } from "@/lib/services/tokenMetadataService";
 
 interface TokenSelectModalProps {
   tokens: TokenBalance[];
@@ -19,6 +18,7 @@ interface TokenSelectModalProps {
   onSearch?: (query: string) => Promise<TokenBalance[]>;
   /** Selected token balance object to show checkmark */
   selectedToken?: TokenBalance | null;
+  selectMode?: 'from' | 'to';
 }
 
 export function TokenSelectModal({
@@ -30,6 +30,7 @@ export function TokenSelectModal({
   chainFilter,
   onSearch,
   selectedToken,
+  selectMode,
 }: TokenSelectModalProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [remoteResults, setRemoteResults] = useState<TokenBalance[]>([]);
@@ -43,7 +44,7 @@ export function TokenSelectModal({
   // 1. Popular Assets (Top verified tokens - currently hardcoded fast path)
   // In a real app, this might come from a prop or specific filtered list
   const popularTokens = useMemo(() => {
-    // Basic heuristics for "Popular": SOL, USDC, USDT, ETH, BTC, BONK, JUP
+    // Basic heuristics for "Popular": SOL, USDC, USDT, ETH, WBTC, BONK, JUP
     const popularitySet = new Set(["SOL", "USDC", "USDT", "ETH", "WBTC", "BONK", "JUP"]);
     return tokens.filter(t => popularitySet.has(t.symbol)).slice(0, 8);
   }, [tokens]);
@@ -143,7 +144,7 @@ export function TokenSelectModal({
       onClick={onClose}
     >
       <div
-        className="bg-[color:var(--color-surface)] w-full max-w-sm h-[680px] flex flex-col rounded-[2rem] p-5 shadow-2xl border border-[color:var(--color-border)] relative"
+        className="bg-[color:var(--color-surface)] w-full max-w-sm h-[80vh] sm:h-[680px] flex flex-col rounded-[2rem] p-5 shadow-2xl border border-[color:var(--color-border)] relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -200,9 +201,11 @@ export function TokenSelectModal({
 
           {/* Token List */}
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--color-depth)]/40 mb-2 px-2">
-              {searchQuery ? "Search Results" : "Verified Tokens"}
-            </p>
+            {!searchQuery && selectMode === 'from' ? null : (
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[color:var(--color-depth)]/40 mb-2 px-2">
+                {searchQuery ? "Search Results" : "Verified Tokens"}
+              </p>
+            )}
 
             {finalResults.length === 0 && !isSearching ? (
               <div className="flex flex-col items-center justify-center py-12 text-[color:var(--color-depth)]/30">
@@ -275,4 +278,3 @@ export function TokenSelectModal({
     </div>
   );
 }
-

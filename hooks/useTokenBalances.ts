@@ -318,8 +318,8 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                                     contractAddr as Address,
                                     currentEvmChain
                                 );
-                                if (metadata) {
-                                    const decimals = metadata.decimals ?? 18;
+                                if (metadata || true) { // Always include found tokens
+                                    const decimals = metadata?.decimals ?? 18;
                                     const amount = parseFloat(formatUnits(balance, decimals));
 
                                     // Analytics fetched in batch below
@@ -327,15 +327,15 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                                     const usdValue = 0; // Updated in batch
 
                                     mergedTokens.push({
-                                        symbol: metadata.symbol || "UNKNOWN",
-                                        name: metadata.name || "Unknown Token",
+                                        symbol: metadata?.symbol || "UNKNOWN",
+                                        name: metadata?.name || `Unknown (${contractAddr.slice(0, 4)}...${contractAddr.slice(-4)})`,
                                         chain: "EVM",
                                         evmChain: currentEvmChain,
                                         amount,
                                         usdValue,
                                         contractAddress: contractAddr,
                                         decimals,
-                                        logo: metadata.logo,
+                                        logo: metadata?.logo,
                                         pricePerToken,
                                     });
                                 }

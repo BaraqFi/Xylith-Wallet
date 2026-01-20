@@ -576,23 +576,51 @@ export function SwapFlow() {
   };
   const currentChainOption = getCurrentChainOption();
 
-  // Search Handler for Solana Tokens
+  // Search Handler for both Solana and EVM Tokens
   const handleSearch = async (query: string): Promise<TokenBalance[]> => {
-    if (selectedChain !== 'Solana') return [];
+    if (!query || query.trim().length < 2) return [];
+
     try {
-      const res = await fetch(`/api/jupiter/tokens?query=${encodeURIComponent(query)}`);
-      if (!res.ok) throw new Error("Search failed");
-      const data = await res.json();
-      return data.map((t: any) => ({
-        symbol: t.symbol,
-        name: t.name,
-        chain: "Solana",
-        amount: 0,
-        usdValue: 0,
-        contractAddress: t.address,
-        decimals: t.decimals,
-        logo: t.logoURI,
-      }));
+      if (selectedChain === 'Solana') {
+        // Solana search via Jupiter
+        const res = await fetch(`/api/jupiter/tokens?query=${encodeURIComponent(query)}`);
+        if (!res.ok) throw new Error("Search failed");
+        const data = await res.json();
+        return data.map((t: any) => ({
+          symbol: t.symbol,
+          name: t.name,
+          chain: "Solana",
+          amount: 0,
+          usdValue: 0,
+          contractAddress: t.address,
+          decimals: t.decimals,
+          logo: t.logoURI,
+        }));
+      } else if (selectedChain === 'EVM' && selectedEvmChain) {
+        // EVM search via Moralis (with CoinGecko fallback)
+        const res = await fetch(
+          `/api/evm/search?query=${encodeURIComponent(query)}&chain=${selectedEvmChain}`
+        );
+        if (!res.ok) {
+          // If error response, try to parse error or return empty
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || "Search failed");
+        }
+        const data = await res.json();
+        // Ensure results match TokenBalance format
+        return data.map((t: any) => ({
+          symbol: t.symbol,
+          name: t.name,
+          chain: "EVM",
+          evmChain: selectedEvmChain,
+          amount: t.amount || 0,
+          usdValue: t.usdValue || 0,
+          contractAddress: t.contractAddress,
+          decimals: t.decimals || 18,
+          logo: t.logo,
+        }));
+      }
+      return [];
     } catch (err) {
       console.error("Token search failed", err);
       return [];
@@ -840,7 +868,7 @@ export function SwapFlow() {
         </div>
 
         {/* TO Card */}
-        <div className="bg-[color:var(--color-surface)] border border-[color:var(--color-border)] p-5 rounded-[2rem] relative z-10 transition-all focus-within:border-[color:var(--color-accent)]/30">
+        <div className="bg-[color:var(--color-surface)] p-5 rounded-[2rem] relative z-10 transition-all focus-within:ring-1 focus-within:ring-[color:var(--color-accent)]/30">
           <div className="flex justify-between mb-3">
             <span className="text-xs font-bold text-[color:var(--color-depth)]/40 uppercase tracking-widest">You Receive</span>
             <div className="flex items-center gap-1.5 text-xs text-[color:var(--color-depth)]/40 font-bold">
@@ -923,6 +951,7 @@ export function SwapFlow() {
           chain={selectedEvmChain}
           onSearch={handleSearch}
           selectedToken={fromToken}
+          selectMode="from"
         />
       )}
 
@@ -937,6 +966,7 @@ export function SwapFlow() {
           excludeSymbol={fromToken?.symbol}
           onSearch={handleSearch}
           selectedToken={toToken}
+          selectMode="to"
         />
       )}
     </div>
