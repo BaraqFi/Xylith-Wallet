@@ -211,57 +211,57 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                     let alchemyBalances: Map<string, string> = new Map();
                     let moralisBalances: Map<string, { balance: string; metadata?: any }> = new Map();
                     let nativeBalanceHex = "0x0";
-                    let useAlchemy = true;
+                    let useAlchemy = false;
                     let useMoralis = false;
 
                     if (!useLocalFork) {
-                        // Try Alchemy first
+                        // Try Moralis first (primary) - better token coverage and includes metadata/prices
                         try {
-                            const tokenBalances = await getTokenBalancesFromAlchemy(address, currentEvmChain);
-                            tokenBalances.forEach((token) => {
+                            const moralisTokens = await getTokenBalancesFromMoralis(address, currentEvmChain);
+                            moralisTokens.forEach((token) => {
                                 if (token.contractAddress) {
-                                    alchemyBalances.set(
+                                    moralisBalances.set(
                                         token.contractAddress.toLowerCase(),
-                                        token.tokenBalance
+                                        {
+                                            balance: token.tokenBalance,
+                                            metadata: {
+                                                name: token.name,
+                                                symbol: token.symbol,
+                                                decimals: token.decimals,
+                                                logo: token.logo,
+                                                usdValue: token.usdValue,
+                                                pricePerToken: token.pricePerToken,
+                                            }
+                                        }
                                     );
                                 }
                             });
-                            nativeBalanceHex = await getNativeBalanceFromAlchemy(address, currentEvmChain);
-                        } catch (alchemyError) {
-                            console.warn("Alchemy API failed, trying Moralis:", alchemyError);
-                            useAlchemy = false;
+                            useMoralis = true;
                             
-                            // Fallback to Moralis
+                            // Try to get native balance from Alchemy (or fallback to RPC)
                             try {
-                                const moralisTokens = await getTokenBalancesFromMoralis(address, currentEvmChain);
-                                moralisTokens.forEach((token) => {
+                                nativeBalanceHex = await getNativeBalanceFromAlchemy(address, currentEvmChain);
+                            } catch {
+                                // Will fall back to RPC below
+                            }
+                        } catch (moralisError) {
+                            console.warn("Moralis API failed, trying Alchemy fallback:", moralisError);
+                            
+                            // Fallback to Alchemy
+                            try {
+                                const tokenBalances = await getTokenBalancesFromAlchemy(address, currentEvmChain);
+                                tokenBalances.forEach((token) => {
                                     if (token.contractAddress) {
-                                        moralisBalances.set(
+                                        alchemyBalances.set(
                                             token.contractAddress.toLowerCase(),
-                                            {
-                                                balance: token.tokenBalance,
-                                                metadata: {
-                                                    name: token.name,
-                                                    symbol: token.symbol,
-                                                    decimals: token.decimals,
-                                                    logo: token.logo,
-                                                    usdValue: token.usdValue,
-                                                    pricePerToken: token.pricePerToken,
-                                                }
-                                            }
+                                            token.tokenBalance
                                         );
                                     }
                                 });
-                                useMoralis = true;
-                                
-                                // Try to get native balance from RPC if Moralis doesn't provide it
-                                try {
-                                    nativeBalanceHex = await getNativeBalanceFromAlchemy(address, currentEvmChain);
-                                } catch {
-                                    // Will fall back to RPC below
-                                }
-                            } catch (moralisError) {
-                                console.warn("Moralis API also failed, falling back to RPC:", moralisError);
+                                nativeBalanceHex = await getNativeBalanceFromAlchemy(address, currentEvmChain);
+                                useAlchemy = true;
+                            } catch (alchemyError) {
+                                console.warn("Alchemy API also failed, falling back to RPC:", alchemyError);
                             }
                         }
                     } else {
@@ -286,7 +286,7 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                             let decimals = defaultToken.decimals ?? nativeDecimals;
 
                             if (isNative) {
-                                if (useAlchemy && nativeBalanceHex) {
+                                if (nativeBalanceHex && nativeBalanceHex !== "0x0") {
                                     rawBalance = BigInt(nativeBalanceHex);
                                 } else {
                                     try {

@@ -4,7 +4,8 @@ import { EVMChain } from "@/components/wallet/data";
 /**
  * Server-side API route for Moralis token balances
  * Uses Moralis API to fetch ERC20 token balances for a wallet address
- * This is used as a fallback when Alchemy fails or for better token detection
+ * PRIMARY provider for token detection - better coverage and includes metadata/prices
+ * Falls back to Alchemy if Moralis fails
  */
 
 const MORALIS_API_KEY = process.env.MORALIS_API_KEY;
