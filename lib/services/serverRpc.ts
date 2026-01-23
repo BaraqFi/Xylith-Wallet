@@ -57,8 +57,8 @@ function getAvailableEndpoints(chain: SupportedRpcChain): RpcEndpoint[] {
         });
     }
 
-    // 0.5 Helius (Solana Only)
-    if (chain === 'solana' && process.env.HELIUS_API_KEY) {
+    // 0.5 Helius (Solana Only) - only add if key exists and is not empty
+    if (chain === 'solana' && process.env.HELIUS_API_KEY && process.env.HELIUS_API_KEY.trim() !== '') {
         endpoints.push({
             provider: 'helius',
             url: `https://mainnet.helius-rpc.com/?api-key=${process.env.HELIUS_API_KEY}`
@@ -206,7 +206,9 @@ export async function executeRpcRequest(chain: SupportedRpcChain, method: string
             return data.result;
 
         } catch (err: any) {
-            console.warn(`RPC Provider ${endpoint.provider} failed:`, err.message);
+            // Sanitize error messages to avoid exposing API keys
+            const sanitizedMessage = err.message?.replace(/api[_-]?key=([a-zA-Z0-9_-]+)/gi, 'api-key=***') || 'Unknown error';
+            console.warn(`RPC Provider ${endpoint.provider} failed:`, sanitizedMessage);
             lastError = err;
             // Continue to next endpoint
         }

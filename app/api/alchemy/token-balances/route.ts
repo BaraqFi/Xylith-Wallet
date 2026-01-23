@@ -40,18 +40,61 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        id: 1,
-        jsonrpc: "2.0",
-        method: "alchemy_getTokenBalances",
-        params: [address],
-      }),
-    });
+    // Add timeout and retry logic
+    const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 8000) => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      try {
+        const response = await fetch(url, {
+          ...options,
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        return response;
+      } catch (error: any) {
+        clearTimeout(timeoutId);
+        if (error.name === 'AbortError') {
+          throw new Error('Request timeout');
+        }
+        throw error;
+      }
+    };
+
+    let response;
+    let lastError: Error | null = null;
+    const maxRetries = 2;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        response = await fetchWithTimeout(apiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: 1,
+            jsonrpc: "2.0",
+            method: "alchemy_getTokenBalances",
+            params: [address],
+          }),
+        }, 8000); // 8 second timeout
+        
+        if (response.ok) break;
+      } catch (error: any) {
+        lastError = error;
+        if (attempt < maxRetries) {
+          // Wait before retry (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+          continue;
+        }
+        throw error;
+      }
+    }
+    
+    if (!response) {
+      throw lastError || new Error('Failed to fetch token balances after retries');
+    }
 
     if (!response.ok) {
       throw new Error(`Alchemy API error: ${response.statusText}`);

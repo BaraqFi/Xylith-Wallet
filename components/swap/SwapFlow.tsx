@@ -753,16 +753,16 @@ export function SwapFlow() {
       <div className="wallet-card p-8">
         {renderHeader("Confirm Swap")}
         <div className="space-y-4">
-          <div className="rounded-xl border border-[color:var(--color-border)] p-4">
-            <p className="mb-2 text-sm text-[color:var(--color-depth)]/60">From</p>
+          <div className="bg-[color:var(--color-surface)] border border-[color:var(--color-border)] p-5 rounded-[2rem]">
+            <p className="mb-3 text-xs font-bold text-[color:var(--color-depth)]/40 uppercase tracking-widest">From</p>
             <div className="flex items-center gap-3">
-              <TokenLogo symbol={fromToken!.symbol} name={fromToken!.name} size="sm" />
+              <TokenLogo symbol={fromToken!.symbol} name={fromToken!.name} size="sm" src={fromToken!.logo} />
               <div className="flex-1">
-                <p className="font-semibold text-sm">{fromToken!.name}</p>
+                <p className="font-semibold">{fromToken!.name}</p>
                 <p className="text-xs text-[color:var(--color-depth)]/60">{getChainLabel(fromToken!)}</p>
               </div>
               <div className="text-right">
-                <p className="font-semibold text-sm">{amount} {fromToken!.symbol}</p>
+                <p className="font-semibold">{amount} {fromToken!.symbol}</p>
               </div>
             </div>
           </div>
@@ -771,16 +771,16 @@ export function SwapFlow() {
             <ArrowUpDown className="h-6 w-6 text-[color:var(--color-depth)]/60" />
           </div>
 
-          <div className="rounded-xl border border-[color:var(--color-border)] p-4">
-            <p className="mb-2 text-sm text-[color:var(--color-depth)]/60">To</p>
+          <div className="bg-[color:var(--color-surface)] border border-[color:var(--color-border)] p-5 rounded-[2rem]">
+            <p className="mb-3 text-xs font-bold text-[color:var(--color-depth)]/40 uppercase tracking-widest">To</p>
             <div className="flex items-center gap-3">
-              <TokenLogo symbol={toToken!.symbol} name={toToken!.name} size="sm" />
+              <TokenLogo symbol={toToken!.symbol} name={toToken!.name} size="sm" src={toToken!.logo} />
               <div className="flex-1">
-                <p className="font-semibold text-sm">{toToken!.name}</p>
+                <p className="font-semibold">{toToken!.name}</p>
                 <p className="text-xs text-[color:var(--color-depth)]/60">{getChainLabel(toToken!)}</p>
               </div>
               <div className="text-right">
-                <p className="font-semibold text-sm">{estimatedAmount} {toToken!.symbol}</p>
+                <p className="font-semibold">{estimatedAmount} {toToken!.symbol}</p>
               </div>
             </div>
           </div>
@@ -788,12 +788,12 @@ export function SwapFlow() {
           {/* Action Buttons */}
           <div className="space-y-2 pt-2">
             {!isSolanaSwap && !isApproving && allowance !== undefined && allowance < parseFloat(amount) && (
-              <Button onClick={handleApprove} className="w-full bg-[color:var(--color-accent)]" disabled={isApproving}>
+              <Button onClick={handleApprove} className="w-full bg-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/90 text-white rounded-[1.5rem] py-6 text-base font-bold uppercase tracking-wider" disabled={isApproving}>
                 {isApproving ? "Approving..." : `Approve ${fromToken?.symbol}`}
               </Button>
             )}
             {(!isSolanaSwap && allowance !== undefined && allowance < parseFloat(amount)) ? null : (
-              <Button onClick={handleConfirm} className="w-full bg-[color:var(--color-accent)]">Confirm Swap</Button>
+              <Button onClick={handleConfirm} className="w-full bg-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/90 text-white rounded-[1.5rem] py-6 text-base font-bold uppercase tracking-wider">Confirm Swap</Button>
             )}
             <Button variant="ghost" onClick={() => setStep("form")} className="w-full">Back</Button>
           </div>
@@ -823,7 +823,7 @@ export function SwapFlow() {
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
               placeholder="0.00"
-              className="bg-transparent text-4xl font-semibold outline-none w-full border-none p-0 focus-visible:ring-0 placeholder:text-[color:var(--color-depth)]/10 h-auto"
+              className="bg-transparent text-4xl font-semibold outline-none w-full border-none p-0 focus-visible:ring-0 placeholder:text-[color:var(--color-depth)]/10 h-auto focus-visible:border-none focus-visible:ring-0 focus-visible:ring-offset-0"
             />
             <button
               onClick={() => setShowFromTokenModal(true)}
@@ -857,8 +857,8 @@ export function SwapFlow() {
           )}
         </div>
 
-        {/* Flip Button */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
+        {/* Flip Button - Centered between cards */}
+        <div className="relative flex items-center justify-center -my-2 z-20">
           <button
             onClick={handleSwapTokens}
             className="w-10 h-10 bg-[color:var(--color-surface)] border-4 border-[color:var(--color-background)] rounded-xl flex items-center justify-center text-[color:var(--color-depth)]/40 hover:text-[color:var(--color-accent)] hover:border-[color:var(--color-background)] shadow-lg transition-all"
@@ -868,7 +868,7 @@ export function SwapFlow() {
         </div>
 
         {/* TO Card */}
-        <div className="bg-[color:var(--color-surface)] p-5 rounded-[2rem] relative z-10 transition-all focus-within:ring-1 focus-within:ring-[color:var(--color-accent)]/30">
+        <div className="bg-[color:var(--color-surface)] border border-[color:var(--color-border)] p-5 rounded-[2rem] relative z-10 transition-all focus-within:border-[color:var(--color-accent)]/30">
           <div className="flex justify-between mb-3">
             <span className="text-xs font-bold text-[color:var(--color-depth)]/40 uppercase tracking-widest">You Receive</span>
             <div className="flex items-center gap-1.5 text-xs text-[color:var(--color-depth)]/40 font-bold">
@@ -917,7 +917,7 @@ export function SwapFlow() {
         <Button
           onClick={handleNext}
           disabled={!fromToken || !toToken || !amount || parseFloat(amount) <= 0 || !!quoteError}
-          className="w-full py-6 mt-2 rounded-[1.5rem] text-base font-bold uppercase tracking-wider shadow-lg shadow-[color:var(--color-accent)]/20"
+          className="w-full py-6 mt-2 rounded-[1.5rem] text-base font-bold uppercase tracking-wider bg-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/90 text-white shadow-lg shadow-[color:var(--color-accent)]/20"
         >
           {!fromToken || !toToken ? (
             "Select Tokens"

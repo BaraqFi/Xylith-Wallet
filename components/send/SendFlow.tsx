@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Check, X, Loader2, ArrowLeft, AlertCircle } from "lucide-react";
+import { Check, X, Loader2, ArrowLeft, AlertCircle, Search } from "lucide-react";
 import { usePrivy, useWallets } from "@privy-io/react-auth";
 import { createWalletClient, custom, Address } from "viem";
 import { useTransactionBuilder } from "@/hooks/useTransactionBuilder";
@@ -43,11 +43,128 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
   const [txHash, setTxHash] = useState<string | null>(null);
   const [insufficientBalance, setInsufficientBalance] = useState(false);
   const [selectedChainFilter, setSelectedChainFilter] = useState<"EVM" | "Solana" | "all">("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [remoteSearchResults, setRemoteSearchResults] = useState<TokenBalance[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  // Search handler for contract address and token name
+  const handleSearch = async (query: string): Promise<TokenBalance[]> => {
+    if (!query || query.trim().length < 2) return [];
+
+    try {
+      // Determine which chain to search based on filter
+      const searchChain = selectedChainFilter === "Solana" ? "Solana" : 
+                         selectedChainFilter === "EVM" ? "EVM" : "EVM"; // Default to EVM if "all"
+      
+      if (searchChain === "Solana") {
+        const res = await fetch(`/api/jupiter/tokens?query=${encodeURIComponent(query)}`);
+        if (!res.ok) throw new Error("Search failed");
+        const data = await res.json();
+        return data.map((t: any) => ({
+          symbol: t.symbol,
+          name: t.name,
+          chain: "Solana",
+          amount: 0,
+          usdValue: 0,
+          contractAddress: t.address,
+          decimals: t.decimals,
+          logo: t.logoURI,
+        }));
+      } else {
+        // For EVM, we need to determine which EVM chain to search
+        // Since we don't have a specific EVM chain selected in send flow, default to ethereum
+        // Or we could search all EVM chains, but that's complex. Let's default to ethereum.
+        const evmChain = "ethereum"; // Could be made dynamic based on user's tokens
+        const res = await fetch(
+          `/api/evm/search?query=${encodeURIComponent(query)}&chain=${evmChain}`
+        );
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || "Search failed");
+        }
+        const data = await res.json();
+        return data.map((t: any) => ({
+          symbol: t.symbol,
+          name: t.name,
+          chain: "EVM",
+          evmChain: t.evmChain || evmChain,
+          amount: t.amount || 0,
+          usdValue: t.usdValue || 0,
+          contractAddress: t.contractAddress,
+          decimals: t.decimals || 18,
+          logo: t.logo,
+        }));
+      }
+    } catch (err) {
+      console.error("Token search failed", err);
+      return [];
+    }
+  };
+
+  // Remote search effect
+  useEffect(() => {
+    if (!searchQuery || searchQuery.length < 2) {
+      setRemoteSearchResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const results = await handleSearch(searchQuery);
+        setRemoteSearchResults(results);
+      } catch (e) {
+        console.error("Remote search error:", e);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedChainFilter]);
+
+  // Filter tokens locally
+  const localFilteredTokens = useMemo(() => {
+    const filtered = tokens.filter(t => selectedChainFilter === 'all' || t.chain === selectedChainFilter);
+    
+    if (!searchQuery) return filtered;
+    
+    const s = searchQuery.toLowerCase().trim();
+    return filtered.filter((token) => {
+      return (
+        token.symbol.toLowerCase().includes(s) ||
+        token.name.toLowerCase().includes(s) ||
+        token.contractAddress?.toLowerCase().includes(s)
+      );
+    });
+  }, [tokens, selectedChainFilter, searchQuery]);
+
+  // Merge local and remote results
+  const mergedTokens = useMemo(() => {
+    if (!searchQuery) return localFilteredTokens;
+    
+    const seen = new Set<string>();
+    const merged: TokenBalance[] = [];
+    
+    const add = (list: TokenBalance[]) => {
+      list.forEach(t => {
+        const key = t.contractAddress ? t.contractAddress.toLowerCase() : `${t.symbol}-${t.chain}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(t);
+        }
+      });
+    };
+    
+    add(localFilteredTokens);
+    add(remoteSearchResults);
+    return merged;
+  }, [localFilteredTokens, remoteSearchResults, searchQuery]);
 
   const groupedTokens = useMemo(() => {
-    const filtered = tokens.filter(t => selectedChainFilter === 'all' || t.chain === selectedChainFilter);
-    return groupTokensBySymbol(filtered);
-  }, [tokens, selectedChainFilter]);
+    return groupTokensBySymbol(localFilteredTokens);
+  }, [localFilteredTokens]);
 
   const handleGroupSelect = (group: GroupedToken) => {
     setSelectedGroup(group);
@@ -424,6 +541,17 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
               ))}
             </div>
           </div>
+          <div className="mb-3 relative">
+            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[color:var(--color-depth)]/40">
+              <Search size={18} />
+            </div>
+            <Input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by token name or symbol"
+              className="w-full pl-10 pr-4 py-2 rounded-xl bg-[color:var(--color-depth)]/5 border-transparent focus:bg-transparent focus:border-[color:var(--color-accent)]/30 transition-all"
+            />
+          </div>
           <div className="max-h-60 space-y-2 overflow-y-auto p-1">
             {groupedTokens.map((group) => (
               <button
@@ -440,11 +568,11 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
                   <div>
                     <p className="font-semibold">{group.name}</p>
                     <div className="flex items-center gap-1 -space-x-2">
-                      {group.chains.map(chainToken =>
+                      {group.chains.map((chainToken, idx) =>
                         chainToken.evmChain ? (
-                          <ChainLogo key={chainToken.evmChain} chain={chainToken.evmChain} />
+                          <ChainLogo key={`${group.symbol}-${chainToken.evmChain}-${idx}`} chain={chainToken.evmChain} />
                         ) : chainToken.chain === 'Solana' ? (
-                          <ChainLogo key="solana" chain="solana" />
+                          <ChainLogo key={`${group.symbol}-solana-${idx}`} chain="solana" />
                         ) : null
                       )}
                     </div>

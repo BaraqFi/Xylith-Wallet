@@ -209,10 +209,13 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                     );
 
                     let alchemyBalances: Map<string, string> = new Map();
+                    let moralisBalances: Map<string, { balance: string; metadata?: any }> = new Map();
                     let nativeBalanceHex = "0x0";
                     let useAlchemy = true;
+                    let useMoralis = false;
 
                     if (!useLocalFork) {
+                        // Try Alchemy first
                         try {
                             const tokenBalances = await getTokenBalancesFromAlchemy(address, currentEvmChain);
                             tokenBalances.forEach((token) => {
@@ -225,8 +228,41 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                             });
                             nativeBalanceHex = await getNativeBalanceFromAlchemy(address, currentEvmChain);
                         } catch (alchemyError) {
-                            console.warn("Alchemy API failed, falling back to RPC:", alchemyError);
+                            console.warn("Alchemy API failed, trying Moralis:", alchemyError);
                             useAlchemy = false;
+                            
+                            // Fallback to Moralis
+                            try {
+                                const moralisTokens = await getTokenBalancesFromMoralis(address, currentEvmChain);
+                                moralisTokens.forEach((token) => {
+                                    if (token.contractAddress) {
+                                        moralisBalances.set(
+                                            token.contractAddress.toLowerCase(),
+                                            {
+                                                balance: token.tokenBalance,
+                                                metadata: {
+                                                    name: token.name,
+                                                    symbol: token.symbol,
+                                                    decimals: token.decimals,
+                                                    logo: token.logo,
+                                                    usdValue: token.usdValue,
+                                                    pricePerToken: token.pricePerToken,
+                                                }
+                                            }
+                                        );
+                                    }
+                                });
+                                useMoralis = true;
+                                
+                                // Try to get native balance from RPC if Moralis doesn't provide it
+                                try {
+                                    nativeBalanceHex = await getNativeBalanceFromAlchemy(address, currentEvmChain);
+                                } catch {
+                                    // Will fall back to RPC below
+                                }
+                            } catch (moralisError) {
+                                console.warn("Moralis API also failed, falling back to RPC:", moralisError);
+                            }
                         }
                     } else {
                         useAlchemy = false;
@@ -305,20 +341,60 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                         })
                     );
 
-                    // Add Alchemy discovered tokens
-                    if (useAlchemy) {
+                    // Add discovered tokens from Alchemy or Moralis
+                    if (useMoralis) {
+                        // Process Moralis tokens
+                        for (const [contractAddr, tokenData] of moralisBalances.entries()) {
+                            const balanceHex = tokenData.balance;
+                            const balance = BigInt(balanceHex);
+                            // Include tokens with balance > 0 (don't skip them)
+                            if (balance === BigInt(0)) continue;
+                            
+                            // Check if token already exists in merged list (by contract address and chain)
+                            const exists = mergedTokens.some(
+                                t => t.contractAddress?.toLowerCase() === contractAddr && t.evmChain === currentEvmChain
+                            );
+                            
+                            if (!exists) {
+                                // Moralis already provides metadata
+                                const meta = tokenData.metadata;
+                                const decimals = meta?.decimals ?? 18;
+                                const amount = parseFloat(formatUnits(balance, decimals));
+                                
+                                mergedTokens.push({
+                                    symbol: meta?.symbol || "UNKNOWN",
+                                    name: meta?.name || `Unknown (${contractAddr.slice(0, 4)}...${contractAddr.slice(-4)})`,
+                                    chain: "EVM",
+                                    evmChain: currentEvmChain,
+                                    amount,
+                                    usdValue: meta?.usdValue || 0,
+                                    contractAddress: contractAddr,
+                                    decimals,
+                                    logo: meta?.logo,
+                                    pricePerToken: meta?.pricePerToken || 0,
+                                });
+                            }
+                        }
+                    } else if (useAlchemy) {
+                        // Process Alchemy tokens
                         for (const [contractAddr, balanceHex] of alchemyBalances.entries()) {
                             const balance = BigInt(balanceHex);
+                            // Include tokens with balance > 0 (don't skip them)
                             if (balance === BigInt(0)) continue;
+                            
+                            // Check if token already exists in merged list (by contract address and chain)
                             const exists = mergedTokens.some(
-                                t => t.contractAddress?.toLowerCase() === contractAddr
+                                t => t.contractAddress?.toLowerCase() === contractAddr && t.evmChain === currentEvmChain
                             );
+                            
                             if (!exists) {
-                                const metadata = await getTokenMetadataFromAlchemy(
-                                    contractAddr as Address,
-                                    currentEvmChain
-                                );
-                                if (metadata || true) { // Always include found tokens
+                                // Alchemy path - fetch metadata
+                                try {
+                                    const metadata = await getTokenMetadataFromAlchemy(
+                                        contractAddr as Address,
+                                        currentEvmChain
+                                    );
+                                    
                                     const decimals = metadata?.decimals ?? 18;
                                     const amount = parseFloat(formatUnits(balance, decimals));
 
@@ -337,6 +413,22 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                                         decimals,
                                         logo: metadata?.logo,
                                         pricePerToken,
+                                    });
+                                } catch (err) {
+                                    console.warn(`Failed to fetch metadata for token ${contractAddr} on ${currentEvmChain}:`, err);
+                                    // Still add the token with basic info if metadata fetch fails
+                                    const decimals = 18; // Default
+                                    const amount = parseFloat(formatUnits(balance, decimals));
+                                    mergedTokens.push({
+                                        symbol: "UNKNOWN",
+                                        name: `Unknown Token (${contractAddr.slice(0, 4)}...${contractAddr.slice(-4)})`,
+                                        chain: "EVM",
+                                        evmChain: currentEvmChain,
+                                        amount,
+                                        usdValue: 0,
+                                        contractAddress: contractAddr,
+                                        decimals,
+                                        pricePerToken: 0,
                                     });
                                 }
                             }

@@ -42,14 +42,16 @@ export async function POST(req: NextRequest) {
             result: result,
         });
     } catch (error: any) {
-        console.error("RPC Proxy Error:", error);
+        // Sanitize error message to avoid exposing API keys
+        const sanitizedMessage = error.message?.replace(/api[_-]?key=([a-zA-Z0-9_-]+)/gi, 'api-key=***') || "Internal RPC Error";
+        console.error("RPC Proxy Error:", sanitizedMessage);
         return NextResponse.json(
             {
                 jsonrpc: "2.0",
                 id: 1,
                 error: {
                     code: -32603,
-                    message: error.message || "Internal RPC Error",
+                    message: sanitizedMessage,
                 }
             },
             { status: 500 }

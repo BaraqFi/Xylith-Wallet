@@ -67,6 +67,10 @@ export function groupTokensBySymbol(tokens: TokenBalance[]): GroupedToken[] {
     }
     acc[key].totalUsdValue += token.usdValue;
     acc[key].chains.push(token);
+    // Update logo if current token has one and group doesn't
+    if (token.logo && !acc[key].logo) {
+      acc[key].logo = token.logo;
+    }
     return acc;
   }, {} as Record<string, GroupedToken>);
 

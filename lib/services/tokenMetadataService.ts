@@ -132,8 +132,10 @@ export async function isContractAddress(
     const client = getPublicRpcClient(chain);
     const code = await client.getBytecode({ address });
     return code !== undefined && code !== "0x";
-  } catch (error) {
-    console.error("Error checking if address is contract:", error);
+  } catch (error: any) {
+    // Sanitize error message to avoid exposing API keys
+    const sanitizedMessage = error.message?.replace(/api[_-]?key=([a-zA-Z0-9_-]+)/gi, 'api-key=***') || 'Unknown error';
+    console.error("Error checking if address is contract:", sanitizedMessage);
     return false;
   }
 }

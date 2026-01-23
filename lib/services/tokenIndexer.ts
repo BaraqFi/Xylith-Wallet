@@ -73,6 +73,35 @@ export async function getTokenMetadataFromAlchemy(
 }
 
 /**
+ * Get token balances from Moralis API (fallback/alternative to Alchemy)
+ */
+export async function getTokenBalancesFromMoralis(
+  address: Address,
+  chain: EVMChain
+): Promise<MoralisTokenBalance[]> {
+  try {
+    const response = await fetch("/api/moralis/token-balances", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ address, chain }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || `Moralis API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.balances || [];
+  } catch (error) {
+    console.error("Error fetching token balances from Moralis:", error);
+    throw error;
+  }
+}
+
+/**
  * Get native token balance (ETH, MATIC, etc.) from Alchemy
  */
 export async function getNativeBalanceFromAlchemy(

@@ -264,46 +264,53 @@ function TokenList({
           </div>
         ) : (
           <div className="flex flex-col gap-2 max-h-[400px] overflow-y-auto px-2">
-            {displayTokens.map((group) => (
-              <button
-                key={group.symbol}
-                onClick={() => {
-                  setSelectedTokenDetails(group.chains[0]);
-                  setCurrentView("token-details");
-                }}
-                className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
-              >
-                <div className="flex items-center gap-3">
-                  <TokenLogo
-                    symbol={group.symbol}
-                    name={group.name}
-                  />
-                  <div className="flex flex-col">
-                    <p className="font-semibold">{group.name}</p>
-                    <div className="flex items-center gap-1 -space-x-2">
-                      {group.chains.map(chainToken =>
-                        chainToken.evmChain && chainToken.chain === activeChain ? (
-                          <ChainLogo key={chainToken.evmChain} chain={chainToken.evmChain} />
-                        ) : null
-                      )}
-                      {group.chains.some(ct => ct.chain === 'Solana' && activeChain === 'Solana') && (
-                        <ChainLogo chain="solana" />
-                      )}
+            {displayTokens.map((group) => {
+              // Find the first chain token with a logo, or use the group logo
+              const logoToken = group.chains.find(t => t.logo) || group.chains[0];
+              const logoUrl = logoToken?.logo || group.logo || undefined;
+              
+              return (
+                <button
+                  key={group.symbol}
+                  onClick={() => {
+                    setSelectedTokenDetails(group.chains[0]);
+                    setCurrentView("token-details");
+                  }}
+                  className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
+                >
+                  <div className="flex items-center gap-3">
+                    <TokenLogo
+                      symbol={group.symbol}
+                      name={group.name}
+                      src={logoUrl}
+                    />
+                    <div className="flex flex-col">
+                      <p className="font-semibold">{group.name}</p>
+                      <div className="flex items-center gap-1 -space-x-2">
+                        {group.chains.map(chainToken =>
+                          chainToken.evmChain && chainToken.chain === activeChain ? (
+                            <ChainLogo key={chainToken.evmChain} chain={chainToken.evmChain} />
+                          ) : null
+                        )}
+                        {group.chains.some(ct => ct.chain === 'Solana' && activeChain === 'Solana') && (
+                          <ChainLogo chain="solana" />
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="text-right">
-                  <p className="font-semibold">
-                    {currencyFormatter.format(group.totalUsdValue)}
-                  </p>
-                  <p className="text-sm text-[color:var(--color-depth)]/60">
-                    {group.chains.reduce((sum, t) => sum + t.amount, 0).toLocaleString(undefined, {
-                      maximumFractionDigits: 4,
-                    })} {group.symbol}
-                  </p>
-                </div>
-              </button>
-            ))}
+                  <div className="text-right">
+                    <p className="font-semibold">
+                      {currencyFormatter.format(group.totalUsdValue)}
+                    </p>
+                    <p className="text-sm text-[color:var(--color-depth)]/60">
+                      {group.chains.reduce((sum, t) => sum + t.amount, 0).toLocaleString(undefined, {
+                        maximumFractionDigits: 4,
+                      })} {group.symbol}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
             {/* Scroll indicator removed */}
           </div>
         )}
