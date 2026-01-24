@@ -14,6 +14,18 @@ export interface AlchemyTokenMetadata {
   logo?: string;
 }
 
+// Normalized shape for Moralis balances (used client-side)
+export interface MoralisTokenBalance {
+  contractAddress: string | null;
+  tokenBalance: string;
+  name?: string;
+  symbol?: string;
+  decimals?: number;
+  logo?: string;
+  usdValue?: number;
+  pricePerToken?: number;
+}
+
 /**
  * Fetch all token balances for an address using Alchemy's getTokenBalances API
  * This is more efficient than individual RPC calls per token
