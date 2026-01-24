@@ -10,6 +10,7 @@ import {
 } from "@/components/wallet/data";
 import {
     getTokenBalancesFromAlchemy,
+    getTokenBalancesFromMoralis,
     getNativeBalanceFromAlchemy,
     getTokenMetadataFromAlchemy
 } from "@/lib/services/tokenIndexer";
