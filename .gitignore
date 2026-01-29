@@ -43,7 +43,7 @@ next-env.d.ts
 xylithWallet.txt
 xylithArchitecture.txt
 xylithUi.jpg
-aiRules.md
+
 privy/
 aiPrivy/
 aiModePlan.txt
@@ -53,3 +53,4 @@ desc.md
 implementation-plan.md
 optimize.txt
 moralisDocs/
+changes.txt

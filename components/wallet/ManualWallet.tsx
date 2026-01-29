@@ -48,7 +48,8 @@ import {
 import { usePrivy } from "@privy-io/react-auth";
 import { useTransactionHistory } from "@/hooks/useTransactionHistory";
 import { ChainLogo } from "./ChainLogo";
-import { ChainSelectorSheet } from "./ChainSelectorSheet";
+import { ChainSelectorSheet } from "./ChainSelectorSheet"; // Keep for backward compatibility if needed, but we use HomeChainSelectorSheet
+import { HomeChainSelectorSheet } from "./HomeChainSelectorSheet";
 
 // Hexagonal Avatar Component
 function HexagonalAvatar({
@@ -159,18 +160,19 @@ function TokenList({
   activeChain,
   allTokens,
   isLoading = false,
+  evmChainFilter,
+  setEvmChainFilter,
 }: {
   groupedTokens: GroupedToken[];
   activeChain: Chain;
   allTokens: TokenBalance[];
   isLoading?: boolean;
+  evmChainFilter: EVMChain | "all";
+  setEvmChainFilter: (chain: EVMChain | "all") => void;
 }) {
   const { setCurrentView, setSelectedTokenDetails, setActiveChain } = useApp();
   // Removed local selectedToken state
-
-  // Filter based on activeChain. A token group is shown if any of its chains match.
-  // Additional filter for specific EVM chain if selected
-  const [evmChainFilter, setEvmChainFilter] = useState<EVMChain | "all">("all");
+  // evmChainFilter is now passed as prop
 
   const filteredGroupedTokens = groupedTokens.filter(group => {
     // 1. Must have balance on the active chain type (EVM vs Solana)
@@ -218,32 +220,31 @@ function TokenList({
           <h2 className="text-sm font-semibold uppercase tracking-wide text-[color:var(--color-depth)]/65">
             Token List
           </h2>
-          <ChainSelectorSheet
-            selectedChain={activeChain}
-            selectedEvmChain={evmChainFilter}
-            tokens={allTokens}
-            includeAllOption={true}
-            onSelectChain={(chain, evmChain) => {
-              if (chain === "Solana") {
-                setActiveChain("Solana");
-                // When switching to Solana, filter is irrelevant/reset?
-                // Or we keep it "all" for when we switch back.
-              } else {
-                setActiveChain("EVM");
-                if (evmChain) setEvmChainFilter(evmChain as any);
+          {activeChain === "EVM" && (
+            <HomeChainSelectorSheet
+              selectedChain={activeChain}
+              selectedEvmChain={evmChainFilter}
+              tokens={allTokens}
+              includeAllOption={true}
+              onSelectChain={(chain, evmChain) => {
+                // Since Solana is gone, we only handle EVM logic usually, but keep robust
+                if (chain === "Solana") {
+                  setActiveChain("Solana");
+                } else {
+                  setActiveChain("EVM");
+                  if (evmChain) setEvmChainFilter(evmChain as any);
+                }
+              }}
+              trigger={
+                <Button variant="outline" className="h-8 gap-2 rounded-full px-3 border-[color:var(--color-border)] bg-transparent hover:bg-[color:var(--color-depth)]/5 text-xs">
+                  <span className="font-medium">
+                    {(evmChainFilter === "all" ? "All Networks" : evmChainFilter.charAt(0).toUpperCase() + evmChainFilter.slice(1))}
+                  </span>
+                  <ArrowDown className="h-3 w-3 opacity-50" />
+                </Button>
               }
-            }}
-            trigger={
-              <Button variant="outline" className="h-8 gap-2 rounded-full px-3 border-[color:var(--color-border)] bg-transparent hover:bg-[color:var(--color-depth)]/5 text-xs">
-                <span className="font-medium">
-                  {activeChain === "Solana"
-                    ? "Solana"
-                    : (evmChainFilter === "all" ? "All Networks" : evmChainFilter.charAt(0).toUpperCase() + evmChainFilter.slice(1))}
-                </span>
-                <ArrowDown className="h-3 w-3 opacity-50" />
-              </Button>
-            }
-          />
+            />
+          )}
         </div>
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-8 gap-3 px-2 text-[color:var(--color-depth)]/70">
@@ -268,7 +269,7 @@ function TokenList({
               // Find the first chain token with a logo, or use the group logo
               const logoToken = group.chains.find(t => t.logo) || group.chains[0];
               const logoUrl = logoToken?.logo || group.logo || undefined;
-              
+
               return (
                 <button
                   key={group.symbol}
@@ -403,6 +404,9 @@ export default function ManualWallet({ tokens, isLoading }: { tokens: TokenBalan
   const [copied, setCopied] = useState(false);
   const { user } = usePrivy();
 
+  // Lifted state for EVM chain filter to share with History
+  const [evmChainFilter, setEvmChainFilter] = useState<EVMChain | "all">("all");
+
   // The tokens and isLoading state are now passed as props.
   const displayTokens = tokens;
   const groupedTokens = groupTokensBySymbol(displayTokens);
@@ -441,6 +445,11 @@ export default function ManualWallet({ tokens, isLoading }: { tokens: TokenBalan
   const activeChainBalance = chains.find(
     (chain) => chain.label === activeChain,
   );
+
+  // Calculate dynamic balance from tokens prop
+  const calculatedBalance = tokens
+    .filter(t => t.chain === activeChain)
+    .reduce((sum, t) => sum + (t.usdValue || 0), 0);
 
   const handleCopyAddress = async () => {
     await navigator.clipboard.writeText(currentAddress);
@@ -504,7 +513,7 @@ export default function ManualWallet({ tokens, isLoading }: { tokens: TokenBalan
             Available balance
           </p>
           <p className="text-3xl font-semibold">
-            {currencyFormatter.format(activeChainBalance?.currencyValue ?? 0)}
+            {currencyFormatter.format(calculatedBalance)}
           </p>
           <p className="text-sm text-[color:var(--color-depth)]/60 mt-1">
             {activeChainBalance?.nativeLabel}
@@ -556,18 +565,21 @@ export default function ManualWallet({ tokens, isLoading }: { tokens: TokenBalan
         activeChain={activeChain}
         allTokens={displayTokens}
         isLoading={isLoading}
+        evmChainFilter={evmChainFilter}
+        setEvmChainFilter={setEvmChainFilter}
       />
 
       {/* Recent Transactions Container */}
-      <RecentTransactionList activeChain={activeChain} />
+      <RecentTransactionList activeChain={activeChain} evmChainFilter={evmChainFilter} />
     </div>
   );
 }
 
-function RecentTransactionList({ activeChain }: { activeChain: Chain }) {
+function RecentTransactionList({ activeChain, evmChainFilter }: { activeChain: Chain, evmChainFilter: EVMChain | "all" }) {
   const { setCurrentView, setSelectedTransactionId } = useApp();
-  // Default to Ethereum for EVM
-  const { transactions, isLoading } = useTransactionHistory(activeChain, 'ethereum');
+  // Use selected EVM chain or default to ethereum if "all"
+  const targetEvmChain = evmChainFilter === "all" ? "ethereum" : evmChainFilter;
+  const { transactions, isLoading } = useTransactionHistory(activeChain, targetEvmChain);
 
   const filteredTransactions = transactions.slice(0, 3);
 

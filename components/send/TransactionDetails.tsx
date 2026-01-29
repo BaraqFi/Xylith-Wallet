@@ -124,11 +124,15 @@ export function TransactionDetails({
         <p className="text-sm text-[color:var(--color-depth)]/60">Gas Information</p>
         <div className="flex justify-between text-sm">
           <span className="text-[color:var(--color-depth)]/70">Estimated Gas:</span>
-          <span className="font-semibold">{gasEstimate}</span>
+          <span className="font-semibold">{gasEstimate} Units</span>
         </div>
         <div className="flex justify-between text-sm">
           <span className="text-[color:var(--color-depth)]/70">Gas Price:</span>
-          <span className="font-semibold">{parseFloat(gasPrice).toFixed(9)} {chain === 'Solana' ? 'SOL' : (token.evmChain === 'bsc' ? 'BNB' : (token.evmChain === 'polygon' ? 'MATIC' : 'ETH'))}</span>
+          <span className="font-semibold">
+            {chain === 'Solana'
+              ? `${parseFloat(gasPrice).toFixed(9)} SOL`
+              : `${(parseFloat(gasPrice) * 1e9).toFixed(2)} Gwei`}
+          </span>
         </div>
         <div className="pt-2 border-t border-[color:var(--color-depth)]/10">
           <div className="flex justify-between">

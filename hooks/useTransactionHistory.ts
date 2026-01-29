@@ -4,8 +4,8 @@ import { WalletTransaction, Chain, EVMChain, WalletDirection } from "@/component
 import { formatUnits } from "viem";
 import { getCachedData, setCachedData } from "@/lib/utils/cache";
 
-// Cache TTL: 5 minutes for transaction history (less frequent changes)
-const HISTORY_CACHE_TTL = 5 * 60 * 1000;
+// Cache TTL: 30 seconds for transaction history (more frequent updates for payments)
+const HISTORY_CACHE_TTL = 30 * 1000;
 
 // Note: Now using Alchemy's getAssetTransfers API instead of 1inch History API
 // 1inch is only used for swaps, not transaction history
@@ -17,7 +17,7 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
     const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    
+
     // Use ref to track if we're currently fetching to prevent duplicate requests
     const fetchingRef = useRef(false);
     // Use ref to track last fetch time per address+chain combo
@@ -40,18 +40,18 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
             // Check cache first
             const cacheKey = `xylith_cache_history_${address.toLowerCase()}_${currentEvmChain}`;
             const cached = getCachedData<WalletTransaction[]>(cacheKey, HISTORY_CACHE_TTL);
-            
+
             if (cached) {
                 setTransactions(cached);
                 setIsLoading(false);
                 // Still fetch in background to update cache, but don't show loading
                 // Only if we haven't fetched recently (avoid duplicate requests)
                 const lastFetch = lastFetchRef.current;
-                const shouldFetch = !lastFetch || 
+                const shouldFetch = !lastFetch ||
                     lastFetch.address !== address.toLowerCase() ||
                     lastFetch.chain !== currentEvmChain ||
                     Date.now() - lastFetch.timestamp > HISTORY_CACHE_TTL;
-                
+
                 if (!shouldFetch || fetchingRef.current) {
                     return;
                 }
@@ -92,7 +92,7 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                 // Use Alchemy-based transaction history API (more reliable than 1inch)
                 const res = await fetch(`/api/transactions/history?${params.toString()}`);
                 const data = await res.json();
-                
+
                 if (!res.ok) {
                     // Handle errors gracefully
                     if (res.status === 404 || res.status === 500) {
@@ -123,7 +123,7 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                     const toAddr = normalize(item.to);
 
                     // Determine direction based on address
-                    const direction: WalletDirection = 
+                    const direction: WalletDirection =
                         toAddr === normalizedUser
                             ? "in"
                             : fromAddr === normalizedUser
@@ -133,7 +133,7 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                     // Determine action type from enriched type or category
                     const category = item.category || "external";
                     const enrichedType = item.type;
-                    
+
                     // Use enriched type if available, otherwise infer from category and direction
                     let action: "Send" | "Receive" | "Swap";
                     if (enrichedType === "swap") {
@@ -149,25 +149,25 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                     // Parse value - Alchemy returns hex string for value
                     const valueHex = item.value || "0x0";
                     const tokenSymbol = item.asset || (category === "external" ? "ETH" : "TOKEN");
-                    
+
                     // Format amount with enriched data
                     let tokenAmount = "0";
                     let amountLabel = "0";
-                    
+
                     try {
                         const decimals = item.tokenDecimals || (category === "external" ? 18 : 18);
                         const valueBigInt = BigInt(valueHex);
                         tokenAmount = formatUnits(valueBigInt, decimals).toString();
-                        
+
                         // Use enriched token symbol if available
                         const displaySymbol = item.tokenSymbol || tokenSymbol;
                         const amountNum = parseFloat(tokenAmount);
-                        
+
                         // Format amount with appropriate precision
-                        const formattedAmount = amountNum >= 1 
+                        const formattedAmount = amountNum >= 1
                             ? amountNum.toFixed(4)
                             : amountNum.toFixed(6);
-                        
+
                         // Build amount label with fiat value if available
                         if (item.fiatValue !== undefined && item.fiatValue > 0) {
                             const fiatFormatted = item.fiatValue >= 1
@@ -187,8 +187,8 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                         amountLabel = `${valueHex} ${item.tokenSymbol || tokenSymbol}`;
                     }
 
-                    const counterparty = 
-                        direction === "in" 
+                    const counterparty =
+                        direction === "in"
                             ? item.from || "Unavailable"
                             : item.to || "Unavailable";
 
@@ -214,7 +214,7 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                 });
 
                 setTransactions(mapped);
-                
+
                 // Cache the result
                 setCachedData(cacheKey, mapped);
                 lastFetchRef.current = {
@@ -225,7 +225,7 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
 
             } catch (err: any) {
                 console.error("History Fetch Error:", err);
-                
+
                 // Handle 404 gracefully - it might just mean no history exists
                 if (err?.message?.includes("404") || err?.message?.includes("Not Found")) {
                     setError(null); // Don't show error for 404, just empty list
