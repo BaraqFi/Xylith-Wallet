@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
 
     // Use the /wallets/:address/tokens endpoint which includes prices
     // This is better than /erc20 as it includes USD values
-    const apiUrl = `https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens?chain=${moralisChain}&exclude_spam=false&limit=2000`;
+    const apiUrl = `https://deep-index.moralis.io/api/v2.2/wallets/${address}/tokens?chain=${moralisChain}&exclude_spam=false&limit=100`;
 
     const response = await fetch(apiUrl, {
       method: "GET",
@@ -93,7 +93,7 @@ export async function POST(req: NextRequest) {
     // Sanitize error messages
     const sanitizedMessage = error.message?.replace(/api[_-]?key=([a-zA-Z0-9_-]+)/gi, 'api-key=***') || 'Unknown error';
     console.error("Error fetching Moralis token balances:", sanitizedMessage);
-    
+
     // Don't expose full error details
     return NextResponse.json(
       { error: "Failed to fetch token balances from Moralis" },
