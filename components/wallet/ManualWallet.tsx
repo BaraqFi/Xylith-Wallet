@@ -288,11 +288,16 @@ function TokenList({
                     <div className="flex flex-col">
                       <p className="font-semibold">{group.name}</p>
                       <div className="flex items-center gap-1 -space-x-2">
-                        {group.chains.map(chainToken =>
-                          chainToken.evmChain && chainToken.chain === activeChain ? (
-                            <ChainLogo key={chainToken.evmChain} chain={chainToken.evmChain} />
-                          ) : null
-                        )}
+                        {(() => {
+                          const renderedChains = new Set<string>();
+                          return group.chains.map(chainToken => {
+                            if (chainToken.evmChain && chainToken.chain === activeChain && !renderedChains.has(chainToken.evmChain)) {
+                              renderedChains.add(chainToken.evmChain);
+                              return <ChainLogo key={chainToken.evmChain} chain={chainToken.evmChain} />;
+                            }
+                            return null;
+                          });
+                        })()}
                         {group.chains.some(ct => ct.chain === 'Solana' && activeChain === 'Solana') && (
                           <ChainLogo chain="solana" />
                         )}

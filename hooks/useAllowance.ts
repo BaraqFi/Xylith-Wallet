@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { parseAbiItem, Address } from "viem";
+import { parseAbiItem, Address, isAddress } from "viem";
 import { EVMChain } from "@/components/wallet/data";
 import { getPublicRpcClient, getCustomRpcClient } from "@/lib/services/rpcConfig";
 
@@ -19,6 +19,15 @@ export function useAllowance(
     useEffect(() => {
         async function fetchAllowance() {
             if (!tokenAddress || !spenderAddress || !userAddress || !evmChain) {
+                setAllowance(BigInt(0));
+                return;
+            }
+
+            if (
+                !isAddress(userAddress) ||
+                !isAddress(spenderAddress) ||
+                !isAddress(tokenAddress)
+            ) {
                 setAllowance(BigInt(0));
                 return;
             }

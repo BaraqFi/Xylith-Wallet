@@ -70,10 +70,16 @@ export async function POST(req: NextRequest) {
         logo: data.result?.logo,
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching token metadata:", error);
+    let message = "Failed to fetch token metadata";
+    if (error instanceof Error) {
+        message = error.message;
+    } else if (typeof error === 'string') {
+        message = error;
+    }
     return NextResponse.json(
-      { error: error.message || "Failed to fetch token metadata" },
+      { error: message },
       { status: 500 }
     );
   }

@@ -1,5 +1,4 @@
-import { EVMChain } from "@/components/wallet/data";
-import { TokenBalance } from "@/components/wallet/data";
+import { EVMChain, TokenBalance } from "@/components/wallet/data";
 
 // Map EVM chains to 1inch chain IDs
 const CHAIN_ID_MAP: Record<EVMChain, number> = {
@@ -30,7 +29,9 @@ interface CachedTokenList {
 /**
  * Fetch token list from 1inch API
  */
-export async function fetch1inchTokenList(chain: EVMChain): Promise<TokenListToken[]> {
+export async function fetch1inchTokenList(
+  chain: EVMChain
+): Promise<TokenListToken[]> {
   const chainId = CHAIN_ID_MAP[chain];
   if (!chainId) {
     throw new Error(`Unsupported chain for 1inch: ${chain}`);
@@ -45,7 +46,17 @@ export async function fetch1inchTokenList(chain: EVMChain): Promise<TokenListTok
     const data = await response.json();
     // 1inch returns an object with token addresses as keys
     const tokens = Object.values(data) as TokenListToken[];
-    return tokens;
+
+    // Basic runtime validation of token entries
+    return tokens.filter(
+      (t) =>
+        t &&
+        typeof t.address === "string" &&
+        /^0x[a-fA-F0-9]{40}$/.test(t.address) &&
+        typeof t.symbol === "string" &&
+        typeof t.name === "string" &&
+        typeof t.decimals === "number"
+    );
   } catch (error) {
     console.error("Error fetching 1inch token list:", error);
     throw error;
@@ -54,18 +65,24 @@ export async function fetch1inchTokenList(chain: EVMChain): Promise<TokenListTok
 
 /**
  * Get cached token list or fetch new one
+ *
+ * Note: This uses localStorage client-side; callers should treat it as
+ * a performance cache only and not as a trusted data source.
  */
-export async function getTokenList(chain: EVMChain, forceRefresh = false): Promise<TokenListToken[]> {
+export async function getTokenList(
+  chain: EVMChain,
+  forceRefresh = false
+): Promise<TokenListToken[]> {
   const cacheKey = `${CACHE_KEY_PREFIX}${chain}`;
 
   // Check cache if not forcing refresh
-  if (!forceRefresh) {
+  if (typeof window !== "undefined" && !forceRefresh) {
     try {
-      const cached = localStorage.getItem(cacheKey);
+      const cached = window.localStorage.getItem(cacheKey);
       if (cached) {
         const parsed: CachedTokenList = JSON.parse(cached);
         const age = Date.now() - parsed.timestamp;
-        if (age < CACHE_DURATION) {
+        if (age < CACHE_DURATION && Array.isArray(parsed.tokens)) {
           return parsed.tokens;
         }
       }
@@ -77,15 +94,17 @@ export async function getTokenList(chain: EVMChain, forceRefresh = false): Promi
   // Fetch new token list
   const tokens = await fetch1inchTokenList(chain);
 
-  // Cache the result
-  try {
-    const cacheData: CachedTokenList = {
-      tokens,
-      timestamp: Date.now(),
-    };
-    localStorage.setItem(cacheKey, JSON.stringify(cacheData));
-  } catch (error) {
-    console.warn("Error caching token list:", error);
+  // Cache the result (client-only)
+  if (typeof window !== "undefined") {
+    try {
+      const cacheData: CachedTokenList = {
+        tokens,
+        timestamp: Date.now(),
+      };
+      window.localStorage.setItem(cacheKey, JSON.stringify(cacheData));
+    } catch (error) {
+      console.warn("Error caching token list:", error);
+    }
   }
 
   return tokens;
@@ -120,17 +139,23 @@ export function searchTokens(
   tokens: TokenListToken[],
   query: string
 ): TokenListToken[] {
-  if (!query.trim()) {
+  const trimmed = query.trim();
+  if (!trimmed) {
     return tokens;
   }
 
-  const lowerQuery = query.toLowerCase().trim();
+  const lowerQuery = trimmed.toLowerCase();
 
+  // Precompute fields for more efficient filtering on large lists
   return tokens.filter((token) => {
-    const matchesSymbol = token.symbol.toLowerCase().includes(lowerQuery);
-    const matchesName = token.name.toLowerCase().includes(lowerQuery);
-    const matchesAddress = token.address.toLowerCase().includes(lowerQuery);
-    return matchesSymbol || matchesName || matchesAddress;
+    const symbol = token.symbol.toLowerCase();
+    const name = token.name.toLowerCase();
+    const address = token.address.toLowerCase();
+    return (
+      symbol.includes(lowerQuery) ||
+      name.includes(lowerQuery) ||
+      address.includes(lowerQuery)
+    );
   });
 }
 
@@ -165,5 +190,4 @@ export function getPopularTokens(chain: EVMChain): string[] {
 
   return popularMap[chain] || [];
 }
-
 

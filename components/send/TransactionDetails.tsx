@@ -36,30 +36,43 @@ export function TransactionDetails({
   const [checkingContract, setCheckingContract] = useState(false);
 
   useEffect(() => {
-    if (!recipient || !selectedToken?.evmChain) {
-      setIsRecipientContract(null);
-      return;
-    }
-
-    setCheckingContract(true);
-    fetch("/api/security/recipient", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        address: recipient,
-        chain: selectedToken.evmChain,
-      }),
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        setIsRecipientContract(data.isContract || false);
-      })
-      .catch(() => {
+    let isCancelled = false;
+    const checkRecipient = async () => {
+      if (recipient && selectedToken?.evmChain) {
+        setCheckingContract(true);
+        try {
+          const res = await fetch("/api/security/recipient", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              address: recipient,
+              chain: selectedToken.evmChain,
+            }),
+          });
+          const data = await res.json();
+          if (!isCancelled) {
+            setIsRecipientContract(data.isContract || false);
+          }
+        } catch (error) {
+          console.error("Error checking recipient address:", error);
+          if (!isCancelled) {
+            setIsRecipientContract(null);
+          }
+        } finally {
+          if (!isCancelled) {
+            setCheckingContract(false);
+          }
+        }
+      } else {
         setIsRecipientContract(null);
-      })
-      .finally(() => {
-        setCheckingContract(false);
-      });
+      }
+    };
+
+    checkRecipient();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [recipient, selectedToken?.evmChain]);
 
   return (
@@ -112,7 +125,7 @@ export function TransactionDetails({
                 Insufficient Balance
               </p>
               <p className="text-sm text-orange-700">
-                You're trying to send {amount} {token.symbol}, but you only have {balanceNum.toFixed(6)} {token.symbol} available.
+                You&apos;re trying to send {amount} {token.symbol}, but you only have {balanceNum.toFixed(6)} {token.symbol} available.
               </p>
             </div>
           </div>

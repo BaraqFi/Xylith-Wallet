@@ -1,5 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
 
+interface AlchemyTransfer {
+    category: "external" | "erc20" | "erc721" | "erc1155";
+    rawContract: {
+        address?: string;
+    };
+    to?: string;
+    from?: string;
+    value?: string;
+    asset?: string;
+    hash: string;
+    metadata?: {
+        blockTimestamp: string;
+    };
+    blockNum: string;
+}
+
+type AlchemyChain = "ethereum" | "base" | "arbitrum" | "optimism" | "polygon" | "bsc";
+
 /**
  * Transaction History API Route
  * 
@@ -29,7 +47,7 @@ export async function GET(req: NextRequest) {
         56: "bsc",
     };
 
-    const chain = chainIdMap[parseInt(chainId, 10)] as any;
+    const chain = chainIdMap[parseInt(chainId, 10)] as AlchemyChain;
     if (!chain) {
         return NextResponse.json({ error: `Unsupported chainId: ${chainId}` }, { status: 400 });
     }
@@ -99,7 +117,7 @@ export async function GET(req: NextRequest) {
         
         // Enrich transactions with token metadata and fiat values
         const enrichedTransactions = await Promise.all(
-            transfers.map(async (transfer: any) => {
+            transfers.map(async (transfer: AlchemyTransfer) => {
                 const category = transfer.category || "external";
                 const isNative = category === "external";
                 const contractAddress = isNative ? undefined : transfer.rawContract?.address;
@@ -170,7 +188,7 @@ export async function GET(req: NextRequest) {
                                         fiatValue = amount * priceData.analytics.currentPriceUsd;
                                     }
                                 }
-                            } catch (error) {
+                            } catch (_error) {
                                 // Ignore price fetch errors
                             }
                         } else if (tokenSymbol === "ETH") {
@@ -204,15 +222,20 @@ export async function GET(req: NextRequest) {
         );
 
         return NextResponse.json({ items: enrichedTransactions });
-    } catch (error: any) {
+      } catch (error: unknown) {
+        let message = "Failed to fetch transaction history";
+        if (error instanceof Error) {
+            message = error.message;
+        } else if (typeof error === 'string') {
+            message = error;
+        }
         console.error("Transaction history error:", error);
         return NextResponse.json(
-            { 
-                error: error.message || "Failed to fetch transaction history",
-                hint: "Make sure NEXT_PUBLIC_ALCHEMY_API_KEY is configured"
-            },
-            { status: 500 }
+          { 
+            error: message,
+            hint: "Make sure NEXT_PUBLIC_ALCHEMY_API_KEY is configured"
+          },
+          { status: 500 }
         );
-    }
-}
+      }}
 

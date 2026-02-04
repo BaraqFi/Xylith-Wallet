@@ -13,12 +13,12 @@ function isValidPositiveIntegerString(value: string | null): value is string {
     return value.length <= 30;
 }
 
-function parseSlippageBps(raw: string | null): number | null {
+function parseReferralFee(raw: string | null): number | null {
     if (!raw) return null;
     const num = Number(raw);
     if (!Number.isFinite(num)) return null;
-    // Reasonable bounds: 1bps - 5000bps (0.01% - 50%)
-    if (num <= 0 || num > 5000) return null;
+    // Reasonable bounds: 0 - 1000 bps (0% - 10%)
+    if (num < 0 || num > 1000) return null;
     return num;
 }
 
@@ -27,7 +27,9 @@ export async function GET(req: NextRequest) {
     const inputMint = searchParams.get("inputMint");
     const outputMint = searchParams.get("outputMint");
     const amount = searchParams.get("amount");
-    const slippageBpsRaw = searchParams.get("slippageBps");
+    const taker = searchParams.get("taker");
+    const referralAccount = searchParams.get("referralAccount");
+    const referralFeeRaw = searchParams.get("referralFee");
 
     if (!isValidSolanaAddress(inputMint) || !isValidSolanaAddress(outputMint)) {
         return NextResponse.json(
@@ -43,15 +45,31 @@ export async function GET(req: NextRequest) {
         );
     }
 
-    const slippageBps = slippageBpsRaw ? parseSlippageBps(slippageBpsRaw) : null;
-    if (slippageBpsRaw && slippageBps === null) {
+    if (taker && !isValidSolanaAddress(taker)) {
         return NextResponse.json(
-            { error: "Invalid slippageBps; must be between 1 and 5000" },
+            { error: "Invalid taker address" },
             { status: 400 },
         );
     }
 
-    const apiKey = process.env.JUPITER_API_KEY;
+    if (referralAccount && !isValidSolanaAddress(referralAccount)) {
+        return NextResponse.json(
+            { error: "Invalid referralAccount address" },
+            { status: 400 },
+        );
+    }
+
+    const referralFee =
+        referralFeeRaw !== null ? parseReferralFee(referralFeeRaw) : null;
+    if (referralFeeRaw !== null && referralFee === null) {
+        return NextResponse.json(
+            { error: "Invalid referralFee; must be between 0 and 1000 bps" },
+            { status: 400 },
+        );
+    }
+
+    const apiKey =
+        process.env.ULTRA_API_KEY || process.env.JUPITER_API_KEY || null;
     if (!apiKey) {
         return NextResponse.json(
             { error: "Server misconfiguration: No API Key" },
@@ -59,13 +77,18 @@ export async function GET(req: NextRequest) {
         );
     }
 
-    // Jupiter Quote API v6
-    const url = new URL("https://quote-api.jup.ag/v6/quote");
+    const url = new URL("https://api.jup.ag/ultra/v1/order");
     url.searchParams.append("inputMint", inputMint);
     url.searchParams.append("outputMint", outputMint);
     url.searchParams.append("amount", amount);
-    if (slippageBps !== null) {
-        url.searchParams.append("slippageBps", String(slippageBps));
+    if (taker) {
+        url.searchParams.append("taker", taker);
+    }
+    if (referralAccount) {
+        url.searchParams.append("referralAccount", referralAccount);
+    }
+    if (referralFee !== null) {
+        url.searchParams.append("referralFee", String(referralFee));
     }
 
     try {
@@ -75,8 +98,8 @@ export async function GET(req: NextRequest) {
                 "Content-Type": "application/json",
                 Accept: "application/json",
             },
-            // Cache for 10 seconds to avoid hitting rate limits too fast on same duplicate requests
-            next: { revalidate: 10 },
+            // Short cache to avoid hammering Ultra for identical requests
+            next: { revalidate: 5 },
         });
 
         const data = await res.json();
@@ -87,10 +110,11 @@ export async function GET(req: NextRequest) {
 
         return NextResponse.json(data);
     } catch (error) {
-        console.error("Jupiter Quote Error:", error);
+        console.error("Ultra Order Error:", error);
         return NextResponse.json(
             { error: "Internal Server Error" },
             { status: 500 },
         );
     }
 }
+

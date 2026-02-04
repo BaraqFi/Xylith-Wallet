@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useApp } from "../app/AppContext";
-import { TokenBalance, EVMChain } from "../wallet/data";
+import { TokenBalance } from "../wallet/data";
 import { groupTokensBySymbol, GroupedToken } from "../wallet/utils";
 import { TokenLogo } from "../wallet/TokenLogo";
 import { ChainLogo } from "../wallet/ChainLogo";
@@ -15,10 +15,45 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Check, X, Loader2, ArrowLeft, AlertCircle, Search } from "lucide-react";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
-import { createWalletClient, custom, Address } from "viem";
+import { Check, X, Loader2, Search } from "lucide-react";
+import { usePrivy, useWallets, ConnectedAccount } from "@privy-io/react-auth";
+
+interface PrivyAccountWithChain extends ConnectedAccount {
+    chainType?: 'ethereum' | 'solana';
+    signTransaction: (transaction: Transaction) => Promise<Transaction>;
+}
+import { createWalletClient, custom, Address, type Chain, type SendTransactionParameters } from "viem";
 import { useTransactionBuilder } from "@/hooks/useTransactionBuilder";
+
+interface JupiterToken {
+    symbol: string;
+    name: string;
+    address: string;
+    decimals: number;
+    logoURI: string;
+}
+
+interface EvmSearchResult {
+    symbol: string;
+    name: string;
+    evmChain?: string;
+    amount?: number;
+    usdValue?: number;
+    contractAddress: string;
+    decimals?: number;
+    logo?: string;
+}
+
+interface FallbackPreview {
+    transactionData: { to: string; value: number; data: "0x" };
+    recipient: string;
+    amount: string;
+    token: TokenBalance;
+    chain: string;
+    gasEstimate: string;
+    gasPrice: string;
+    totalCost: string;
+}
 import { TransactionDetails } from "./TransactionDetails";
 import { solanaClient } from "@/lib/solana/client";
 import { SystemProgram, PublicKey, Transaction } from "@solana/web3.js";
@@ -26,11 +61,24 @@ import { getAssociatedTokenAddress, createTransferInstruction } from "@solana/sp
 
 type SendStep = "form" | "confirm" | "loading" | "success" | "error";
 
+const getTokenInstanceKey = (token: TokenBalance): string => {
+  const chainId = token.evmChain || 'solana';
+  // Native tokens (like ETH, or MATIC on Polygon) often lack a contract address or use a placeholder.
+  // Their symbol on a given chain is unique.
+  // '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' is a common placeholder for native EVM token addresses.
+  // 'So11111111111111111111111111111111111111112' is the wrapped SOL address, often treated as native.
+  if (!token.contractAddress || token.contractAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || token.contractAddress === 'So11111111111111111111111111111111111111112') {
+    return `${token.chain}-${chainId}-${token.symbol}`;
+  }
+  // For ERC20s or SPL tokens, the contract address is the unique identifier.
+  return `${token.chain}-${chainId}-${token.contractAddress}`;
+};
+
 export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
   const { setCurrentView, preselectedToken, setPreselectedToken } = useApp();
   const { user } = usePrivy();
   const { wallets } = useWallets();
-  const { buildTransaction, preview, isBuilding, error: buildError, clearPreview } = useTransactionBuilder();
+  const { buildTransaction, preview, error: buildError, clearPreview } = useTransactionBuilder();
 
   const [step, setStep] = useState<SendStep>("form");
 
@@ -45,10 +93,16 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
   const [selectedChainFilter, setSelectedChainFilter] = useState<"EVM" | "Solana" | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [remoteSearchResults, setRemoteSearchResults] = useState<TokenBalance[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+
+  // Log build errors to console (not displayed in UI)
+  useEffect(() => {
+    if (buildError) {
+      console.error("Transaction build error:", buildError);
+    }
+  }, [buildError]);
 
   // Search handler for contract address and token name
-  const handleSearch = async (query: string): Promise<TokenBalance[]> => {
+  const handleSearch = useCallback(async (query: string): Promise<TokenBalance[]> => {
     if (!query || query.trim().length < 2) return [];
 
     try {
@@ -60,7 +114,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         const res = await fetch(`/api/jupiter/tokens?query=${encodeURIComponent(query)}`);
         if (!res.ok) throw new Error("Search failed");
         const data = await res.json();
-        return data.map((t: any) => ({
+        return data.map((t: JupiterToken) => ({
           symbol: t.symbol,
           name: t.name,
           chain: "Solana",
@@ -83,7 +137,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
           throw new Error(errorData.error || "Search failed");
         }
         const data = await res.json();
-        return data.map((t: any) => ({
+        return data.map((t: EvmSearchResult) => ({
           symbol: t.symbol,
           name: t.name,
           chain: "EVM",
@@ -99,30 +153,26 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
       console.error("Token search failed", err);
       return [];
     }
-  };
+  }, [selectedChainFilter]);
 
   // Remote search effect
   useEffect(() => {
     if (!searchQuery || searchQuery.length < 2) {
       setRemoteSearchResults([]);
-      setIsSearching(false);
       return;
     }
 
     const timer = setTimeout(async () => {
-      setIsSearching(true);
       try {
         const results = await handleSearch(searchQuery);
         setRemoteSearchResults(results);
       } catch (e) {
         console.error("Remote search error:", e);
-      } finally {
-        setIsSearching(false);
       }
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, selectedChainFilter]);
+  }, [searchQuery, handleSearch]);
 
   // Filter tokens locally
   const localFilteredTokens = useMemo(() => {
@@ -140,27 +190,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
     });
   }, [tokens, selectedChainFilter, searchQuery]);
 
-  // Merge local and remote results
-  const mergedTokens = useMemo(() => {
-    if (!searchQuery) return localFilteredTokens;
-    
-    const seen = new Set<string>();
-    const merged: TokenBalance[] = [];
-    
-    const add = (list: TokenBalance[]) => {
-      list.forEach(t => {
-        const key = t.contractAddress ? t.contractAddress.toLowerCase() : `${t.symbol}-${t.chain}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          merged.push(t);
-        }
-      });
-    };
-    
-    add(localFilteredTokens);
-    add(remoteSearchResults);
-    return merged;
-  }, [localFilteredTokens, remoteSearchResults, searchQuery]);
+
 
   const groupedTokens = useMemo(() => {
     return groupTokensBySymbol(localFilteredTokens);
@@ -179,10 +209,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
 
   const handleChainSelect = (chainKey: string) => {
     if (!selectedGroup) return;
-    const tokenOnChain = selectedGroup.chains.find((t) => {
-      const key = t.evmChain ? `${t.chain}-${t.evmChain}` : t.chain;
-      return key === chainKey;
-    });
+    const tokenOnChain = selectedGroup.chains.find((t) => getTokenInstanceKey(t) === chainKey);
     if (tokenOnChain) {
       setSelectedToken(tokenOnChain);
     }
@@ -233,11 +260,11 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         await buildTransaction(selectedToken, recipient as Address, amount, selectedToken.evmChain, wallet.address as Address);
       }
       setStep("confirm");
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (hasInsufficientBalance || err.message?.toLowerCase().includes("insufficient")) {
         // Create a fallback preview so the user can see the details and the error
         // Cast to any to bypass strict type checks for the fallback
-        const fallbackPreview: any = {
+        const fallbackPreview: FallbackPreview = {
           transactionData: { to: recipient, value: 0, data: "0x" },
           recipient,
           amount,
@@ -314,7 +341,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         const chainId = getChainId(selectedToken);
         const provider = await wallet.getEthereumProvider();
         const walletClient = createWalletClient({
-          chain: { id: chainId } as any,
+          chain: { id: chainId } as Chain,
           transport: custom(provider)
         });
 
@@ -323,14 +350,14 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
           to: preview.transactionData.to,
           value: preview.transactionData.value,
           data: preview.transactionData.data,
-        } as any);
+        } as SendTransactionParameters);
 
         setTxHash(hash);
         setStep("success");
         clearPreview();
       } else {
         // --- Solana Transaction ---
-        const solanaWallet = wallets.find(w => (w as any).chainType === 'solana');
+        const solanaWallet = wallets.find(w => (w as PrivyAccountWithChain).chainType === 'solana');
         if (!solanaWallet) {
           throw new Error("Solana wallet not connected");
         }
@@ -398,7 +425,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         transaction.feePayer = fromPubkey;
 
         // Sign transaction
-        const signedTx = await (solanaWallet as any).signTransaction(transaction);
+        const signedTx = await (solanaWallet as PrivyAccountWithChain).signTransaction(transaction);
 
         // Send transaction
         const serializedTx = signedTx.serialize();
@@ -409,9 +436,13 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         setTxHash(signature);
         setStep("success");
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Transaction failed:", err);
-      setError(err.message || "Transaction failed");
+      if (err instanceof Error) {
+        setError(err.message || "Transaction failed");
+      } else {
+        setError("Transaction failed");
+      }
       setStep("error");
     }
   };
@@ -490,12 +521,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
     );
   }
 
-  // Log build errors to console (not displayed in UI)
-  useEffect(() => {
-    if (buildError) {
-      console.error("Transaction build error:", buildError);
-    }
-  }, [buildError]);
+
 
   if (step === "confirm") {
     // If we have insufficient balance, we might not have a preview, but we still want to show the confirmation screen with the error.
@@ -517,7 +543,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
             gasEstimate: "Unknown",
             gasPrice: "0",
             totalCost: "0"
-          } as any}
+          } as FallbackPreview}
           selectedToken={selectedToken}
           insufficientBalance={insufficientBalance}
           onEdit={() => { clearPreview(); setStep("form"); setInsufficientBalance(false); }}
@@ -590,7 +616,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
           <div>
             <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">Select Chain</label>
             <Select
-              value={selectedToken ? (selectedToken.evmChain ? `${selectedToken.chain}-${selectedToken.evmChain}` : selectedToken.chain) : ""}
+              value={selectedToken ? getTokenInstanceKey(selectedToken) : ""}
               onValueChange={handleChainSelect}
             >
               <SelectTrigger>
@@ -598,7 +624,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
               </SelectTrigger>
               <SelectContent>
                 {selectedGroup.chains.map((token) => {
-                  const chainKey = token.evmChain ? `${token.chain}-${token.evmChain}` : token.chain;
+                  const chainKey = getTokenInstanceKey(token);
                   const chainLabel = token.evmChain ? token.evmChain.charAt(0).toUpperCase() + token.evmChain.slice(1) : "Solana";
                   return (
                     <SelectItem key={chainKey} value={chainKey}>

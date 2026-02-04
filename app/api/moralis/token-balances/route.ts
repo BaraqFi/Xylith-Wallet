@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { EVMChain } from "@/components/wallet/data";
 
+interface MoralisToken {
+    balance: string;
+    token_address: string;
+    name: string;
+    symbol: string;
+    decimals: number;
+    logo?: string;
+    thumbnail?: string;
+    usd_value?: string;
+    usd_price?: string;
+}
+
 /**
  * Server-side API route for Moralis token balances
  * Uses Moralis API to fetch ERC20 token balances for a wallet address
@@ -72,12 +84,12 @@ export async function POST(req: NextRequest) {
 
     // Transform Moralis response to match our Alchemy format
     const balances = tokens
-      .filter((token: any) => {
+      .filter((token: MoralisToken) => {
         // Filter out zero balances and native tokens (we handle native separately)
         const balance = token.balance || "0";
         return balance !== "0" && balance !== "0x0" && token.token_address !== "";
       })
-      .map((token: any) => ({
+      .map((token: MoralisToken) => ({
         contractAddress: token.token_address?.toLowerCase() || null,
         tokenBalance: token.balance || "0x0",
         name: token.name,
@@ -89,9 +101,16 @@ export async function POST(req: NextRequest) {
       }));
 
     return NextResponse.json({ balances });
-  } catch (error: any) {
+  } catch (error: unknown) {
+    let message = "Unknown error";
+    if (error instanceof Error) {
+        message = error.message;
+    } else if (typeof error === 'string') {
+        message = error;
+    }
+
     // Sanitize error messages
-    const sanitizedMessage = error.message?.replace(/api[_-]?key=([a-zA-Z0-9_-]+)/gi, 'api-key=***') || 'Unknown error';
+    const sanitizedMessage = message.replace(/api[_-]?key=([a-zA-Z0-9_-]+)/gi, 'api-key=***');
     console.error("Error fetching Moralis token balances:", sanitizedMessage);
 
     // Don't expose full error details

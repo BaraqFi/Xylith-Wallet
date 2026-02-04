@@ -74,14 +74,19 @@ export async function POST(req: NextRequest) {
                 logo: token.logo || token.thumbnail,
             },
         });
-    } catch (error: any) {
+      } catch (error: unknown) {
         console.error("Error fetching token metadata from Moralis:", error);
+        let message = "Failed to fetch token metadata";
+        if (error instanceof Error) {
+            message = error.message;
+        } else if (typeof error === 'string') {
+            message = error;
+        }
         return NextResponse.json(
-            { error: error.message || "Failed to fetch token metadata" },
-            { status: 500 }
+          { error: message },
+          { status: 500 }
         );
-    }
-}
+      }}
 
 /**
  * Fallback to CoinGecko for token metadata

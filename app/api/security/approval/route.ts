@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { analyzeApprovalRisk } from "@/lib/services/securityService";
-import { Address } from "viem";
+import { Address, isAddress } from "viem";
+
+function parseBigIntInput(value: unknown): bigint | null {
+  if (typeof value !== "string" || !/^\d+$/.test(value)) {
+    return null;
+  }
+
+  try {
+    return BigInt(value);
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Server-side API route for approval security analysis
@@ -9,16 +21,35 @@ export async function POST(req: NextRequest) {
   try {
     const { approvalAmount, tokenBalance, spenderAddress } = await req.json();
 
-    if (!approvalAmount || !tokenBalance || !spenderAddress) {
+    if (approvalAmount == null || tokenBalance == null || !spenderAddress) {
       return NextResponse.json(
         { error: "Missing approvalAmount, tokenBalance, or spenderAddress" },
         { status: 400 }
       );
     }
 
+    if (!isAddress(spenderAddress)) {
+      return NextResponse.json(
+        { error: "Invalid spenderAddress format" },
+        { status: 400 }
+      );
+    }
+
+    const approvalAmountBigInt = parseBigIntInput(
+      approvalAmount
+    );
+    const tokenBalanceBigInt = parseBigIntInput(tokenBalance);
+
+    if (approvalAmountBigInt === null || tokenBalanceBigInt === null) {
+      return NextResponse.json(
+        { error: "approvalAmount and tokenBalance must be decimal strings" },
+        { status: 400 }
+      );
+    }
+
     const analysis = analyzeApprovalRisk(
-      BigInt(approvalAmount),
-      BigInt(tokenBalance),
+      approvalAmountBigInt,
+      tokenBalanceBigInt,
       spenderAddress as Address
     );
 
@@ -30,7 +61,7 @@ export async function POST(req: NextRequest) {
         tokenBalance: analysis.tokenBalance.toString(),
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error analyzing approval security:", error);
     return NextResponse.json(
       { error: "Failed to analyze approval security" },

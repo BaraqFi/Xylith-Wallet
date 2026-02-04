@@ -2,6 +2,35 @@ import { NextRequest, NextResponse } from "next/server";
 import { isValidContractAddress } from "@/lib/services/tokenMetadataService";
 import { EVMChain } from "@/components/wallet/data";
 
+interface TokenSearchResult {
+  symbol: string;
+  name: string;
+  decimals: number;
+  contractAddress: string;
+  logo: string;
+  chain: "EVM";
+  evmChain: EVMChain;
+  amount: number;
+  usdValue: number;
+}
+
+interface CoinGeckoSearchCoin {
+    id: string;
+    symbol: string;
+    name: string;
+    platforms: Record<string, string>;
+    thumb: string;
+}
+
+interface MoralisErc20Metadata {
+    symbol: string;
+    name: string;
+    decimals: string; // Moralis returns decimals as string
+    address: string;
+    logo?: string;
+    thumbnail?: string;
+}
+
 const MORALIS_API_KEY = process.env.MORALIS_API_KEY;
 
 // Map our internal chain IDs to Moralis chain strings
@@ -26,14 +55,14 @@ const COINGECKO_PLATFORM_MAP: Record<EVMChain, string> = {
 
 // Simple in-memory cache (for server-side caching)
 // In production, consider using Redis or similar
-const searchCache = new Map<string, { data: any[]; timestamp: number }>();
+const searchCache = new Map<string, { data: TokenSearchResult[]; timestamp: number }>();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 function getCacheKey(query: string, chain: string): string {
     return `evm_search_${chain}_${query.toLowerCase()}`;
 }
 
-function getCachedResults(key: string): any[] | null {
+function getCachedResults(key: string): TokenSearchResult[] | null {
     const cached = searchCache.get(key);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
         return cached.data;
@@ -44,7 +73,7 @@ function getCachedResults(key: string): any[] | null {
     return null;
 }
 
-function setCachedResults(key: string, data: any[]): void {
+function setCachedResults(key: string, data: TokenSearchResult[]): void {
     // Limit cache size to prevent memory issues
     if (searchCache.size > 1000) {
         const firstKey = searchCache.keys().next().value;
@@ -59,7 +88,7 @@ function setCachedResults(key: string, data: any[]): void {
  * Fallback to CoinGecko API for token search
  * CoinGecko has a search endpoint that can find tokens by name/symbol
  */
-async function searchCoinGecko(query: string, chain: EVMChain): Promise<any[]> {
+async function searchCoinGecko(query: string, chain: EVMChain): Promise<TokenSearchResult[]> {
     try {
         const platform = COINGECKO_PLATFORM_MAP[chain];
         if (!platform) return [];
@@ -77,7 +106,7 @@ async function searchCoinGecko(query: string, chain: EVMChain): Promise<any[]> {
 
         // Filter by platform and get top 5 results
         const platformCoins = coins
-            .filter((coin: any) => {
+            .filter((coin: CoinGeckoSearchCoin) => {
                 // Check if coin is on the requested platform
                 const platforms = coin.platforms || {};
                 return Object.keys(platforms).some(p =>
@@ -87,7 +116,7 @@ async function searchCoinGecko(query: string, chain: EVMChain): Promise<any[]> {
             .slice(0, 5);
 
         // Fetch detailed info for each coin
-        const results: any[] = [];
+        const results: TokenSearchResult[] = [];
         for (const coin of platformCoins) {
             try {
                 const detailUrl = `https://api.coingecko.com/api/v3/coins/${coin.id}?localization=false&tickers=false&market_data=false&community_data=false&developer_data=false&sparkline=false`;
@@ -145,7 +174,7 @@ export async function GET(req: NextRequest) {
     }
 
     const moralisChain = CHAIN_MAP[chain] || "eth";
-    let results: any[] = [];
+    let results: TokenSearchResult[] = [];
 
     try {
         // 1. Try Moralis first (primary)
@@ -162,7 +191,7 @@ export async function GET(req: NextRequest) {
 
                 if (res.ok) {
                     const data = await res.json();
-                    results = data.map((t: any) => ({
+                    results = data.map((t: MoralisErc20Metadata) => ({
                         symbol: t.symbol,
                         name: t.name,
                         decimals: parseInt(t.decimals) || 18,
@@ -186,7 +215,7 @@ export async function GET(req: NextRequest) {
 
                 if (res.ok) {
                     const data = await res.json();
-                    results = data.map((t: any) => ({
+                    results = data.map((t: MoralisErc20Metadata) => ({
                         symbol: t.symbol,
                         name: t.name,
                         decimals: parseInt(t.decimals) || 18,

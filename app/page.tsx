@@ -1,10 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect } from "react";
 import { AppProvider, useApp } from "@/components/app/AppContext";
 import { ModeToggle } from "@/components/app/ModeToggle";
 import { AiModeAlert } from "@/components/ai/AiModeAlert";
-import { SplashScreen } from "@/components/app/SplashScreen";
 import ManualWallet from "@/components/wallet/ManualWallet";
 import { SendFlow } from "@/components/send/SendFlow";
 import { SwapFlow } from "@/components/swap/SwapFlow";
@@ -16,7 +15,7 @@ import { WalletSettingsScreen } from "@/components/wallet/WalletSettingsModal";
 import { TokenDetailsView } from "@/components/wallet/TokenDetailsView";
 import AuthGate from "./AuthGate";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
-import { defaultEvmTokens, defaultSolanaTokens } from "@/components/wallet/data";
+import { defaultEvmTokens, defaultSolanaTokens, TokenBalance } from "@/components/wallet/data";
 
 function WalletContent() {
   const { mode, currentView, activeChain, selectedTokenDetails } = useApp();
@@ -32,44 +31,63 @@ function WalletContent() {
   // regardless of which chain is "active". This enables the "Send" flow to see all tokens
   // and the "Token List" to show cross-chain holdings (stacked logos).
 
-  const allTokens: any[] = [];
+  const allTokens: TokenBalance[] = [];
 
   if (activeChain === 'EVM') {
     // ACTIVE: EVM
     // 1. Process EVM from realBalances
     if (realBalances.length > 0) {
-      const balanceMap = new Map<string, any>();
+      const balanceMap = new Map<string, TokenBalance>();
       realBalances.forEach(t => {
+        // Construct a unique key for matching. 
+        // Priority: contractAddress (lower) -> symbol-chain
         if (t.contractAddress) {
           balanceMap.set(t.contractAddress.toLowerCase(), t);
-        } else if (t.symbol === "ETH" && t.evmChain === "ethereum") {
-          // Handle native ETH specially if needed, though usually has 0x0...0 address in our data
-          balanceMap.set("native-eth", t);
+        } else {
+          // Fallback for native/address-less tokens
+          balanceMap.set(`${t.symbol}-${t.evmChain}`, t);
         }
       });
 
+      const processedRealTokens = new Set<string>();
+
       const mergedEvmTokens = defaultEvmTokens.map(defToken => {
-        // Match by address if available
         let match = null;
+        // Try address match
         if (defToken.contractAddress) {
-          match = balanceMap.get(defToken.contractAddress.toLowerCase());
+          const key = defToken.contractAddress.toLowerCase();
+          match = balanceMap.get(key);
+          if (match && match.evmChain === defToken.evmChain) {
+            processedRealTokens.add(key);
+            return match;
+          }
         }
 
-        if (match && match.evmChain === defToken.evmChain) {
-          return match;
+        // Try fallback match (symbol-chain) if no address match confirmed
+        const fallbackKey = `${defToken.symbol}-${defToken.evmChain}`;
+        if (!match) {
+          match = balanceMap.get(fallbackKey);
+          if (match) {
+            processedRealTokens.add(fallbackKey);
+            // Also add address key if it exists on the match to prevent double adding
+            if (match.contractAddress) processedRealTokens.add(match.contractAddress.toLowerCase());
+            return match;
+          }
         }
+
         return defToken;
       });
 
       allTokens.push(...mergedEvmTokens);
 
-      // Add discovered tokens not in defaults
+      // Add discovered tokens that were NOT used (not in defaults)
       realBalances.forEach(t => {
-        const isDefault = defaultEvmTokens.some(d =>
-          d.contractAddress?.toLowerCase() === t.contractAddress?.toLowerCase() &&
-          d.evmChain === t.evmChain
-        );
-        if (!isDefault) {
+        const addrKey = t.contractAddress ? t.contractAddress.toLowerCase() : null;
+        const symKey = `${t.symbol}-${t.evmChain}`;
+
+        const isProcessed = (addrKey && processedRealTokens.has(addrKey)) || processedRealTokens.has(symKey);
+
+        if (!isProcessed) {
           allTokens.push(t);
         }
       });
@@ -77,6 +95,32 @@ function WalletContent() {
       // Fallback if loading or error
       allTokens.push(...defaultEvmTokens);
     }
+
+    // FINAL SAFETY DEDUPLICATION
+    const uniqueTokens = new Map<string, TokenBalance>();
+    
+    const getTokenKey = (token: TokenBalance): string => {
+        const isNative = !token.contractAddress || token.contractAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+        const chainKey = token.evmChain || token.chain;
+        if (isNative) {
+            // For native tokens, key by symbol and chain. This handles native tokens on different chains (e.g. ETH on Ethereum, ETH on Base)
+            return `${token.symbol.toUpperCase()}-${chainKey}`;
+        }
+        return `${token.contractAddress!.toLowerCase()}-${chainKey}`;
+    }
+
+    allTokens.forEach(t => {
+      const key = getTokenKey(t);
+
+      const existing = uniqueTokens.get(key);
+      if (!existing || (existing.amount === 0 && t.amount > 0)) {
+        uniqueTokens.set(key, t);
+      }
+    });
+
+    // Clear and refill (hacky but safe for this scope)
+    allTokens.length = 0;
+    allTokens.push(...Array.from(uniqueTokens.values()));
 
     // 2. Add Default Solana Tokens (since inactive)
     allTokens.push(...defaultSolanaTokens);
