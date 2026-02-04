@@ -16,43 +16,43 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Check, X, Loader2, Search } from "lucide-react";
-import { usePrivy, useWallets, ConnectedAccount } from "@privy-io/react-auth";
+import { usePrivy, useWallets, ConnectedWallet } from "@privy-io/react-auth";
 
-interface PrivyAccountWithChain extends ConnectedAccount {
-    chainType?: 'ethereum' | 'solana';
-    signTransaction: (transaction: Transaction) => Promise<Transaction>;
+interface PrivyAccountWithChain extends ConnectedWallet {
+  chainType?: 'ethereum' | 'solana';
+  signTransaction: (transaction: Transaction) => Promise<Transaction>;
 }
 import { createWalletClient, custom, Address, type Chain, type SendTransactionParameters } from "viem";
 import { useTransactionBuilder } from "@/hooks/useTransactionBuilder";
 
 interface JupiterToken {
-    symbol: string;
-    name: string;
-    address: string;
-    decimals: number;
-    logoURI: string;
+  symbol: string;
+  name: string;
+  address: string;
+  decimals: number;
+  logoURI: string;
 }
 
 interface EvmSearchResult {
-    symbol: string;
-    name: string;
-    evmChain?: string;
-    amount?: number;
-    usdValue?: number;
-    contractAddress: string;
-    decimals?: number;
-    logo?: string;
+  symbol: string;
+  name: string;
+  evmChain?: string;
+  amount?: number;
+  usdValue?: number;
+  contractAddress: string;
+  decimals?: number;
+  logo?: string;
 }
 
 interface FallbackPreview {
-    transactionData: { to: string; value: number; data: "0x" };
-    recipient: string;
-    amount: string;
-    token: TokenBalance;
-    chain: string;
-    gasEstimate: string;
-    gasPrice: string;
-    totalCost: string;
+  transactionData: { to: string; value: number; data: "0x" };
+  recipient: string;
+  amount: string;
+  token: TokenBalance;
+  chain: string;
+  gasEstimate: string;
+  gasPrice: string;
+  totalCost: string;
 }
 import { TransactionDetails } from "./TransactionDetails";
 import { solanaClient } from "@/lib/solana/client";
@@ -107,9 +107,9 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
 
     try {
       // Determine which chain to search based on filter
-      const searchChain = selectedChainFilter === "Solana" ? "Solana" : 
-                         selectedChainFilter === "EVM" ? "EVM" : "EVM"; // Default to EVM if "all"
-      
+      const searchChain = selectedChainFilter === "Solana" ? "Solana" :
+        selectedChainFilter === "EVM" ? "EVM" : "EVM"; // Default to EVM if "all"
+
       if (searchChain === "Solana") {
         const res = await fetch(`/api/jupiter/tokens?query=${encodeURIComponent(query)}`);
         if (!res.ok) throw new Error("Search failed");
@@ -177,9 +177,9 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
   // Filter tokens locally
   const localFilteredTokens = useMemo(() => {
     const filtered = tokens.filter(t => selectedChainFilter === 'all' || t.chain === selectedChainFilter);
-    
+
     if (!searchQuery) return filtered;
-    
+
     const s = searchQuery.toLowerCase().trim();
     return filtered.filter((token) => {
       return (
@@ -261,7 +261,8 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
       }
       setStep("confirm");
     } catch (err: unknown) {
-      if (hasInsufficientBalance || err.message?.toLowerCase().includes("insufficient")) {
+      const errorMessage = (err as Error)?.message || "";
+      if (hasInsufficientBalance || errorMessage.toLowerCase().includes("insufficient")) {
         // Create a fallback preview so the user can see the details and the error
         // Cast to any to bypass strict type checks for the fallback
         const fallbackPreview: FallbackPreview = {
@@ -292,8 +293,10 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         // So for THIS block, I will just set the step. I will modify the RENDER logic in another chunk.
         setError("");
         setStep("confirm");
+        setStep("confirm");
       } else {
-        setError(err.message || "Failed to build transaction");
+        const errorMsg = (err as Error)?.message || "Failed to build transaction";
+        setError(errorMsg);
       }
     }
   };
@@ -543,7 +546,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
             gasEstimate: "Unknown",
             gasPrice: "0",
             totalCost: "0"
-          } as FallbackPreview}
+          } as any}
           selectedToken={selectedToken}
           insufficientBalance={insufficientBalance}
           onEdit={() => { clearPreview(); setStep("form"); setInsufficientBalance(false); }}

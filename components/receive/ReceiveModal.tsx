@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { usePrivy, ConnectedAccount } from "@privy-io/react-auth";
+import { usePrivy } from "@privy-io/react-auth";
 
-interface PrivyAccountWithChain extends ConnectedAccount {
-    chainType?: 'ethereum' | 'solana';
+interface PrivyAccountWithChain {
+  type: 'wallet';
+  address: string;
+  chainType?: 'ethereum' | 'solana';
 }
 import { useApp } from "../app/AppContext";
 import { manualWalletState, Chain } from "../wallet/data";
@@ -85,7 +87,7 @@ export function ReceiveScreen() {
 
   const [copied, setCopied] = useState(false);
   const [showQr, setShowQr] = useState(false);
-  
+
   if (currentView !== "receive") return null;
 
   const handleChainChange = (chain: Chain) => {
@@ -101,8 +103,8 @@ export function ReceiveScreen() {
       (acc) => {
         const privyAcc = acc as PrivyAccountWithChain;
         return privyAcc.type === "wallet" &&
-        privyAcc.chainType === "ethereum" &&
-        typeof privyAcc.address === "string"
+          privyAcc.chainType === "ethereum" &&
+          typeof privyAcc.address === "string"
       }
     );
 
@@ -111,8 +113,8 @@ export function ReceiveScreen() {
       (acc) => {
         const privyAcc = acc as PrivyAccountWithChain;
         return privyAcc.type === "wallet" &&
-        privyAcc.chainType === "solana" &&
-        typeof privyAcc.address === "string"
+          privyAcc.chainType === "solana" &&
+          typeof privyAcc.address === "string"
       }
     );
 
