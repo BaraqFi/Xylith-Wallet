@@ -1,93 +1,466 @@
 "use client";
 
+import React, { useState, useEffect, useRef } from 'react';
+import { AICommand, LogEntry, WalletState, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
+import { generateWallet, getPriceEstimate, getNativeBalance, sendNativeToken, validateAddress, estimateGasCost, detectChainFromAddress, executeSwap, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
+import { AiChatMessage as ChatMessage } from "./AiChatMessage";
+import { AiActionCard as ActionCard } from "./AiActionCard";
+import { AiOrb as Orb } from "./AiOrb";
+import { AiSettingsModal as SettingsModal } from "./AiSettingsModal";
+import { AiHelpModal as HelpModal } from "./AiHelpModal";
+import { AiSplashPage as SplashPage } from "./AiSplashPage";
+import { Settings, ArrowUp, Command, HelpCircle } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+
+// --- Slash Commands Config ---
+const COMMANDS = [
+  { id: 'balance', label: '/balance', desc: 'Check funds', prompt: 'Check my balance' },
+  { id: 'send', label: '/send', desc: 'Transfer assets', prompt: 'Send ' },
+  { id: 'swap', label: '/swap', desc: 'Trade tokens', prompt: 'Swap ' },
+  { id: 'history', label: '/history', desc: 'View transactions', prompt: 'Show history' },
+  { id: 'clear', label: '/clear', desc: 'Clear chat', prompt: 'CLEAR_LOGS' },
+];
+
 export function AiModePage() {
+  // --- State ---
+  const [wallet, setWallet] = useState<WalletState | null>(null);
+  const [, setBalances] = useState<BalanceMap>({ ETH: { native: 0 }, BASE: { native: 0 }, ARB: { native: 0 }, SOL: { native: 0 } });
+
+  const [logs, setLogs] = useState<LogEntry[]>([
+    {
+      id: 'init-2',
+      type: 'AGENT',
+      content: "I am online. Type / for commands or ask to swap/buy tokens.",
+      timestamp: Date.now()
+    }
+  ]);
+
+  const [inputText, setInputText] = useState('');
+  const [showCommands, setShowCommands] = useState(false);
+  const [orbState, setOrbState] = useState<'IDLE' | 'THINKING' | 'PROCESSING' | 'ERROR'>('IDLE');
+  const [activeTx, setActiveTx] = useState<Transaction | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+  const [spendingLimit, setSpendingLimit] = useState<SpendingLimit>({
+    amount: 1000,
+    period: 'DAILY',
+    lastReset: Date.now(),
+    currentUsage: 0,
+    isEnabled: true,
+    defaultBuyAmountUSD: 50
+  });
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // --- Effects ---
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  // Handle Slash Command Detection
+  useEffect(() => {
+    if (inputText.startsWith('/')) {
+      setShowCommands(true);
+    } else {
+      setShowCommands(false);
+    }
+  }, [inputText]);
+
+  useEffect(() => {
+    if (!wallet) return;
+    const fetchBalances = async () => {
+      const results = await Promise.allSettled([
+        getNativeBalance(wallet.evmAddress, 'ETH'),
+        getNativeBalance(wallet.evmAddress, 'BASE'),
+        getNativeBalance(wallet.evmAddress, 'ARB'),
+        getNativeBalance(wallet.solAddress, 'SOL')
+      ]);
+      setBalances(prev => {
+        const getVal = (index: number, f: number) => results[index].status === 'fulfilled' ? (results[index] as PromiseFulfilledResult<number>).value : f;
+        return { ETH: { native: getVal(0, prev.ETH.native) }, BASE: { native: getVal(1, prev.BASE.native) }, ARB: { native: getVal(2, prev.ARB.native) }, SOL: { native: getVal(3, prev.SOL.native) } };
+      });
+    };
+    fetchBalances();
+    const interval = setInterval(fetchBalances, 45000);
+    return () => clearInterval(interval);
+  }, [wallet]);
+
+  // --- Logic ---
+
+  const addLog = (type: LogEntry['type'], content: string, txId?: string) => {
+    setLogs(prev => [...prev, { id: uuidv4(), timestamp: Date.now(), type, content, txId }]);
+  };
+
+  const handleCreateWallet = async () => {
+    setOrbState('PROCESSING');
+    await new Promise(r => setTimeout(r, 1500));
+    const newWallet = generateWallet();
+    setWallet(newWallet);
+    setOrbState('IDLE');
+  };
+
+  const handleSelectCommand = (cmd: typeof COMMANDS[0]) => {
+    if (cmd.id === 'clear') {
+      setLogs([]);
+      setInputText('');
+    } else {
+      setInputText(cmd.prompt);
+      inputRef.current?.focus();
+    }
+    setShowCommands(false);
+  };
+
+  const handleCommand = async () => {
+    if (!inputText.trim() || orbState === 'THINKING' || !wallet) return;
+
+    if (inputText.trim() === 'CLEAR_LOGS') {
+      setLogs([]);
+      setInputText('');
+      return;
+    }
+
+    const cmd = inputText;
+    setInputText('');
+    addLog('USER', cmd);
+    setOrbState('THINKING');
+    setShowCommands(false);
+
+    try {
+      const commandRes = await fetch("/api/ai/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userText: cmd,
+          wallet: { evmAddress: wallet.evmAddress, solAddress: wallet.solAddress }
+        })
+      });
+
+      if (!commandRes.ok) {
+        throw new Error(`AI_PARSE_FAILED_${commandRes.status}`);
+      }
+
+      const command = (await commandRes.json()) as AICommand;
+
+      await new Promise(r => setTimeout(r, 800));
+
+      const isTxIntent = (i: AICommand['intent']): i is 'SEND' | 'SWAP' | 'BRIDGE' =>
+        i === 'SEND' || i === 'SWAP' || i === 'BRIDGE';
+
+      if (isTxIntent(command.intent)) {
+        setOrbState('PROCESSING');
+
+        let chain = (command.chain || 'ETH') as Chain;
+        let amountUSD = command.amountUSD;
+
+        // Auto-detect chain from Contract Address if provided (e.g. "Buy {CA}")
+        if (command.contractAddress && !command.chain) {
+          const detected = detectChainFromAddress(command.contractAddress);
+          if (detected) chain = detected;
+        }
+
+        // Apply Default Buy Amount if "Buy" detected (Swap with no amount)
+        if (command.intent === 'SWAP' && !amountUSD) {
+          amountUSD = spendingLimit.defaultBuyAmountUSD;
+          addLog('SYSTEM', `Applying default buy amount: $${amountUSD}`);
+        }
+
+        // Validation
+        if (command.recipient && !validateAddress(chain, command.recipient)) {
+          addLog('ERROR', `Invalid address for ${chain}.`);
+          setOrbState('ERROR');
+          setTimeout(() => setOrbState('IDLE'), 2000);
+          return;
+        }
+
+        const price = getPriceEstimate(chain);
+        const amountToken = amountUSD ? amountUSD / price : 0;
+
+        const newTx: Transaction = {
+          id: uuidv4(),
+          type: command.intent,
+          chain,
+          targetChain: command.targetChain,
+          amount: amountToken,
+          amountUSD: amountUSD || 0,
+          token: command.token || (chain === 'SOL' ? 'SOL' : 'ETH'),
+          targetToken: command.targetToken,
+          recipient: command.recipient,
+          contractAddress: command.contractAddress,
+          timestamp: Date.now(),
+          status: 'ESTIMATING_GAS',
+          riskLevel: command.riskAssessment,
+          technicalSummary: command.technicalSummary
+        };
+
+        setActiveTx(newTx);
+        addLog('AGENT', command.reply);
+
+        // Gas / Simulation
+        const targetAddr = command.recipient || command.contractAddress || "0x0000000"; // Fallback for est
+        const gas = await estimateGasCost(chain, chain === 'SOL' ? wallet.solAddress : wallet.evmAddress, targetAddr, amountToken);
+        setActiveTx(prev => prev ? ({ ...prev, gasEstimate: gas, status: 'NEEDS_APPROVAL' }) : null);
+
+      } else {
+        setOrbState('IDLE');
+        if (command.intent === 'BALANCE') {
+          const chain = (command.chain || 'ETH') as Chain;
+          const addr = command.recipient || (chain === 'SOL' ? wallet.solAddress : wallet.evmAddress);
+          try {
+            const bal = await getNativeBalance(addr, chain);
+            addLog('AGENT', `Current balance: ${bal.toFixed(4)} ${chain}`);
+          } catch {
+            addLog('ERROR', "Could not fetch balance.");
+          }
+        } else if (command.intent === 'HISTORY') {
+          addLog('AGENT', command.reply || "Fetching transaction history...");
+
+          const limit = command.limit || 5;
+          const results: string[] = [];
+
+          // Case 1: Specific Chain requested
+          if (command.chain) {
+            const targetAddr = command.recipient || (command.chain === 'SOL' ? wallet.solAddress : wallet.evmAddress);
+            const txs = await getTransactionHistory(command.chain, targetAddr, limit);
+            if (txs.length === 0) {
+              results.push(`${command.chain}: No recent transactions found (or API limit reached).`);
+            } else {
+              results.push(`${command.chain} History (${targetAddr.slice(0, 6)}...):`);
+              txs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)} | ${tx.success ? 'OK' : 'FAIL'}`));
+            }
+          }
+          // Case 2: No Chain specified -> Fetch BOTH (if recipient is generic/null)
+          else {
+            // If recipient provided, we must detect chain first
+            if (command.recipient) {
+              const detected = detectChainFromAddress(command.recipient);
+              if (detected) {
+                const txs = await getTransactionHistory(detected, command.recipient, limit);
+                results.push(`${detected} History for ${shortenAddress(command.recipient)}:`);
+                txs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)}`));
+              } else {
+                results.push("Could not identify chain for provided address.");
+              }
+            } else {
+              // Fetch Both Defaults
+              const [solTxs, ethTxs] = await Promise.all([
+                getTransactionHistory('SOL', wallet.solAddress, limit),
+                getTransactionHistory('ETH', wallet.evmAddress, limit)
+              ]);
+
+              results.push(`SOL History (${limit} latest):`);
+              if (solTxs.length) solTxs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)}`));
+              else results.push("No transactions.");
+
+              results.push(`ETH History (${limit} latest):`);
+              if (ethTxs.length) ethTxs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)}`));
+              else results.push("No transactions / API Limit.");
+            }
+          }
+
+          addLog('AGENT', results.join('\n'));
+
+        } else if (command.intent === 'HISTORY_SUMMARY') {
+          const summaryRes = await fetch("/api/ai/summarize", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ history: transactions })
+          });
+
+          if (!summaryRes.ok) {
+            throw new Error(`AI_SUMMARY_FAILED_${summaryRes.status}`);
+          }
+
+          const data = (await summaryRes.json()) as { summary?: string };
+          addLog('AGENT', data.summary || "SUMMARY_UNAVAILABLE");
+        } else {
+          addLog('AGENT', command.reply);
+        }
+      }
+
+    } catch {
+      addLog('ERROR', "I couldn't process that.");
+      setOrbState('ERROR');
+      setTimeout(() => setOrbState('IDLE'), 2000);
+    }
+  };
+
+  const handleExecuteTx = async (tx: Transaction) => {
+    if (!wallet) return;
+
+    // Don't close card immediately, allow "BROADCASTING" state to show
+    setActiveTx(prev => prev ? ({ ...prev, status: 'BROADCASTING' }) : null);
+    setOrbState('PROCESSING');
+
+    try {
+      let result;
+
+      if (tx.type === 'SEND') {
+        if (!tx.recipient) throw new Error("No recipient");
+        result = await sendNativeToken(wallet, tx.chain, tx.recipient, tx.amount);
+      } else if (tx.type === 'SWAP' || tx.type === 'BRIDGE') {
+        // Use the simulated swap/bridge executor
+        // If ContractAddress is missing (e.g. bridge), we use a placeholder logic inside executeSwap
+        result = await executeSwap(wallet, tx.chain, tx.contractAddress || "0xROUTER", tx.amount);
+      } else {
+        throw new Error("Unknown transaction type");
+      }
+
+      const completedTx = { ...tx, status: 'COMPLETED' as const, hash: result.hash };
+
+      setActiveTx(completedTx); // Updates card to Success state
+      setTransactions(prev => [...prev, completedTx]);
+      setSpendingLimit(prev => ({ ...prev, currentUsage: prev.currentUsage + tx.amountUSD }));
+
+      addLog('SUCCESS', `Confirmed. Hash: ${result.hash.slice(0, 8)}...`);
+      setOrbState('IDLE');
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "UNKNOWN_ERROR";
+      addLog('ERROR', `Transaction failed: ${message}`);
+      setOrbState('ERROR');
+      setActiveTx(prev => prev ? ({ ...prev, status: 'FAILED', error: message }) : null);
+      // Timeout managed by ActionCard useEffect now
+    }
+  };
+
+  const handleCancelTx = (id: string) => {
+    setActiveTx(null);
+    setOrbState('IDLE');
+    if (!transactions.find(t => t.id === id)) {
+      addLog('SYSTEM', "Cancelled by user");
+    }
+  };
+
+  // --- Render ---
+
+  if (!wallet) return <SplashPage onGenerate={handleCreateWallet} isGenerating={orbState === 'PROCESSING'} />;
+
+  const filteredCommands = COMMANDS.filter(c => c.label.toLowerCase().includes(inputText.toLowerCase()));
 
   return (
-    <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 py-12">
-      <div className="wallet-card p-12 text-center">
-        <div className="mb-6 flex justify-center">
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[color:var(--color-accent)]/15">
-            <svg
-              viewBox="0 0 24 24"
-              className="h-10 w-10 text-[color:var(--color-accent)]"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-            >
-              <path
-                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </div>
+    <div className="h-[75vh] min-h-[600px] w-full bg-white rounded-3xl relative flex flex-col items-center overflow-hidden shadow-2xl selection:bg-slate-200 border border-slate-100 mb-8 mt-2">
+
+      {isSettingsOpen && (
+        <SettingsModal
+          onClose={() => setIsSettingsOpen(false)}
+          spendingLimit={spendingLimit}
+          onUpdateLimit={setSpendingLimit}
+          wallet={wallet}
+        />
+      )}
+
+      <HelpModal
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
+      />
+
+      {/* Top Bar */}
+      <div className="absolute top-0 w-full p-6 flex justify-between items-center z-30 pointer-events-none">
+        <div className="font-bold text-xl tracking-tight pointer-events-auto flex items-center gap-2">
+          Xylith AI
+          <button onClick={() => setIsHelpOpen(true)} className="text-slate-400 hover:text-slate-600 transition-colors">
+            <HelpCircle size={18} />
+          </button>
         </div>
-        <h2 className="mb-3 text-2xl font-semibold text-[color:var(--color-depth)]">
-          AI Mode Coming Soon
-        </h2>
-        <p className="mb-6 text-[color:var(--color-depth)]/70">
-          AI Mode will allow you to execute on-chain transactions through natural language
-          commands. Chat with the AI agent to send tokens, swap assets, and perform trades
-          across EVM and Solana networks.
-        </p>
-        <div className="space-y-3 text-left">
-          <div className="flex items-start gap-3 rounded-2xl border border-[color:var(--color-depth)]/10 p-4">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]">
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor">
-                <path
-                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                />
-              </svg>
+        <button
+          onClick={() => setIsSettingsOpen(true)}
+          className="w-10 h-10 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center transition-colors pointer-events-auto shadow-sm"
+        >
+          <Settings size={20} className="text-slate-600" />
+        </button>
+      </div>
+
+      {/* Main Visual Layer */}
+      <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80">
+        <div className="w-[500px] h-[500px] md:w-[600px] md:h-[600px] relative">
+          <Orb state={orbState} />
+        </div>
+      </div>
+
+      {/* Holographic Overlays */}
+      {activeTx && (
+        <ActionCard
+          tx={activeTx}
+          onConfirm={handleExecuteTx}
+          onCancel={handleCancelTx}
+        />
+      )}
+
+      {/* Chat Stream */}
+      <div className="absolute top-24 bottom-32 w-full max-w-2xl px-6 z-10 flex flex-col pointer-events-none">
+        <div className="flex-1 overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar flex flex-col justify-end pb-4" ref={scrollRef}>
+          {logs.map(log => <ChatMessage key={log.id} entry={log} />)}
+          {orbState === 'THINKING' && (
+            <div className="text-center text-xs text-slate-400 animate-pulse tracking-widest uppercase mb-4">
+              Processing
             </div>
-            <div>
-              <p className="font-semibold">Chat-Based Commands</p>
-              <p className="text-sm text-[color:var(--color-depth)]/60">
-                Use simple commands like &quot;/send 10 USDC to 0x...&quot; or &quot;/swap $50 ETH to SOL&quot;
-              </p>
+          )}
+        </div>
+      </div>
+
+      {/* Input Dock */}
+      <div className="absolute bottom-8 w-full px-6 z-30 flex justify-center">
+        <div className="w-full max-w-xl relative">
+
+          {/* Slash Commands Popup */}
+          {showCommands && filteredCommands.length > 0 && (
+            <div className="absolute bottom-full mb-4 left-0 w-full glass-card rounded-2xl overflow-hidden p-1 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-bottom-2">
+              {filteredCommands.map(cmd => (
+                <button
+                  key={cmd.id}
+                  onClick={() => handleSelectCommand(cmd)}
+                  className="w-full text-left px-4 py-3 hover:bg-slate-100/50 rounded-xl transition-colors flex items-center gap-3 group"
+                >
+                  <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-mono text-xs shadow-sm group-hover:scale-110 transition-transform">
+                    /
+                  </div>
+                  <div>
+                    <div className="text-sm font-bold text-slate-800">{cmd.label}</div>
+                    <div className="text-xs text-slate-500">{cmd.desc}</div>
+                  </div>
+                </button>
+              ))}
             </div>
-          </div>
-          <div className="flex items-start gap-3 rounded-2xl border border-[color:var(--color-depth)]/10 p-4">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]">
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor">
-                <path
-                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                />
-              </svg>
-            </div>
-            <div>
-              <p className="font-semibold">Secure Session Control</p>
-              <p className="text-sm text-[color:var(--color-depth)]/60">
-                AI actions use secure session keys that you can revoke at any time
-              </p>
-            </div>
-          </div>
-          <div className="flex items-start gap-3 rounded-2xl border border-[color:var(--color-depth)]/10 p-4">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]">
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor">
-                <path
-                  d="M8 7h12M8 12h12M8 17h12M3 7h.01M3 12h.01M3 17h.01"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth="2"
-                />
-              </svg>
-            </div>
-            <div>
-              <p className="font-semibold">Multi-Chain Support</p>
-              <p className="text-sm text-[color:var(--color-depth)]/60">
-                Works across EVM chains and Solana with cross-chain swap capabilities
-              </p>
-            </div>
+          )}
+
+          <div className="glass-card pl-6 pr-2 py-2 rounded-full flex items-center w-full transition-shadow hover:shadow-lg focus-within:shadow-xl">
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  if (showCommands && filteredCommands.length > 0 && inputText.startsWith('/')) {
+                    handleSelectCommand(filteredCommands[0]);
+                  } else {
+                    handleCommand();
+                  }
+                } else if (e.key === 'Escape') {
+                  setShowCommands(false);
+                }
+              }}
+              placeholder="Type / for commands..."
+              className="flex-1 bg-transparent border-none outline-none text-slate-800 placeholder-slate-400 font-medium"
+              disabled={orbState !== 'IDLE'}
+            />
+            <button
+              onClick={handleCommand}
+              disabled={!inputText.trim() || orbState !== 'IDLE'}
+              className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-transform disabled:bg-slate-300 disabled:scale-100"
+            >
+              {inputText.startsWith('/') ? <Command size={18} /> : <ArrowUp size={20} />}
+            </button>
           </div>
         </div>
       </div>
+
     </div>
   );
 }
+
 

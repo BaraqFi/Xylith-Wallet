@@ -1,0 +1,419 @@
+
+> xylith-ai@0.1.0 lint
+> eslint
+
+
+/Users/Mubarak/Downloads/xylith-ai/app/api/transactions/history/route.ts
+  191:38  warning  '_error' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/components/ai/AiActionPanel.tsx
+   3:10  warning  'Activity' is defined but never used                                    @typescript-eslint/no-unused-vars
+  17:92  warning  'isProcessing' is defined but never used                                @typescript-eslint/no-unused-vars
+  76:60  error    Comments inside children section of tag should be placed inside braces  react/jsx-no-comment-textnodes
+
+/Users/Mubarak/Downloads/xylith-ai/components/ai/AiChatMessage.tsx
+  17:9  warning  'isSystem' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/components/ai/AiHelpModal.tsx
+    2:57   warning  'Search' is defined but never used                               @typescript-eslint/no-unused-vars
+   37:84   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   37:101  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   41:84   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   41:100  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   45:84   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   45:111  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   61:84   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   61:112  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   65:84   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   65:117  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   81:84   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   81:97   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   85:84   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   85:108  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   89:84   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   89:110  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  104:64   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  104:80   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+
+/Users/Mubarak/Downloads/xylith-ai/components/ai/AiModePage.tsx
+   15:8   warning  'clsx' is defined but never used                    @typescript-eslint/no-unused-vars
+   29:10  warning  'balances' is assigned a value but never used       @typescript-eslint/no-unused-vars
+  171:35  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  202:20  warning  'e' is defined but never used                       @typescript-eslint/no-unused-vars
+  209:15  error    'results' is never reassigned. Use 'const' instead  prefer-const
+  261:14  warning  'e' is defined but never used                       @typescript-eslint/no-unused-vars
+  261:17  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  297:17  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/components/ai/AiSettingsModal.tsx
+  33:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/Mubarak/Downloads/xylith-ai/components/ai/AiSettingsModal.tsx:33:5
+  31 |       period !== spendingLimit.period ||
+  32 |       defaultBuy !== (spendingLimit.defaultBuyAmountUSD || 50);
+> 33 |     setHasChanges(isDirty);
+     |     ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  34 |   }, [amount, period, defaultBuy, spendingLimit]);
+  35 |
+  36 |   // Reset local state when modal opens  react-hooks/set-state-in-effect
+  39:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/Mubarak/Downloads/xylith-ai/components/ai/AiSettingsModal.tsx:39:7
+  37 |   useEffect(() => {
+  38 |     if (isOpen) {
+> 39 |       setAmount(spendingLimit.amount);
+     |       ^^^^^^^^^ Avoid calling setState() directly within an effect
+  40 |       setPeriod(spendingLimit.period);
+  41 |       setDefaultBuy(spendingLimit.defaultBuyAmountUSD || 50);
+  42 |       setHasChanges(false);                      react-hooks/set-state-in-effect
+
+/Users/Mubarak/Downloads/xylith-ai/components/ai/AiSplashPage.tsx
+  2:10  warning  'Wallet' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/components/send/SendFlow.tsx
+   79:11  warning  'user' is assigned a value but never used                 @typescript-eslint/no-unused-vars
+   95:10  warning  'remoteSearchResults' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  268:15  warning  'fallbackPreview' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  549:16  error    Unexpected any. Specify a different type                  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/components/send/TransactionDetails.tsx
+   5:24  warning  'EVMChain' is defined but never used                      @typescript-eslint/no-unused-vars
+   6:10  warning  'formatUnits' is defined but never used                   @typescript-eslint/no-unused-vars
+   6:23  warning  'Address' is defined but never used                       @typescript-eslint/no-unused-vars
+  22:3   warning  'insufficientBalance' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  36:10  warning  'checkingContract' is assigned a value but never used     @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/components/swap/SwapFlow.tsx
+   19:3   warning  'Sheet' is defined but never used                        @typescript-eslint/no-unused-vars
+   20:3   warning  'SheetContent' is defined but never used                 @typescript-eslint/no-unused-vars
+   21:3   warning  'SheetHeader' is defined but never used                  @typescript-eslint/no-unused-vars
+   22:3   warning  'SheetTitle' is defined but never used                   @typescript-eslint/no-unused-vars
+   23:3   warning  'SheetTrigger' is defined but never used                 @typescript-eslint/no-unused-vars
+   29:3   warning  'ArrowLeft' is defined but never used                    @typescript-eslint/no-unused-vars
+   40:10  warning  'OneInchClient' is defined but never used                @typescript-eslint/no-unused-vars
+   42:10  warning  'useSwapSecurity' is defined but never used              @typescript-eslint/no-unused-vars
+   42:27  warning  'useTokenSecurity' is defined but never used             @typescript-eslint/no-unused-vars
+   43:38  warning  'Info' is defined but never used                         @typescript-eslint/no-unused-vars
+   44:10  warning  'solanaClient' is defined but never used                 @typescript-eslint/no-unused-vars
+  206:45  warning  'isLoadingTokenList' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  260:13  warning  'evmSwapTx' is assigned a value but never used           @typescript-eslint/no-unused-vars
+  274:48  error    Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  279:13  warning  'solSwapTx' is assigned a value but never used           @typescript-eslint/no-unused-vars
+  504:13  warning  'txHash' is assigned a value but never used              @typescript-eslint/no-unused-vars
+  529:49  error    Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  533:40  error    Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  557:19  error    Unexpected any. Specify a different type                 @typescript-eslint/no-explicit-any
+  681:9   warning  'routeLabel' is assigned a value but never used          @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/components/wallet/ChainLogo.tsx
+  29:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/components/wallet/ManualWallet.tsx
+    3:43  warning  'ComponentType' is defined but never used       @typescript-eslint/no-unused-vars
+   27:3   warning  'Select' is defined but never used              @typescript-eslint/no-unused-vars
+   28:3   warning  'SelectContent' is defined but never used       @typescript-eslint/no-unused-vars
+   29:3   warning  'SelectItem' is defined but never used          @typescript-eslint/no-unused-vars
+   30:3   warning  'SelectTrigger' is defined but never used       @typescript-eslint/no-unused-vars
+   31:3   warning  'SelectValue' is defined but never used         @typescript-eslint/no-unused-vars
+   35:3   warning  'TokenETH' is defined but never used            @typescript-eslint/no-unused-vars
+   36:3   warning  'TokenUSDC' is defined but never used           @typescript-eslint/no-unused-vars
+   37:3   warning  'TokenUSDT' is defined but never used           @typescript-eslint/no-unused-vars
+   38:3   warning  'TokenWBTC' is defined but never used           @typescript-eslint/no-unused-vars
+   39:3   warning  'TokenDAI' is defined but never used            @typescript-eslint/no-unused-vars
+   40:3   warning  'TokenARB' is defined but never used            @typescript-eslint/no-unused-vars
+   41:3   warning  'TokenOP' is defined but never used             @typescript-eslint/no-unused-vars
+   42:3   warning  'TokenMATIC' is defined but never used          @typescript-eslint/no-unused-vars
+   43:3   warning  'TokenBNB' is defined but never used            @typescript-eslint/no-unused-vars
+   44:3   warning  'TokenSOL' is defined but never used            @typescript-eslint/no-unused-vars
+   45:3   warning  'TokenRAY' is defined but never used            @typescript-eslint/no-unused-vars
+   46:3   warning  'TokenJUP' is defined but never used            @typescript-eslint/no-unused-vars
+   51:10  warning  'ChainSelectorSheet' is defined but never used  @typescript-eslint/no-unused-vars
+   89:10  warning  'tokenAmountLabel' is defined but never used    @typescript-eslint/no-unused-vars
+  235:63  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+  328:10  warning  'TransactionList' is defined but never used     @typescript-eslint/no-unused-vars
+  427:17  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+  428:24  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+  435:17  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+  436:24  error    Unexpected any. Specify a different type        @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/components/wallet/TokenDetailsView.tsx
+  9:23  warning  'ArrowLeft' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/components/wallet/TokenLogo.tsx
+  61:17  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+  75:58  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                 @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/components/wallet/TokenSelectModal.tsx
+  52:10  warning  'caToken' is assigned a value but never used      @typescript-eslint/no-unused-vars
+  53:10  warning  'isLoadingCA' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  54:10  warning  'caError' is assigned a value but never used      @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/components/wallet/WalletSettingsModal.tsx
+  48:6  warning  React Hook useEffect has a missing dependency: 'handleClose'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/Mubarak/Downloads/xylith-ai/components/wallet/data.ts
+  71:10  warning  'calculateChainBalances' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useSecurityCheck.ts
+   62:19  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       @typescript-eslint/no-explicit-any
+   73:6   warning  React Hook useEffect has a missing dependency: 'fetchAnalysis'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               react-hooks/exhaustive-deps
+   98:7   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useSecurityCheck.ts:98:7
+   96 |   useEffect(() => {
+   97 |     if (!enabled || !approvalAmount || !tokenBalance || !spenderAddress) {
+>  98 |       setAnalysis(null);
+      |       ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+   99 |       return;
+  100 |     }
+  101 |  react-hooks/set-state-in-effect
+  149:10  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       @typescript-eslint/no-explicit-any
+  159:7   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useSecurityCheck.ts:159:7
+  157 |   useEffect(() => {
+  158 |     if (!enabled || !quote || slippage === undefined) {
+> 159 |       setAnalysis(null);
+      |       ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  160 |       return;
+  161 |     }
+  162 |                    react-hooks/set-state-in-effect
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useSolanaShield.ts
+   44:13  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useSolanaShield.ts:44:13
+  42 |
+  43 |         if (mints.length === 0) {
+> 44 |             setWarnings({});
+     |             ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  45 |             return;
+  46 |         }
+  47 |  react-hooks/set-state-in-effect
+  129:8   warning  React Hook useEffect has a missing dependency: 'tokens'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      react-hooks/exhaustive-deps
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useSolanaSwapQuote.ts
+   32:40  error    Unexpected any. Specify a different type                                                                        @typescript-eslint/no-explicit-any
+  106:27  error    Unexpected any. Specify a different type                                                                        @typescript-eslint/no-explicit-any
+  121:8   warning  React Hook useEffect has a missing dependency: 'fromAddress'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useSolanaTokenList.ts
+  69:27  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useSwapQuote.ts
+   29:16  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   30:14  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   70:26  warning  'err' is defined but never used           @typescript-eslint/no-unused-vars
+  105:27  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  160:23  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useSwapTokenList.ts
+   3:47  warning  'searchTokens' is defined but never used    @typescript-eslint/no-unused-vars
+   4:10  warning  'TokenListToken' is defined but never used  @typescript-eslint/no-unused-vars
+  86:21  error    Unexpected any. Specify a different type    @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useTokenAnalytics.ts
+  53:19  error    Unexpected any. Specify a different type                                                                           @typescript-eslint/no-explicit-any
+  64:6   warning  React Hook useEffect has a missing dependency: 'fetchAnalytics'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useTokenBalances.ts
+   23:7   warning  'localFork' is assigned a value but never used                                                                      @typescript-eslint/no-unused-vars
+   53:84  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+   54:34  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+   56:84  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+   57:34  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+  263:25  error    'alchemyBalances' is never reassigned. Use 'const' instead                                                          prefer-const
+  264:25  error    'moralisBalances' is never reassigned. Use 'const' instead                                                          prefer-const
+  264:84  error    Unexpected any. Specify a different type                                                                            @typescript-eslint/no-explicit-any
+  338:33  error    'decimals' is never reassigned. Use 'const' instead                                                                 prefer-const
+  346:46  warning  'e' is defined but never used                                                                                       @typescript-eslint/no-unused-vars
+  368:46  warning  'e' is defined but never used                                                                                       @typescript-eslint/no-unused-vars
+  552:8   warning  React Hook useEffect has a missing dependency: 'balances.length'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useTransactionBuilder.ts
+  49:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/hooks/useTransactionHistory.ts
+  113:30  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+  119:70  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+  226:27  error    Unexpected any. Specify a different type     @typescript-eslint/no-explicit-any
+  255:10  warning  'mapTypeToAction' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/lib/1inch/types.ts
+  13:16  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/lib/ai/cryptoService.ts
+    7:50  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+    8:14  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   97:12  warning  'e' is defined but never used             @typescript-eslint/no-unused-vars
+  152:37  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/lib/ai/geminiService.ts
+    2:21  warning  'Chain' is defined but never used         @typescript-eslint/no-unused-vars
+   54:15  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  110:12  warning  'error' is defined but never used         @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/lib/jupiter/client.ts
+  10:20  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/lib/services/alchemyClient.ts
+  13:34  warning  'chain' is defined but never used  @typescript-eslint/no-unused-vars
+  23:34  warning  'chain' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/lib/services/rpcConfig.ts
+  106:5  error  'rpcIndexMap' is never reassigned. Use 'const' instead  prefer-const
+
+/Users/Mubarak/Downloads/xylith-ai/lib/services/securityService.ts
+  161:10  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/lib/services/serverRpc.ts
+  111:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  243:13  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  309:23  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/lib/services/tokenAnalyticsService.ts
+   35:7   warning  'COINGECKO_PLATFORM_MAP' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  118:46  warning  'contractAddress' is defined but never used                  @typescript-eslint/no-unused-vars
+  163:39  error    Unexpected any. Specify a different type                     @typescript-eslint/no-explicit-any
+  391:11  warning  'sparkline' is assigned a value but never used               @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/lib/services/tokenIndexer.ts
+  2:20  warning  'TokenBalance' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/lib/services/tokenMetadataService.ts
+  115:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  135:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/lib/services/transactionBuilder.ts
+   2:10  warning  'createWalletClient' is defined but never used    @typescript-eslint/no-unused-vars
+   2:30  warning  'custom' is defined but never used                @typescript-eslint/no-unused-vars
+   3:34  warning  'Chain' is defined but never used                 @typescript-eslint/no-unused-vars
+  80:9   warning  'targetChain' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/Mubarak/Downloads/xylith-ai/lib/services/transactionHistoryService.ts
+  83:37  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/lib/solana/client.ts
+    1:10  warning  'createSolanaRpc' is defined but never used               @typescript-eslint/no-unused-vars
+    1:27  warning  'createSolanaRpcSubscriptions' is defined but never used  @typescript-eslint/no-unused-vars
+    4:7   warning  'SOLANA_RPC_URL' is assigned a value but never used       @typescript-eslint/no-unused-vars
+   25:51  error    Unexpected any. Specify a different type                  @typescript-eslint/no-explicit-any
+   84:21  warning  'customRpcUrl' is assigned a value but never used         @typescript-eslint/no-unused-vars
+  112:53  error    Unexpected any. Specify a different type                  @typescript-eslint/no-explicit-any
+  128:44  error    Unexpected any. Specify a different type                  @typescript-eslint/no-explicit-any
+
+/Users/Mubarak/Downloads/xylith-ai/lib/swapService.ts
+  18:16  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+   13:8   warning  'clsx' is defined but never used                    @typescript-eslint/no-unused-vars
+   27:10  warning  'balances' is assigned a value but never used       @typescript-eslint/no-unused-vars
+  169:35  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  200:22  warning  'e' is defined but never used                       @typescript-eslint/no-unused-vars
+  207:17  error    'results' is never reassigned. Use 'const' instead  prefer-const
+  259:14  warning  'e' is defined but never used                       @typescript-eslint/no-unused-vars
+  259:17  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  295:17  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+
+   3:10  warning  'Activity' is defined but never used                                    @typescript-eslint/no-unused-vars
+  17:90  warning  'isProcessing' is defined but never used                                @typescript-eslint/no-unused-vars
+  76:60  error    Comments inside children section of tag should be placed inside braces  react/jsx-no-comment-textnodes
+
+  17:9  warning  'isSystem' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+    2:57   warning  'Search' is defined but never used                               @typescript-eslint/no-unused-vars
+   37:76   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   37:93   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   41:76   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   41:92   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   45:76   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   45:103  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   61:76   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   61:104  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   65:76   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   65:109  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   81:76   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   81:89   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   85:76   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   85:100  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   89:76   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+   89:102  error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  104:55   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+  104:71   error    `"` can be escaped with `&quot;`, `&ldquo;`, `&#34;`, `&rdquo;`  react/no-unescaped-entities
+
+  33:5  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  31 |       period !== spendingLimit.period ||
+  32 |       defaultBuy !== (spendingLimit.defaultBuyAmountUSD || 50);
+> 33 |     setHasChanges(isDirty);
+     |     ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  34 |   }, [amount, period, defaultBuy, spendingLimit]);
+  35 |
+  36 |   // Reset local state when modal opens  react-hooks/set-state-in-effect
+  39:9  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  37 |   useEffect(() => {
+  38 |     if (isOpen) {
+> 39 |         setAmount(spendingLimit.amount);
+     |         ^^^^^^^^^ Avoid calling setState() directly within an effect
+  40 |         setPeriod(spendingLimit.period);
+  41 |         setDefaultBuy(spendingLimit.defaultBuyAmountUSD || 50);
+  42 |         setHasChanges(false);            react-hooks/set-state-in-effect
+
+  2:10  warning  'Wallet' is defined but never used  @typescript-eslint/no-unused-vars
+
+  20:90  warning  'history' is defined but never used  @typescript-eslint/no-unused-vars
+
+    7:50  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+    8:16  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   97:12  warning  'e' is defined but never used             @typescript-eslint/no-unused-vars
+  152:38  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+    2:21  warning  'Chain' is defined but never used         @typescript-eslint/no-unused-vars
+   54:15  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  110:12  warning  'error' is defined but never used         @typescript-eslint/no-unused-vars
+
+✖ 215 problems (111 errors, 104 warnings)
+  6 errors and 0 warnings potentially fixable with the `--fix` option.
+
