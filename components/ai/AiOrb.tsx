@@ -62,12 +62,34 @@ export const AiOrb: React.FC<OrbProps> = ({ state }) => {
     let rotationY = 0;
     let deformationScale = 0;
 
-    // Pulse variables
+    const getRgbFromCssVar = (name: string, fallback: { r: number; g: number; b: number }) => {
+      const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      if (!val) return fallback;
+      const hex = val.startsWith("#") ? val : "";
+      if (hex.length === 7) {
+        const r = Number.parseInt(hex.slice(1, 3), 16);
+        const g = Number.parseInt(hex.slice(3, 5), 16);
+        const b = Number.parseInt(hex.slice(5, 7), 16);
+        if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) return { r, g, b };
+      }
+      return fallback;
+    };
+
+    const accent = getRgbFromCssVar("--color-accent", { r: 98, g: 215, b: 221 });
+    const depth = getRgbFromCssVar("--color-depth", { r: 25, g: 31, b: 33 });
+
+    const mix = (a: { r: number; g: number; b: number }, b: { r: number; g: number; b: number }, t: number) => ({
+      r: a.r + (b.r - a.r) * t,
+      g: a.g + (b.g - a.g) * t,
+      b: a.b + (b.b - a.b) * t,
+    });
+
+    // Pulse variables (brand-forward palette)
     const pulseColors = [
-      { r: 59, g: 130, b: 246 },  // Blue
-      { r: 16, g: 185, b: 129 },  // Emerald
-      { r: 139, g: 92, b: 246 },  // Violet
-      { r: 236, g: 72, b: 153 },  // Pink
+      mix(accent, depth, 0.15),
+      accent,
+      mix(accent, { r: 255, g: 255, b: 255 }, 0.25),
+      mix(accent, depth, 0.35),
     ];
 
     let animationFrameId: number;
@@ -83,17 +105,17 @@ export const AiOrb: React.FC<OrbProps> = ({ state }) => {
       let targetSpeed = 0.002;
       let targetDeform = 0.2;
 
-      // Base color (Metallic Black/Grey)
-      let r = 20, g = 20, b = 30, a = 0.6;
+      // Base color (derived from theme)
+      let r = depth.r * 0.5, g = depth.g * 0.5, b = depth.b * 0.5, a = 0.55;
 
       if (state === 'THINKING') {
         targetSpeed = 0.02;
         targetDeform = 1.2;
-        r = 16; g = 185; b = 129; a = 0.8; // Greenish
+        r = accent.r; g = accent.g; b = accent.b; a = 0.85;
       } else if (state === 'PROCESSING') {
         targetSpeed = 0.01;
         targetDeform = 0.6;
-        r = 59; g = 130; b = 246; a = 0.8; // Blueish
+        r = accent.r; g = accent.g; b = accent.b; a = 0.75;
       } else if (state === 'ERROR') {
         targetSpeed = 0;
         targetDeform = 0.1;
@@ -116,9 +138,9 @@ export const AiOrb: React.FC<OrbProps> = ({ state }) => {
         const targetB = c1.b + (c2.b - c1.b) * colorProgress;
 
         // Blend base color with target color based on pulse
-        r += (targetR - r) * 0.3 * colorPulse;
-        g += (targetG - g) * 0.3 * colorPulse;
-        b += (targetB - b) * 0.3 * colorPulse;
+        r += (targetR - r) * 0.28 * colorPulse;
+        g += (targetG - g) * 0.28 * colorPulse;
+        b += (targetB - b) * 0.28 * colorPulse;
         a += (0.9 - a) * 0.3 * colorPulse;
       }
 

@@ -34,19 +34,19 @@ export const AiActionCard: React.FC<ActionCardProps> = ({ tx, onConfirm, onCance
   };
 
   return (
-    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 md:w-96 glass-card rounded-3xl p-6 z-20 animate-in zoom-in-95 duration-300">
+    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[min(24rem,calc(100vw-2rem))] glass-card rounded-3xl p-5 sm:p-6 z-20 animate-in zoom-in-95 duration-300">
 
       {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div>
-          <div className="text-[10px] uppercase tracking-widest text-slate-400 mb-1">Authorization Request</div>
-          <div className="font-bold text-slate-900 text-lg flex items-center gap-2">
-            {tx.type} <span className="text-slate-300">/</span> {tx.chain}
-            {tx.targetChain && <><span className="text-slate-300">→</span> {tx.targetChain}</>}
+          <div className="text-[10px] uppercase tracking-widest text-[color:var(--color-depth)]/50 mb-1">Authorization Request</div>
+          <div className="font-bold text-[color:var(--color-depth)] text-lg flex items-center gap-2">
+            {tx.type} <span className="text-[color:var(--color-depth)]/30">/</span> {tx.chain}
+            {tx.targetChain && <><span className="text-[color:var(--color-depth)]/30">→</span> {tx.targetChain}</>}
           </div>
         </div>
         {isHighRisk && !isDone && (
-          <div className="bg-red-50 text-red-500 p-2 rounded-full animate-pulse" title="High Risk">
+          <div className="bg-red-500/10 text-red-500 p-2 rounded-full animate-pulse border border-red-500/20" title="High Risk">
             <Shield size={16} />
           </div>
         )}
@@ -54,30 +54,30 @@ export const AiActionCard: React.FC<ActionCardProps> = ({ tx, onConfirm, onCance
 
       {/* Main Display */}
       {tx.status === 'FAILED' ? (
-        <div className="bg-red-50 rounded-2xl p-6 mb-6 text-center border border-red-100">
+        <div className="bg-red-500/10 rounded-2xl p-6 mb-6 text-center border border-red-500/20">
           <AlertTriangle size={32} className="text-red-500 mx-auto mb-2" />
-          <div className="text-red-800 font-bold">Transaction Failed</div>
+          <div className="text-red-600 font-bold">Transaction Failed</div>
           <div className="text-xs text-red-600 mt-1">{tx.error || "Unknown Error"}</div>
         </div>
       ) : tx.status === 'COMPLETED' ? (
-        <div className="bg-emerald-50 rounded-2xl p-6 mb-6 text-center border border-emerald-100">
-          <Check size={32} className="text-emerald-500 mx-auto mb-2" />
-          <div className="text-emerald-800 font-bold">Execution Confirmed</div>
-          <div className="text-xs text-emerald-600 mt-1">TxHash: {tx.hash?.slice(0, 8)}...</div>
+        <div className="bg-[color:var(--color-accent)]/10 rounded-2xl p-6 mb-6 text-center border border-[color:var(--color-accent)]/20">
+          <Check size={32} className="text-[color:var(--color-accent)] mx-auto mb-2" />
+          <div className="text-[color:var(--color-depth)] font-bold">Execution Confirmed</div>
+          <div className="text-xs text-[color:var(--color-depth)]/70 mt-1">TxHash: {tx.hash?.slice(0, 8)}...</div>
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between bg-slate-50 rounded-2xl p-4 mb-6 border border-slate-100">
+          <div className="flex items-center justify-between bg-[color:var(--color-depth)]/5 rounded-2xl p-4 mb-6 border border-[color:var(--color-border)]">
             <div>
-              <span className="text-2xl font-bold text-slate-900">{tx.amount}</span>
-              <span className="text-sm font-medium text-slate-400 ml-1">{tx.token}</span>
+              <span className="text-2xl font-bold text-[color:var(--color-depth)]">{tx.amount}</span>
+              <span className="text-sm font-medium text-[color:var(--color-depth)]/50 ml-1">{tx.token}</span>
             </div>
-            <ArrowRight size={20} className="text-slate-300" />
+            <ArrowRight size={20} className="text-[color:var(--color-depth)]/30" />
             <div className="text-right">
-              <div className="text-xs text-slate-400 font-mono mb-1">
+              <div className="text-xs text-[color:var(--color-depth)]/50 font-mono mb-1">
                 {tx.type === 'SWAP' ? 'RECEIVE' : 'RECIPIENT'}
               </div>
-              <div className="text-xs font-bold text-slate-700 font-mono">
+              <div className="text-xs font-bold text-[color:var(--color-depth)]/80 font-mono">
                 {tx.targetToken || tx.recipient?.slice(0, 4) + '...' + tx.recipient?.slice(-4)}
               </div>
             </div>
@@ -86,12 +86,12 @@ export const AiActionCard: React.FC<ActionCardProps> = ({ tx, onConfirm, onCance
           {/* Stats */}
           <div className="grid grid-cols-2 gap-4 mb-8">
             <div>
-              <div className="text-[10px] text-slate-400 uppercase">Estimated Gas</div>
-              <div className="text-sm font-medium text-slate-700">{tx.gasEstimate || "Calculating..."}</div>
+              <div className="text-[10px] text-[color:var(--color-depth)]/50 uppercase">Estimated Gas</div>
+              <div className="text-sm font-medium text-[color:var(--color-depth)]/80">{tx.gasEstimate || "Calculating..."}</div>
             </div>
             <div>
-              <div className="text-[10px] text-slate-400 uppercase">USD Value</div>
-              <div className="text-sm font-medium text-slate-700">${tx.amountUSD.toFixed(2)}</div>
+              <div className="text-[10px] text-[color:var(--color-depth)]/50 uppercase">USD Value</div>
+              <div className="text-sm font-medium text-[color:var(--color-depth)]/80">${tx.amountUSD.toFixed(2)}</div>
             </div>
           </div>
         </>
@@ -103,7 +103,7 @@ export const AiActionCard: React.FC<ActionCardProps> = ({ tx, onConfirm, onCance
           <button
             onClick={() => onCancel(tx.id)}
             // We allow cancel even during processing to force-close UI (logic in parent should handle state)
-            className="flex-1 py-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl font-medium transition-colors flex items-center justify-center"
+            className="flex-1 py-3 bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 text-[color:var(--color-depth)]/70 rounded-xl font-medium transition-colors flex items-center justify-center border border-[color:var(--color-border)]"
           >
             <X size={18} />
           </button>
@@ -111,8 +111,11 @@ export const AiActionCard: React.FC<ActionCardProps> = ({ tx, onConfirm, onCance
             onClick={() => onConfirm(tx)}
             disabled={isProcessing}
             className={clsx(
-              "flex-[3] py-3 rounded-xl font-bold text-white shadow-lg transition-all flex items-center justify-center gap-2",
-              isHighRisk ? "bg-slate-900 hover:bg-slate-800" : "bg-black hover:bg-slate-800"
+              "flex-[3] py-3 rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2",
+              isHighRisk
+                ? "bg-[color:var(--color-depth)] text-[color:var(--color-surface)] hover:bg-[color:var(--color-depth)]/90"
+                : "bg-[color:var(--color-accent)] text-[color:var(--color-depth)] hover:brightness-95",
+              isProcessing && "opacity-80"
             )}
           >
             {isProcessing ? <Loader2 size={18} className="animate-spin" /> : getIcon()}

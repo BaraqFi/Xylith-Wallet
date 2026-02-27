@@ -342,7 +342,7 @@ export function AiModePage() {
   const filteredCommands = COMMANDS.filter(c => c.label.toLowerCase().includes(inputText.toLowerCase()));
 
   return (
-    <div className="h-[75vh] min-h-[600px] w-full bg-white rounded-3xl relative flex flex-col items-center overflow-hidden shadow-2xl selection:bg-slate-200 border border-slate-100 mb-8 mt-2">
+    <div className="h-[75dvh] min-h-[520px] sm:min-h-[600px] w-full bg-[color:var(--color-surface)] text-[color:var(--color-depth)] rounded-3xl relative flex flex-col items-center overflow-hidden shadow-2xl selection:bg-[color:var(--color-depth)]/10 border border-[color:var(--color-border)] mb-8 mt-2">
 
       {isSettingsOpen && (
         <SettingsModal
@@ -359,24 +359,27 @@ export function AiModePage() {
       />
 
       {/* Top Bar */}
-      <div className="absolute top-0 w-full p-6 flex justify-between items-center z-30 pointer-events-none">
+      <div className="absolute top-0 w-full p-4 sm:p-6 flex justify-between items-center z-30 pointer-events-none">
         <div className="font-bold text-xl tracking-tight pointer-events-auto flex items-center gap-2">
           Xylith AI
-          <button onClick={() => setIsHelpOpen(true)} className="text-slate-400 hover:text-slate-600 transition-colors">
+          <button
+            onClick={() => setIsHelpOpen(true)}
+            className="text-[color:var(--color-depth)]/50 hover:text-[color:var(--color-depth)] transition-colors"
+          >
             <HelpCircle size={18} />
           </button>
         </div>
         <button
           onClick={() => setIsSettingsOpen(true)}
-          className="w-10 h-10 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center transition-colors pointer-events-auto shadow-sm"
+          className="w-10 h-10 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors pointer-events-auto shadow-sm border border-[color:var(--color-border)]"
         >
-          <Settings size={20} className="text-slate-600" />
+          <Settings size={20} className="text-[color:var(--color-depth)]/70" />
         </button>
       </div>
 
       {/* Main Visual Layer */}
       <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80">
-        <div className="w-[500px] h-[500px] md:w-[600px] md:h-[600px] relative">
+        <div className="w-[320px] h-[320px] sm:w-[440px] sm:h-[440px] md:w-[560px] md:h-[560px] relative">
           <Orb state={orbState} />
         </div>
       </div>
@@ -391,11 +394,11 @@ export function AiModePage() {
       )}
 
       {/* Chat Stream */}
-      <div className="absolute top-24 bottom-32 w-full max-w-2xl px-6 z-10 flex flex-col pointer-events-none">
+      <div className="absolute top-20 sm:top-24 bottom-24 sm:bottom-32 w-full max-w-2xl px-4 sm:px-6 z-10 flex flex-col pointer-events-none">
         <div className="flex-1 overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar flex flex-col justify-end pb-4" ref={scrollRef}>
           {logs.map(log => <ChatMessage key={log.id} entry={log} />)}
           {orbState === 'THINKING' && (
-            <div className="text-center text-xs text-slate-400 animate-pulse tracking-widest uppercase mb-4">
+            <div className="text-center text-xs text-[color:var(--color-depth)]/50 animate-pulse tracking-widest uppercase mb-4">
               Processing
             </div>
           )}
@@ -403,7 +406,7 @@ export function AiModePage() {
       </div>
 
       {/* Input Dock */}
-      <div className="absolute bottom-8 w-full px-6 z-30 flex justify-center">
+      <div className="absolute bottom-4 sm:bottom-8 w-full px-4 sm:px-6 z-30 flex justify-center">
         <div className="w-full max-w-xl relative">
 
           {/* Slash Commands Popup */}
@@ -413,21 +416,21 @@ export function AiModePage() {
                 <button
                   key={cmd.id}
                   onClick={() => handleSelectCommand(cmd)}
-                  className="w-full text-left px-4 py-3 hover:bg-slate-100/50 rounded-xl transition-colors flex items-center gap-3 group"
+                  className="w-full text-left px-4 py-3 hover:bg-[color:var(--color-depth)]/5 rounded-xl transition-colors flex items-center gap-3 group"
                 >
-                  <div className="w-8 h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-mono text-xs shadow-sm group-hover:scale-110 transition-transform">
+                  <div className="w-8 h-8 rounded-full bg-[color:var(--color-depth)] text-[color:var(--color-surface)] flex items-center justify-center font-mono text-xs shadow-sm group-hover:scale-110 transition-transform">
                     /
                   </div>
                   <div>
-                    <div className="text-sm font-bold text-slate-800">{cmd.label}</div>
-                    <div className="text-xs text-slate-500">{cmd.desc}</div>
+                    <div className="text-sm font-bold text-[color:var(--color-depth)]">{cmd.label}</div>
+                    <div className="text-xs text-[color:var(--color-depth)]/60">{cmd.desc}</div>
                   </div>
                 </button>
               ))}
             </div>
           )}
 
-          <div className="glass-card pl-6 pr-2 py-2 rounded-full flex items-center w-full transition-shadow hover:shadow-lg focus-within:shadow-xl">
+          <div className="glass-card pl-4 sm:pl-6 pr-2 py-2 rounded-full flex items-center w-full transition-shadow hover:shadow-lg focus-within:shadow-xl">
             <input
               ref={inputRef}
               type="text"
@@ -445,13 +448,13 @@ export function AiModePage() {
                 }
               }}
               placeholder="Type / for commands..."
-              className="flex-1 bg-transparent border-none outline-none text-slate-800 placeholder-slate-400 font-medium"
+              className="flex-1 bg-transparent border-none outline-none text-[color:var(--color-depth)] placeholder:text-[color:var(--color-depth)]/40 font-medium text-sm sm:text-base"
               disabled={orbState !== 'IDLE'}
             />
             <button
               onClick={handleCommand}
               disabled={!inputText.trim() || orbState !== 'IDLE'}
-              className="w-10 h-10 rounded-full bg-slate-900 text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-transform disabled:bg-slate-300 disabled:scale-100"
+              className="w-10 h-10 rounded-full bg-[color:var(--color-accent)] text-[color:var(--color-depth)] flex items-center justify-center hover:scale-105 active:scale-95 transition-transform disabled:bg-[color:var(--color-depth)]/20 disabled:text-[color:var(--color-depth)]/50 disabled:scale-100"
             >
               {inputText.startsWith('/') ? <Command size={18} /> : <ArrowUp size={20} />}
             </button>
