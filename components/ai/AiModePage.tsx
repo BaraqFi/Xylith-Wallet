@@ -30,7 +30,7 @@ export function AiModePage() {
     {
       id: 'init-2',
       type: 'AGENT',
-      content: "I am online. Type / for commands or ask to swap/buy tokens.",
+      content: "Type / for commands or ask to swap/buy tokens.",
       timestamp: Date.now()
     }
   ]);
@@ -342,7 +342,7 @@ export function AiModePage() {
   const filteredCommands = COMMANDS.filter(c => c.label.toLowerCase().includes(inputText.toLowerCase()));
 
   return (
-    <div className="h-[75dvh] min-h-[520px] sm:min-h-[600px] w-full bg-[color:var(--color-surface)] text-[color:var(--color-depth)] rounded-3xl relative flex flex-col items-center overflow-hidden shadow-2xl selection:bg-[color:var(--color-depth)]/10 border border-[color:var(--color-border)] mb-8 mt-2">
+    <div className="h-[75dvh] min-h-[520px] sm:min-h-[600px] w-full bg-transparent text-[color:var(--color-depth)] relative flex flex-col items-center overflow-hidden selection:bg-[color:var(--color-depth)]/10">
 
       {isSettingsOpen && (
         <SettingsModal
@@ -358,20 +358,17 @@ export function AiModePage() {
         onClose={() => setIsHelpOpen(false)}
       />
 
-      {/* Top Bar */}
-      <div className="absolute top-0 w-full p-4 sm:p-6 flex justify-between items-center z-30 pointer-events-none">
-        <div className="font-bold text-xl tracking-tight pointer-events-auto flex items-center gap-2">
-          Xylith AI
-          <button
-            onClick={() => setIsHelpOpen(true)}
-            className="text-[color:var(--color-depth)]/50 hover:text-[color:var(--color-depth)] transition-colors"
-          >
-            <HelpCircle size={18} />
-          </button>
-        </div>
+      {/* Controls */}
+      <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 flex items-center gap-2 pointer-events-none">
+        <button
+          onClick={() => setIsHelpOpen(true)}
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors pointer-events-auto border border-[color:var(--color-border)]"
+        >
+          <HelpCircle size={18} className="text-[color:var(--color-depth)]/70" />
+        </button>
         <button
           onClick={() => setIsSettingsOpen(true)}
-          className="w-10 h-10 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors pointer-events-auto shadow-sm border border-[color:var(--color-border)]"
+          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors pointer-events-auto border border-[color:var(--color-border)]"
         >
           <Settings size={20} className="text-[color:var(--color-depth)]/70" />
         </button>
@@ -379,7 +376,7 @@ export function AiModePage() {
 
       {/* Main Visual Layer */}
       <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80">
-        <div className="w-[320px] h-[320px] sm:w-[440px] sm:h-[440px] md:w-[560px] md:h-[560px] relative">
+        <div className="w-[420px] h-[420px] sm:w-[540px] sm:h-[540px] md:w-[680px] md:h-[680px] max-w-[92vw] max-h-[92vw] relative">
           <Orb state={orbState} />
         </div>
       </div>
@@ -394,7 +391,7 @@ export function AiModePage() {
       )}
 
       {/* Chat Stream */}
-      <div className="absolute top-20 sm:top-24 bottom-24 sm:bottom-32 w-full max-w-2xl px-4 sm:px-6 z-10 flex flex-col pointer-events-none">
+      <div className="absolute top-24 sm:top-28 bottom-20 sm:bottom-28 w-full max-w-2xl px-4 sm:px-6 z-10 flex flex-col pointer-events-none">
         <div className="flex-1 overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar flex flex-col justify-end pb-4" ref={scrollRef}>
           {logs.map(log => <ChatMessage key={log.id} entry={log} />)}
           {orbState === 'THINKING' && (
@@ -406,7 +403,7 @@ export function AiModePage() {
       </div>
 
       {/* Input Dock */}
-      <div className="absolute bottom-4 sm:bottom-8 w-full px-4 sm:px-6 z-30 flex justify-center">
+      <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] sm:bottom-[max(1.5rem,env(safe-area-inset-bottom))] w-full px-4 sm:px-6 z-30 flex justify-center">
         <div className="w-full max-w-xl relative">
 
           {/* Slash Commands Popup */}

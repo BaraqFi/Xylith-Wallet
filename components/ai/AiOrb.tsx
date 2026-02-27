@@ -21,17 +21,29 @@ export const AiOrb: React.FC<OrbProps> = ({ state }) => {
     let width = canvas.width = canvas.parentElement?.clientWidth || 400;
     let height = canvas.height = canvas.parentElement?.clientHeight || 400;
 
-    // Track mouse position relative to canvas center (-1 to 1)
-    const handleMouseMove = (e: MouseEvent) => {
+    // Track pointer position relative to canvas center (-1 to 1)
+    const updatePointer = (clientX: number, clientY: number) => {
       const rect = canvas.getBoundingClientRect();
       const centerX = rect.left + rect.width / 2;
       const centerY = rect.top + rect.height / 2;
       mouseRef.current = {
-        x: (e.clientX - centerX) / (width / 2),
-        y: (e.clientY - centerY) / (height / 2)
+        x: (clientX - centerX) / (width / 2),
+        y: (clientY - centerY) / (height / 2)
       };
     };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      updatePointer(e.clientX, e.clientY);
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const touch = e.touches[0];
+      if (!touch) return;
+      updatePointer(touch.clientX, touch.clientY);
+    };
+
     window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
 
     // Resize handler
     const handleResize = () => {
@@ -232,6 +244,7 @@ export const AiOrb: React.FC<OrbProps> = ({ state }) => {
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('touchmove', handleTouchMove);
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
     };
