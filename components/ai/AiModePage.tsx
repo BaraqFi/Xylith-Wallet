@@ -354,7 +354,7 @@ export function AiModePage() {
   const filteredCommands = COMMANDS.filter(c => c.label.toLowerCase().includes(inputText.toLowerCase()));
 
   return (
-    <div className="h-full w-full bg-transparent text-[color:var(--color-depth)] flex flex-col overflow-hidden">
+    <div className="h-full w-full bg-transparent text-[color:var(--color-depth)] relative overflow-hidden">
 
       {/* Modals */}
       {isSettingsOpen && (
@@ -367,8 +367,15 @@ export function AiModePage() {
       )}
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
 
+      {/* ── ORB — pure background layer ── */}
+      <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80 -translate-y-[8%] pointer-events-none">
+        <div className="w-[min(85vw,560px)] h-[min(85vw,560px)] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px]">
+          <Orb state={orbState} />
+        </div>
+      </div>
+
       {/* ── TOP BAR ── Help + Settings (left) | ModeToggle (right) ── */}
-      <div className="flex items-center justify-between px-4 pt-1 pb-0 sm:px-6 sm:pt-2 z-30 shrink-0">
+      <div className="relative z-20 flex items-center justify-between px-4 pt-1 pb-0 sm:px-6 sm:pt-2">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsHelpOpen(true)}
@@ -386,37 +393,27 @@ export function AiModePage() {
         <ModeToggle />
       </div>
 
-      {/* ── CENTER: Orb + Chat overlay ── */}
-      <div className="flex-1 relative overflow-hidden min-h-0">
-        {/* Orb fills the center */}
-        <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80 -translate-y-[12%]">
-          <div className="w-[min(85vw,560px)] h-[min(85vw,560px)] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] relative">
-            <Orb state={orbState} />
-          </div>
-        </div>
+      {/* Action Card overlay */}
+      {activeTx && (
+        <ActionCard tx={activeTx} onConfirm={handleExecuteTx} onCancel={handleCancelTx} />
+      )}
 
-        {/* Action Card overlay */}
-        {activeTx && (
-          <ActionCard tx={activeTx} onConfirm={handleExecuteTx} onCancel={handleCancelTx} />
-        )}
-
-        {/* Chat Stream — anchored to bottom of center area */}
-        <div className="absolute bottom-0 left-0 right-0 z-10 px-4 sm:px-6 pointer-events-none">
-          <div className="max-w-2xl mx-auto">
-            <div className="max-h-[30vh] overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar flex flex-col justify-end pb-2" ref={scrollRef}>
-              {logs.map(log => <ChatMessage key={log.id} entry={log} />)}
-              {orbState === 'THINKING' && (
-                <div className="text-center text-xs text-[color:var(--color-depth)]/50 animate-pulse tracking-widest uppercase mb-2">
-                  Processing
-                </div>
-              )}
-            </div>
+      {/* ── CHAT STREAM — positioned above the input dock ── */}
+      <div className="absolute left-0 right-0 bottom-16 z-10 px-4 sm:px-6 pointer-events-none">
+        <div className="max-w-2xl mx-auto">
+          <div className="max-h-[35vh] overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar flex flex-col justify-end pb-2" ref={scrollRef}>
+            {logs.map(log => <ChatMessage key={log.id} entry={log} />)}
+            {orbState === 'THINKING' && (
+              <div className="text-center text-xs text-[color:var(--color-depth)]/50 animate-pulse tracking-widest uppercase mb-2">
+                Processing
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ── BOTTOM: Input Dock ── */}
-      <div className="shrink-0 px-4 sm:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 z-30">
+      {/* ── INPUT DOCK — pinned to bottom ── */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 px-4 sm:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
         <div className="max-w-xl mx-auto relative">
 
           {/* Slash Commands Popup */}

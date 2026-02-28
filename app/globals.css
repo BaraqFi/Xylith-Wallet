@@ -200,7 +200,18 @@ main {
   }
 }
 
-/* Hide scrollbar but keep scrolling */
+/* Global scrollbar hiding — all pages */
+html,
+body {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none;
+}
+
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }

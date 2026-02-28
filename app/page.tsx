@@ -224,9 +224,19 @@ function HomeContent() {
   );
 }
 
+function StatusBarShield() {
+  return (
+    <div
+      className="fixed top-0 left-0 right-0 z-50 bg-[color:var(--color-surface)]"
+      style={{ height: 'env(safe-area-inset-top)' }}
+    />
+  );
+}
+
 export default function Home() {
   return (
     <AppProvider>
+      <StatusBarShield />
       <BodyScrollManager />
       <HomeContent />
     </AppProvider>
