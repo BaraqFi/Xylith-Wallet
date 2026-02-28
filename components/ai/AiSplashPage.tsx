@@ -8,7 +8,7 @@ interface SplashPageProps {
 
 export const AiSplashPage: React.FC<SplashPageProps> = ({ onGenerate, isGenerating }) => {
   return (
-    <div className="h-[75dvh] min-h-[520px] sm:min-h-[600px] w-full bg-[color:var(--color-surface)] text-[color:var(--color-depth)] flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
+    <div className="h-full w-full bg-[color:var(--color-surface)] text-[color:var(--color-depth)] flex flex-col items-center justify-center p-4 sm:p-6 relative overflow-hidden">
 
       {/* Minimalist Background Elements */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[520px] h-[520px] sm:w-[600px] sm:h-[600px] border border-[color:var(--color-border)] rounded-full animate-[spin_60s_linear_infinite]"></div>

@@ -339,7 +339,17 @@ export function AiModePage() {
 
   // --- Render ---
 
-  if (!wallet) return <SplashPage onGenerate={handleCreateWallet} isGenerating={orbState === 'PROCESSING'} />;
+  if (!wallet) return (
+    <div className="h-full w-full bg-transparent text-[color:var(--color-depth)] flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-4 pt-1 pb-0 sm:px-6 sm:pt-2 z-30 shrink-0">
+        <div />
+        <ModeToggle />
+      </div>
+      <div className="flex-1 min-h-0">
+        <SplashPage onGenerate={handleCreateWallet} isGenerating={orbState === 'PROCESSING'} />
+      </div>
+    </div>
+  );
 
   const filteredCommands = COMMANDS.filter(c => c.label.toLowerCase().includes(inputText.toLowerCase()));
 
@@ -379,7 +389,7 @@ export function AiModePage() {
       {/* ── CENTER: Orb + Chat overlay ── */}
       <div className="flex-1 relative overflow-hidden min-h-0">
         {/* Orb fills the center */}
-        <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80">
+        <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80 -translate-y-[12%]">
           <div className="w-[min(85vw,560px)] h-[min(85vw,560px)] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] relative">
             <Orb state={orbState} />
           </div>
