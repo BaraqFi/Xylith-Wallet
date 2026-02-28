@@ -98,15 +98,15 @@ function WalletContent() {
 
     // FINAL SAFETY DEDUPLICATION
     const uniqueTokens = new Map<string, TokenBalance>();
-    
+
     const getTokenKey = (token: TokenBalance): string => {
-        const isNative = !token.contractAddress || token.contractAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
-        const chainKey = token.evmChain || token.chain;
-        if (isNative) {
-            // For native tokens, key by symbol and chain. This handles native tokens on different chains (e.g. ETH on Ethereum, ETH on Base)
-            return `${token.symbol.toUpperCase()}-${chainKey}`;
-        }
-        return `${token.contractAddress!.toLowerCase()}-${chainKey}`;
+      const isNative = !token.contractAddress || token.contractAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
+      const chainKey = token.evmChain || token.chain;
+      if (isNative) {
+        // For native tokens, key by symbol and chain. This handles native tokens on different chains (e.g. ETH on Ethereum, ETH on Base)
+        return `${token.symbol.toUpperCase()}-${chainKey}`;
+      }
+      return `${token.contractAddress!.toLowerCase()}-${chainKey}`;
     }
 
     allTokens.forEach(t => {
@@ -188,26 +188,32 @@ function Header() {
 }
 
 function BodyScrollManager() {
-  const { currentView } = useApp();
+  const { currentView, mode } = useApp();
 
   useEffect(() => {
-    const isModalOpen = currentView === 'receive' || currentView === 'settings';
-    if (isModalOpen) {
+    const shouldLock = currentView === 'receive' || currentView === 'settings' || mode === 'ai';
+    if (shouldLock) {
       document.body.classList.add('overflow-hidden');
     } else {
       document.body.classList.remove('overflow-hidden');
     }
-  }, [currentView]);
+  }, [currentView, mode]);
 
   return null;
 }
 
 function HomeContent() {
+  const { mode } = useApp();
+  const isAi = mode === "ai";
+
   return (
     <AuthGate>
-      <div className="min-h-screen bg-[color:var(--color-surface)] px-4 py-6 sm:px-8 sm:py-10">
-        <main className="mx-auto w-full">
-          <Header />
+      <div className={isAi
+        ? "h-[100dvh] bg-[color:var(--color-surface)] overflow-hidden"
+        : "min-h-screen bg-[color:var(--color-surface)] px-4 py-6 sm:px-8 sm:py-10"
+      }>
+        <main className={isAi ? "h-full" : "mx-auto w-full"}>
+          {!isAi && <Header />}
           <WalletContent />
           <ReceiveScreenWrapper />
           <SettingsScreenWrapper />

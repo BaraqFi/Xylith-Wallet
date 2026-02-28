@@ -1,14 +1,16 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { AICommand, LogEntry, WalletState, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
+import { LogEntry, WalletState, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
 import { generateWallet, getPriceEstimate, getNativeBalance, sendNativeToken, validateAddress, estimateGasCost, detectChainFromAddress, executeSwap, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
+import { parseUserCommand, summarizeHistory } from "@/lib/ai/geminiService";
 import { AiChatMessage as ChatMessage } from "./AiChatMessage";
 import { AiActionCard as ActionCard } from "./AiActionCard";
 import { AiOrb as Orb } from "./AiOrb";
 import { AiSettingsModal as SettingsModal } from "./AiSettingsModal";
 import { AiHelpModal as HelpModal } from "./AiHelpModal";
 import { AiSplashPage as SplashPage } from "./AiSplashPage";
+import { ModeToggle } from "@/components/app/ModeToggle";
 import { Settings, ArrowUp, Command, HelpCircle } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -342,8 +344,9 @@ export function AiModePage() {
   const filteredCommands = COMMANDS.filter(c => c.label.toLowerCase().includes(inputText.toLowerCase()));
 
   return (
-    <div className="h-[75dvh] min-h-[520px] sm:min-h-[600px] w-full bg-transparent text-[color:var(--color-depth)] relative flex flex-col items-center overflow-hidden selection:bg-[color:var(--color-depth)]/10">
+    <div className="h-full w-full bg-transparent text-[color:var(--color-depth)] flex flex-col overflow-hidden">
 
+      {/* Modals */}
       {isSettingsOpen && (
         <SettingsModal
           onClose={() => setIsSettingsOpen(false)}
@@ -352,72 +355,70 @@ export function AiModePage() {
           wallet={wallet}
         />
       )}
+      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
 
-      <HelpModal
-        isOpen={isHelpOpen}
-        onClose={() => setIsHelpOpen(false)}
-      />
-
-      {/* Controls */}
-      <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-30 flex items-center gap-3 pointer-events-none">
-        <button
-          onClick={() => setIsHelpOpen(true)}
-          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors pointer-events-auto border border-[color:var(--color-border)] shadow-sm"
-        >
-          <HelpCircle size={22} className="text-[color:var(--color-depth)]/80" strokeWidth={2.5} />
-        </button>
-        <button
-          onClick={() => setIsSettingsOpen(true)}
-          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors pointer-events-auto border border-[color:var(--color-border)] shadow-sm"
-        >
-          <Settings size={22} className="text-[color:var(--color-depth)]/80" strokeWidth={2.5} />
-        </button>
-      </div>
-
-      {/* Main Visual Layer */}
-      <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80">
-        <div className="w-[420px] h-[420px] sm:w-[540px] sm:h-[540px] md:w-[680px] md:h-[680px] max-w-[92vw] max-h-[92vw] relative">
-          <Orb state={orbState} />
+      {/* ── TOP BAR ── Help + Settings (left) | ModeToggle (right) ── */}
+      <div className="flex items-center justify-between px-4 pt-3 pb-1 sm:px-6 sm:pt-4 z-30 shrink-0">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsHelpOpen(true)}
+            className="w-10 h-10 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors border border-[color:var(--color-border)] shadow-sm"
+          >
+            <HelpCircle size={22} className="text-[color:var(--color-depth)]/80" strokeWidth={2.5} />
+          </button>
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="w-10 h-10 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors border border-[color:var(--color-border)] shadow-sm"
+          >
+            <Settings size={22} className="text-[color:var(--color-depth)]/80" strokeWidth={2.5} />
+          </button>
         </div>
+        <ModeToggle />
       </div>
 
-      {/* Holographic Overlays */}
-      {activeTx && (
-        <ActionCard
-          tx={activeTx}
-          onConfirm={handleExecuteTx}
-          onCancel={handleCancelTx}
-        />
-      )}
+      {/* ── CENTER: Orb + Chat overlay ── */}
+      <div className="flex-1 relative overflow-hidden min-h-0">
+        {/* Orb fills the center */}
+        <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80">
+          <div className="w-[min(65vw,320px)] h-[min(65vw,320px)] sm:w-[min(50vw,420px)] sm:h-[min(50vw,420px)] md:w-[500px] md:h-[500px] relative">
+            <Orb state={orbState} />
+          </div>
+        </div>
 
-      {/* Chat Stream */}
-      <div className="absolute top-24 sm:top-28 bottom-20 sm:bottom-28 w-full max-w-2xl px-4 sm:px-6 z-10 flex flex-col pointer-events-none">
-        <div className="flex-1 overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar flex flex-col justify-end pb-4" ref={scrollRef}>
-          {logs.map(log => <ChatMessage key={log.id} entry={log} />)}
-          {orbState === 'THINKING' && (
-            <div className="text-center text-xs text-[color:var(--color-depth)]/50 animate-pulse tracking-widest uppercase mb-4">
-              Processing
+        {/* Action Card overlay */}
+        {activeTx && (
+          <ActionCard tx={activeTx} onConfirm={handleExecuteTx} onCancel={handleCancelTx} />
+        )}
+
+        {/* Chat Stream — anchored to bottom of center area */}
+        <div className="absolute bottom-0 left-0 right-0 z-10 px-4 sm:px-6 pointer-events-none">
+          <div className="max-w-2xl mx-auto">
+            <div className="max-h-[30vh] overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar flex flex-col justify-end pb-2" ref={scrollRef}>
+              {logs.map(log => <ChatMessage key={log.id} entry={log} />)}
+              {orbState === 'THINKING' && (
+                <div className="text-center text-xs text-[color:var(--color-depth)]/50 animate-pulse tracking-widest uppercase mb-2">
+                  Processing
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
-      {/* Input Dock */}
-      <div className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] sm:bottom-[max(1.5rem,env(safe-area-inset-bottom))] w-full px-4 sm:px-6 z-30 flex justify-center">
-        <div className="w-full max-w-xl relative">
+      {/* ── BOTTOM: Input Dock ── */}
+      <div className="shrink-0 px-4 sm:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 z-30">
+        <div className="max-w-xl mx-auto relative">
 
           {/* Slash Commands Popup */}
           {showCommands && filteredCommands.length > 0 && (
-            <div className="absolute bottom-full mb-4 left-0 w-full glass-card rounded-2xl overflow-hidden p-1 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-bottom-2">
+            <div className="absolute bottom-full mb-3 left-0 w-full glass-card rounded-2xl overflow-hidden p-1 shadow-2xl animate-in fade-in zoom-in-95 slide-in-from-bottom-2">
               {filteredCommands.map(cmd => (
                 <button
                   key={cmd.id}
                   onClick={() => handleSelectCommand(cmd)}
                   className="w-full text-left px-4 py-3 hover:bg-[color:var(--color-depth)]/5 rounded-xl transition-colors flex items-center gap-3 group"
                 >
-                  <div className="w-8 h-8 rounded-full bg-[color:var(--color-depth)] text-[color:var(--color-surface)] flex items-center justify-center font-mono text-xs shadow-sm group-hover:scale-110 transition-transform">
-                    /
-                  </div>
+                  <div className="w-8 h-8 rounded-full bg-[color:var(--color-depth)] text-[color:var(--color-surface)] flex items-center justify-center font-mono text-xs shadow-sm group-hover:scale-110 transition-transform">/</div>
                   <div>
                     <div className="text-sm font-bold text-[color:var(--color-depth)]">{cmd.label}</div>
                     <div className="text-xs text-[color:var(--color-depth)]/60">{cmd.desc}</div>
@@ -462,5 +463,3 @@ export function AiModePage() {
     </div>
   );
 }
-
-
