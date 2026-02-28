@@ -367,15 +367,15 @@ export function AiModePage() {
       )}
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
 
-      {/* ── ORB — pure background layer ── */}
-      <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80 -translate-y-[8%] pointer-events-none">
-        <div className="w-[min(85vw,560px)] h-[min(85vw,560px)] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px]">
+      {/* ── ORB — z-0 background ── */}
+      <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none opacity-80">
+        <div className="w-[min(85vw,560px)] h-[min(85vw,560px)] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] relative -translate-y-[8%]">
           <Orb state={orbState} />
         </div>
       </div>
 
-      {/* ── TOP BAR ── Help + Settings (left) | ModeToggle (right) ── */}
-      <div className="relative z-20 flex items-center justify-between px-4 pt-1 pb-0 sm:px-6 sm:pt-2">
+      {/* ── TOP BAR — absolute top ── */}
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 pt-1 pb-2 sm:px-6 sm:pt-2">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsHelpOpen(true)}
@@ -398,10 +398,10 @@ export function AiModePage() {
         <ActionCard tx={activeTx} onConfirm={handleExecuteTx} onCancel={handleCancelTx} />
       )}
 
-      {/* ── CHAT STREAM — positioned above the input dock ── */}
-      <div className="absolute left-0 right-0 bottom-16 z-10 px-4 sm:px-6 pointer-events-none">
-        <div className="max-w-2xl mx-auto">
-          <div className="max-h-[35vh] overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar flex flex-col justify-end pb-2" ref={scrollRef}>
+      {/* ── CHAT STREAM — fills between top bar and input dock ── */}
+      <div className="absolute top-14 bottom-14 left-0 right-0 z-10 px-4 sm:px-6 pointer-events-none">
+        <div className="h-full max-w-2xl mx-auto flex flex-col justify-end">
+          <div className="overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar pb-2" ref={scrollRef}>
             {logs.map(log => <ChatMessage key={log.id} entry={log} />)}
             {orbState === 'THINKING' && (
               <div className="text-center text-xs text-[color:var(--color-depth)]/50 animate-pulse tracking-widest uppercase mb-2">
@@ -412,8 +412,8 @@ export function AiModePage() {
         </div>
       </div>
 
-      {/* ── INPUT DOCK — pinned to bottom ── */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 px-4 sm:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2">
+      {/* ── INPUT DOCK — absolute bottom ── */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 px-4 sm:px-6 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1">
         <div className="max-w-xl mx-auto relative">
 
           {/* Slash Commands Popup */}
