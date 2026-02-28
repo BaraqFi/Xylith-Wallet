@@ -358,7 +358,7 @@ export function AiModePage() {
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
 
       {/* ── TOP BAR ── Help + Settings (left) | ModeToggle (right) ── */}
-      <div className="flex items-center justify-between px-4 pt-3 pb-1 sm:px-6 sm:pt-4 z-30 shrink-0">
+      <div className="flex items-center justify-between px-4 pt-1 pb-0 sm:px-6 sm:pt-2 z-30 shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsHelpOpen(true)}
