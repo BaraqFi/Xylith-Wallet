@@ -1,7 +1,7 @@
 import React from 'react';
 import { LogEntry } from '@/lib/ai/types';
 import clsx from 'clsx';
-import { Sparkles } from 'lucide-react';
+import { Star } from 'lucide-react';
 
 interface ChatMessageProps {
   entry: LogEntry;
@@ -23,23 +23,29 @@ export const AiChatMessage: React.FC<ChatMessageProps> = ({ entry }) => {
       <div className={clsx("max-w-[300px] md:max-w-md animate-in fade-in slide-in-from-bottom-2 duration-500", isUser ? "text-right" : "text-left")}>
 
         {isUser ? (
-          <div className="inline-block bg-[color:var(--color-depth)] text-[color:var(--color-surface)] px-5 py-3 rounded-2xl rounded-br-none shadow-xl text-sm font-medium">
-            {entry.content}
-          </div>
-        ) : (
-          <div className="flex gap-3">
-            <div className="w-6 h-6 rounded-full bg-[color:var(--color-depth)]/5 border border-[color:var(--color-border)] flex items-center justify-center shrink-0 mt-1">
-              {entry.type === 'ERROR' ? <div className="w-2 h-2 bg-red-500 rounded-full" /> : <Sparkles size={12} className="text-[color:var(--color-depth)]/50" />}
-            </div>
-            <div className={clsx("text-sm font-medium leading-relaxed pt-1", entry.type === 'ERROR' ? "text-red-500" : "text-[color:var(--color-depth)]/90")}>
+          <>
+            <div className="inline-block bg-[color:var(--color-depth)] text-[color:var(--color-surface)] px-5 py-3 rounded-2xl rounded-br-none shadow-xl text-base font-medium">
               {entry.content}
             </div>
+            <span className="text-[10px] text-[color:var(--color-depth)]/50 mt-2 block px-1 uppercase tracking-widest font-bold text-right">
+              You
+            </span>
+          </>
+        ) : (
+          <div className="flex flex-col gap-1 items-start w-full">
+            <div className="flex items-start gap-3">
+              <div className="w-8 h-8 rounded-full bg-[color:var(--color-depth)]/10 border border-[color:var(--color-border)] flex items-center justify-center shrink-0 mt-0.5">
+                {entry.type === 'ERROR' ? <div className="w-3 h-3 bg-red-500 rounded-full" /> : <Star size={18} className="text-[color:var(--color-depth)]/70" strokeWidth={2.5} />}
+              </div>
+              <div className={clsx("text-base font-medium leading-relaxed italic", entry.type === 'ERROR' ? "text-red-500" : "text-[color:var(--color-depth)]/90")}>
+                {entry.content}
+              </div>
+            </div>
+            <span className="text-[10px] text-[color:var(--color-depth)]/50 mt-1 uppercase tracking-widest font-bold self-start pl-11">
+              Xylith AI
+            </span>
           </div>
         )}
-
-        <span className="text-[9px] text-[color:var(--color-depth)]/40 mt-1 block px-1 uppercase tracking-widest">
-          {isUser ? "You" : "Xylith AI"}
-        </span>
       </div>
     </div>
   );

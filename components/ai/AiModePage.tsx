@@ -359,18 +359,18 @@ export function AiModePage() {
       />
 
       {/* Controls */}
-      <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-30 flex items-center gap-2 pointer-events-none">
+      <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-30 flex items-center gap-3 pointer-events-none">
         <button
           onClick={() => setIsHelpOpen(true)}
-          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors pointer-events-auto border border-[color:var(--color-border)]"
+          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors pointer-events-auto border border-[color:var(--color-border)] shadow-sm"
         >
-          <HelpCircle size={18} className="text-[color:var(--color-depth)]/70" />
+          <HelpCircle size={22} className="text-[color:var(--color-depth)]/80" strokeWidth={2.5} />
         </button>
         <button
           onClick={() => setIsSettingsOpen(true)}
-          className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors pointer-events-auto border border-[color:var(--color-border)]"
+          className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center transition-colors pointer-events-auto border border-[color:var(--color-border)] shadow-sm"
         >
-          <Settings size={20} className="text-[color:var(--color-depth)]/70" />
+          <Settings size={22} className="text-[color:var(--color-depth)]/80" strokeWidth={2.5} />
         </button>
       </div>
 
