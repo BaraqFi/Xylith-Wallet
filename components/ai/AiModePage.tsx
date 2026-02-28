@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { LogEntry, WalletState, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
+import { AICommand, LogEntry, WalletState, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
 import { generateWallet, getPriceEstimate, getNativeBalance, sendNativeToken, validateAddress, estimateGasCost, detectChainFromAddress, executeSwap, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
 import { parseUserCommand, summarizeHistory } from "@/lib/ai/geminiService";
 import { AiChatMessage as ChatMessage } from "./AiChatMessage";
@@ -380,7 +380,7 @@ export function AiModePage() {
       <div className="flex-1 relative overflow-hidden min-h-0">
         {/* Orb fills the center */}
         <div className="absolute inset-0 z-0 flex items-center justify-center opacity-80">
-          <div className="w-[min(65vw,320px)] h-[min(65vw,320px)] sm:w-[min(50vw,420px)] sm:h-[min(50vw,420px)] md:w-[500px] md:h-[500px] relative">
+          <div className="w-[min(85vw,560px)] h-[min(85vw,560px)] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] relative">
             <Orb state={orbState} />
           </div>
         </div>
