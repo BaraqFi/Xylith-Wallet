@@ -271,9 +271,22 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                         try {
                             const moralisTokens = await getTokenBalancesFromMoralis(address, currentEvmChain);
                             moralisTokens.forEach((token) => {
-                                if (token.contractAddress) {
+                                // Normalise native tokens so we don't get duplicate ETH rows
+                                // like "Ether" vs "Ethereum" from different sources.
+                                let rawAddr = token.contractAddress?.toLowerCase() || "";
+                                if (token.symbol === "ETH" && currentEvmChain === "ethereum") {
+                                    // Moralis often uses the 0xeeee... sentinel for native ETH.
+                                    // Treat that as the canonical native address so it merges
+                                    // with our default ETH token instead of appearing twice.
+                                    const sentinel = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+                                    if (!rawAddr || rawAddr === sentinel) {
+                                        rawAddr = NATIVE_TOKEN_ADDRESSES.ethereum;
+                                    }
+                                }
+
+                                if (rawAddr) {
                                     moralisBalances.set(
-                                        token.contractAddress.toLowerCase(),
+                                        rawAddr,
                                         {
                                             balance: token.tokenBalance,
                                             metadata: {

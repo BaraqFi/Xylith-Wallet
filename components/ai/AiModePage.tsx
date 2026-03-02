@@ -376,7 +376,7 @@ export function AiModePage() {
           viewports, and caps it by viewport height as well as width so it
           stays balanced across PWA / mobile web / desktop.
         */}
-        <div className="relative w-[min(110vw,520px)] h-[min(110vw,520px)] max-h-[70vh] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] -translate-y-[2%] sm:-translate-y-[4%] md:-translate-y-[8%]">
+        <div className="relative w-[min(110vw,520px)] h-[min(110vw,520px)] max-h-[70vh] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] -translate-y-[10%] sm:-translate-y-[8%] md:-translate-y-[6%]">
           <Orb state={orbState} />
         </div>
       </div>
