@@ -369,7 +369,14 @@ export function AiModePage() {
 
       {/* ── ORB — z-0 background ── */}
       <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none opacity-80">
-        <div className="w-[min(85vw,560px)] h-[min(85vw,560px)] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] relative -translate-y-[8%]">
+        {/* 
+          PWA standalone on mobile was leaving too much vertical dead space
+          around the orb, which visually pushed the chat area down.
+          The sizing below makes the orb larger and slightly lower on small
+          viewports, and caps it by viewport height as well as width so it
+          stays balanced across PWA / mobile web / desktop.
+        */}
+        <div className="relative w-[min(110vw,520px)] h-[min(110vw,520px)] max-h-[70vh] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] -translate-y-[2%] sm:-translate-y-[4%] md:-translate-y-[8%]">
           <Orb state={orbState} />
         </div>
       </div>

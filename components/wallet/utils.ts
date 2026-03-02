@@ -56,21 +56,59 @@ export function groupTokensBySymbol(tokens: TokenBalance[]): GroupedToken[] {
 
   const grouped = tokens.reduce((acc, token) => {
     const key = token.symbol;
+
     if (!acc[key]) {
       acc[key] = {
         symbol: token.symbol,
         name: token.name,
-        logo: token.logo || '',
+        logo: token.logo || "",
         totalUsdValue: 0,
         chains: [],
       };
     }
-    acc[key].totalUsdValue += token.usdValue;
-    acc[key].chains.push(token);
-    // Update logo if current token has one and group doesn't
-    if (token.logo && !acc[key].logo) {
-      acc[key].logo = token.logo;
+
+    const group = acc[key];
+
+    // Use a composite instance key so we don't double-count the same
+    // token instance (same chain / evmChain / contractAddress).
+    const instanceKeyParts = [
+      token.chain,
+      token.evmChain || "",
+      (token.contractAddress || "native").toLowerCase(),
+    ];
+    const instanceKey = instanceKeyParts.join(":");
+
+    const existingIndex = group.chains.findIndex((t) => {
+      const existingParts = [
+        t.chain,
+        t.evmChain || "",
+        (t.contractAddress || "native").toLowerCase(),
+      ];
+      return existingParts.join(":") === instanceKey;
+    });
+
+    if (existingIndex === -1) {
+      // First time we see this instance – add it and include its value.
+      group.totalUsdValue += token.usdValue;
+      group.chains.push(token);
+    } else {
+      // Duplicate instance (e.g. the same ETH balance surfaced twice);
+      // merge values instead of rendering a second row.
+      const existing = group.chains[existingIndex];
+      const merged: TokenBalance = {
+        ...existing,
+        amount: existing.amount + token.amount,
+        usdValue: existing.usdValue + token.usdValue,
+      };
+      group.chains[existingIndex] = merged;
+      group.totalUsdValue += token.usdValue;
     }
+
+    // Update logo if current token has one and group doesn't
+    if (token.logo && !group.logo) {
+      group.logo = token.logo;
+    }
+
     return acc;
   }, {} as Record<string, GroupedToken>);
 

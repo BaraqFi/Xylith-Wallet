@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAddress } from "viem";
 
 interface AlchemyTransfer {
     category: "external" | "erc20" | "erc721" | "erc1155";
@@ -18,6 +19,85 @@ interface AlchemyTransfer {
 
 type AlchemyChain = "ethereum" | "base" | "arbitrum" | "optimism" | "polygon" | "bsc";
 
+// Simple in-memory rate limiter and response cache to protect upstream RPCs.
+// Note: These are best-effort protections and complement client-side caching.
+
+const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 60; // per IP per window
+
+type RateLimitEntry = {
+  count: number;
+  windowStart: number;
+};
+
+const rateLimitStore = new Map<string, RateLimitEntry>();
+
+function getClientIp(req: NextRequest): string {
+  // Vercel / Next will often populate req.ip; fall back to X-Forwarded-For.
+  const directIp = (req as any).ip as string | undefined;
+  if (directIp) return directIp;
+
+  const xff = req.headers.get("x-forwarded-for");
+  if (xff) {
+    const first = xff.split(",")[0]?.trim();
+    if (first) return first;
+  }
+
+  return "unknown";
+}
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const existing = rateLimitStore.get(ip);
+
+  if (!existing || now - existing.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitStore.set(ip, { count: 1, windowStart: now });
+    return false;
+  }
+
+  existing.count += 1;
+  if (existing.count > RATE_LIMIT_MAX_REQUESTS) {
+    return true;
+  }
+
+  return false;
+}
+
+type CacheKey = string;
+
+interface CacheEntry {
+  timestamp: number;
+  items: unknown[];
+}
+
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+const responseCache = new Map<CacheKey, CacheEntry>();
+
+function makeCacheKey(chain: AlchemyChain, address: string, limit: number): CacheKey {
+  return `${chain}:${address.toLowerCase()}:${limit}`;
+}
+
+function getCachedHistory(chain: AlchemyChain, address: string, limit: number): unknown[] | null {
+  const key = makeCacheKey(chain, address, limit);
+  const entry = responseCache.get(key);
+  if (!entry) return null;
+
+  if (Date.now() - entry.timestamp > CACHE_TTL_MS) {
+    responseCache.delete(key);
+    return null;
+  }
+
+  return entry.items;
+}
+
+function setCachedHistory(chain: AlchemyChain, address: string, limit: number, items: unknown[]): void {
+  const key = makeCacheKey(chain, address, limit);
+  responseCache.set(key, {
+    timestamp: Date.now(),
+    items,
+  });
+}
+
 /**
  * Transaction History API Route
  * 
@@ -30,11 +110,11 @@ export async function GET(req: NextRequest) {
     const address = searchParams.get("address");
     const limit = parseInt(searchParams.get("limit") || "20", 10);
 
-    if (!chainId) {
-        return NextResponse.json({ error: "Missing chainId" }, { status: 400 });
+    if (!chainId || !/^\d+$/.test(chainId)) {
+        return NextResponse.json({ error: "Invalid or missing chainId" }, { status: 400 });
     }
-    if (!address) {
-        return NextResponse.json({ error: "Missing address" }, { status: 400 });
+    if (!address || !isAddress(address)) {
+        return NextResponse.json({ error: "Invalid or missing address" }, { status: 400 });
     }
 
     // Map chainId to EVMChain
@@ -50,6 +130,14 @@ export async function GET(req: NextRequest) {
     const chain = chainIdMap[parseInt(chainId, 10)] as AlchemyChain;
     if (!chain) {
         return NextResponse.json({ error: `Unsupported chainId: ${chainId}` }, { status: 400 });
+    }
+
+    const clientIp = getClientIp(req);
+    if (isRateLimited(clientIp)) {
+        return NextResponse.json(
+            { error: "Too many requests. Please slow down." },
+            { status: 429 },
+        );
     }
 
     const apiKey = process.env.ALCHEMY_API_KEY; // Server-side only
@@ -78,6 +166,12 @@ export async function GET(req: NextRequest) {
             );
         }
 
+        // Check short-lived in-memory cache before hitting Alchemy.
+        const cached = getCachedHistory(chain, address, limit);
+        if (cached) {
+            return NextResponse.json({ items: cached });
+        }
+
         const response = await fetch(apiUrl, {
             method: "POST",
             headers: {
@@ -101,6 +195,8 @@ export async function GET(req: NextRequest) {
                     },
                 ],
             }),
+            // Allow Vercel/Next to cache successful responses briefly per payload.
+            next: { revalidate: 60 },
         });
 
         if (!response.ok) {
@@ -220,6 +316,9 @@ export async function GET(req: NextRequest) {
                 };
             })
         );
+
+        // Store in best-effort in-memory cache to protect upstream RPCs.
+        setCachedHistory(chain, address, limit, enrichedTransactions);
 
         return NextResponse.json({ items: enrichedTransactions });
       } catch (error: unknown) {

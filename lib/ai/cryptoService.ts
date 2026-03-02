@@ -1,20 +1,59 @@
-import { WalletState, Chain, TxHistoryItem } from './types';
-import { ethers } from 'ethers';
-import { Connection, Keypair, LAMPORTS_PER_SOL, PublicKey, SystemProgram, Transaction as SolTransaction } from '@solana/web3.js';
-import { Buffer } from 'buffer';
-
-// --- Polyfills ---
-if (typeof window !== 'undefined' && !('Buffer' in window)) {
-  (window as unknown as { Buffer: typeof Buffer }).Buffer = Buffer;
-}
+import { WalletState, Chain, TxHistoryItem } from "./types";
+import { ethers } from "ethers";
+import {
+  Connection,
+  Keypair,
+  LAMPORTS_PER_SOL,
+  PublicKey,
+  SystemProgram,
+  Transaction as SolTransaction,
+} from "@solana/web3.js";
+import { Buffer } from "buffer";
 
 // --- Configuration ---
-const RPC_URLS = {
-  ETH: "https://mainnet.infura.io/v3/130e67c0efa644a58a0bdb031a053a0a",
-  BASE: "https://mainnet.base.org",
-  ARB: "https://arb1.arbitrum.io/rpc",
-  SOL: "https://api.mainnet-beta.solana.com"
+// AI engine must NEVER talk directly to third‑party RPC URLs with embedded keys.
+// Instead, it talks only to our own `/api/rpc` proxy, which internally uses
+// the configured ETH / Solana RPC stack and keeps provider keys on the server.
+
+type RpcChainForProxy = "ethereum" | "base" | "arbitrum" | "optimism" | "polygon" | "bsc";
+
+const CHAIN_MAP: Record<Exclude<Chain, "SOL">, RpcChainForProxy> = {
+  ETH: "ethereum",
+  BASE: "base",
+  ARB: "arbitrum",
 };
+
+function getRpcProxyUrl(chain: RpcChainForProxy): string {
+  if (typeof window !== "undefined") {
+    return `/api/rpc?chain=${chain}`;
+  }
+  const base =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}` ||
+    "http://localhost:3000";
+  return `${base}/api/rpc?chain=${chain}`;
+}
+
+function getEvmProvider(chain: Exclude<Chain, "SOL">): ethers.JsonRpcProvider {
+  const mapped = CHAIN_MAP[chain];
+  if (!mapped) {
+    throw new Error(`Unsupported EVM chain for AI RPC: ${chain}`);
+  }
+
+  const url = getRpcProxyUrl(mapped);
+  return new ethers.JsonRpcProvider(url);
+}
+
+function getSolanaConnection(): Connection {
+  const url =
+    typeof window !== "undefined"
+      ? "/api/rpc?chain=solana"
+      : (process.env.NEXT_PUBLIC_SITE_URL ||
+          (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`) ||
+          "http://localhost:3000") + "/api/rpc?chain=solana";
+
+  return new Connection(url, "confirmed");
+}
 
 const DEX_ROUTERS = {
   ETH: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D", // Uniswap V2 Router (Example)
@@ -76,18 +115,23 @@ export const detectChainFromAddress = (address: string): Chain | null => {
   return null;
 };
 
-export const estimateGasCost = async (chain: Chain, from: string, to: string, amount: number): Promise<string> => {
-  if (chain === 'ETH') checkEthRateLimit();
+export const estimateGasCost = async (
+  chain: Chain,
+  from: string,
+  to: string,
+  amount: number,
+): Promise<string> => {
+  if (chain === "ETH") checkEthRateLimit();
 
   try {
-    if (chain === 'SOL') {
+    if (chain === "SOL") {
       return "0.000005 SOL";
     } else {
-      const provider = new ethers.JsonRpcProvider(RPC_URLS[chain]);
+      const provider = getEvmProvider(chain);
       const gasEstimate = await provider.estimateGas({
         from,
         to,
-        value: ethers.parseEther(amount.toString())
+        value: ethers.parseEther(amount.toString()),
       });
       const feeData = await provider.getFeeData();
       const gasPrice = feeData.gasPrice ?? 0n;
@@ -95,7 +139,6 @@ export const estimateGasCost = async (chain: Chain, from: string, to: string, am
       return `${parseFloat(ethers.formatEther(costWei)).toFixed(6)} ${chain}`;
     }
   } catch {
-    // console.error("Gas estimation failed");
     return "0.001 " + chain; // Fallback for UI
   }
 };
@@ -106,12 +149,12 @@ export const getNativeBalance = async (address: string, chain: Chain): Promise<n
 
   try {
     if (chain === 'SOL') {
-      const connection = new Connection(RPC_URLS.SOL);
+      const connection = getSolanaConnection();
       const publicKey = new PublicKey(address);
       const balance = await connection.getBalance(publicKey);
       return balance / LAMPORTS_PER_SOL;
     } else {
-      const provider = new ethers.JsonRpcProvider(RPC_URLS[chain]);
+      const provider = getEvmProvider(chain);
       const balance = await provider.getBalance(address);
       return parseFloat(ethers.formatEther(balance));
     }
@@ -125,7 +168,7 @@ export const getNativeBalance = async (address: string, chain: Chain): Promise<n
 export const getTransactionHistory = async (chain: Chain, address: string, limit: number = 5): Promise<TxHistoryItem[]> => {
   try {
     if (chain === 'SOL') {
-      const connection = new Connection(RPC_URLS.SOL);
+      const connection = getSolanaConnection();
       const pubKey = new PublicKey(address);
       const signatures = await connection.getSignaturesForAddress(pubKey, { limit: limit });
 
@@ -138,32 +181,10 @@ export const getTransactionHistory = async (chain: Chain, address: string, limit
         chain: 'SOL'
       }));
 
-    } else if (chain === 'ETH') {
-      // Etherscan API fallback (Free tier, no key required for basic tests, or use 'YourApiKeyToken' as generic placeholder)
-      // Note: In production, use a real API key in env vars.
-      const response = await fetch(`https://api.etherscan.io/api?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=${limit}&sort=desc&apikey=YourApiKeyToken`);
-      const data = await response.json();
-
-      if (data.status === "0" && data.message === "No transactions found") {
-        return [];
-      }
-
-      if (data.result && Array.isArray(data.result)) {
-        return data.result.map((tx: Record<string, string>) => ({
-          hash: tx.hash,
-          from: tx.from,
-          to: tx.to || "",
-          value: parseFloat(ethers.formatEther(tx.value)),
-          timestamp: parseInt(tx.timeStamp),
-          success: tx.isError === "0",
-          chain: 'ETH'
-        }));
-      }
-
-      return [];
-
     } else {
-      return []; // Not supported for L2s in this demo version without specific indexers
+      // For EVM chains, defer to the main app's indexed history instead of
+      // calling third-party explorers from AI. This keeps history logic in one place.
+      return [];
     }
   } catch (error) {
     console.error(`History fetch failed for ${chain}:`, error);
@@ -182,7 +203,7 @@ export const sendNativeToken = async (
   if (chain === 'ETH') checkEthRateLimit();
 
   if (chain === 'SOL') {
-    const connection = new Connection(RPC_URLS.SOL, 'confirmed');
+    const connection = getSolanaConnection();
     const secretKey = Uint8Array.from(Buffer.from(wallet.solPrivateKey, 'hex'));
     const sender = Keypair.fromSecretKey(secretKey);
     const toPublicKey = new PublicKey(recipient);
@@ -199,12 +220,12 @@ export const sendNativeToken = async (
     return { hash: signature };
 
   } else {
-    const provider = new ethers.JsonRpcProvider(RPC_URLS[chain]);
+    const provider = getEvmProvider(chain);
     const signer = new ethers.Wallet(wallet.evmPrivateKey, provider);
 
     const tx = await signer.sendTransaction({
       to: recipient,
-      value: ethers.parseEther(amount.toString())
+      value: ethers.parseEther(amount.toString()),
     });
 
     return { hash: tx.hash };
