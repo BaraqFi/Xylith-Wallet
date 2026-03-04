@@ -40,6 +40,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+
+docs/
+
 xylithWallet.txt
 xylithArchitecture.txt
 xylithUi.jpg
@@ -54,3 +57,7 @@ implementation-plan.md
 optimize.txt
 moralisDocs
 changes.txt
+UltraSwap/
+
+security_audit_fix_log.md
+security_audit_findings.md

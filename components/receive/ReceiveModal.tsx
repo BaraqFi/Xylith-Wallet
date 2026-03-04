@@ -1,7 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { usePrivy } from "@privy-io/react-auth";
+
+interface PrivyAccountWithChain {
+  type: 'wallet';
+  address: string;
+  chainType?: 'ethereum' | 'solana';
+}
 import { useApp } from "../app/AppContext";
 import { manualWalletState, Chain } from "../wallet/data";
 import { Button } from "@/components/ui/button";
@@ -9,14 +15,14 @@ import { Copy, Check, X, AlertTriangle } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 
 export function ReceiveScreen() {
-  const { currentView, setCurrentView, activeChain, setActiveChain } = useApp();
+  const { currentView, setCurrentView, activeChain } = useApp();
   const { user } = usePrivy();
   const [selectedChain, setSelectedChain] = useState<Chain>(activeChain);
   const modalRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const firstFocusableRef = useRef<HTMLButtonElement | null>(null);
 
-  const handleClose = () => setCurrentView("wallet");
+  const handleClose = useCallback(() => setCurrentView("wallet"), [setCurrentView]);
 
   useEffect(() => {
     if (currentView !== "receive") return;
@@ -44,7 +50,7 @@ export function ReceiveScreen() {
       // Restore focus to previously focused element
       previousFocusRef.current?.focus();
     };
-  }, [currentView, setCurrentView]);
+  }, [currentView, handleClose]);
 
   // Focus trap: keep focus within modal
   useEffect(() => {
@@ -79,13 +85,14 @@ export function ReceiveScreen() {
     return () => modal.removeEventListener("keydown", handleTabKey);
   }, [currentView]);
 
+  const [copied, setCopied] = useState(false);
+  const [showQr, setShowQr] = useState(false);
+
   if (currentView !== "receive") return null;
 
   const handleChainChange = (chain: Chain) => {
     setSelectedChain(chain);
   };
-  const [copied, setCopied] = useState(false);
-  const [showQr, setShowQr] = useState(false);
 
   let actualEvmAddress = manualWalletState.address;
   let actualSolAddress = manualWalletState.solanaAddress;
@@ -93,18 +100,22 @@ export function ReceiveScreen() {
   if (user?.linkedAccounts?.length) {
     // Find embedded or linked EVM wallet
     const evmAccount = user.linkedAccounts.find(
-      (acc) =>
-        acc.type === "wallet" &&
-        (acc as any).chainType === "ethereum" && // safe cast – Privy still ships untyped chainType in 3.8.x
-        typeof (acc as any).address === "string"
+      (acc) => {
+        const privyAcc = acc as PrivyAccountWithChain;
+        return privyAcc.type === "wallet" &&
+          privyAcc.chainType === "ethereum" &&
+          typeof privyAcc.address === "string"
+      }
     );
 
     // Find embedded or linked Solana wallet
     const solanaAccount = user.linkedAccounts.find(
-      (acc) =>
-        acc.type === "wallet" &&
-        (acc as any).chainType === "solana" &&
-        typeof (acc as any).address === "string"
+      (acc) => {
+        const privyAcc = acc as PrivyAccountWithChain;
+        return privyAcc.type === "wallet" &&
+          privyAcc.chainType === "solana" &&
+          typeof privyAcc.address === "string"
+      }
     );
 
     if (

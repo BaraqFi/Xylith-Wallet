@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useApp } from "../app/AppContext";
 import { TokenBalance, SUPPORTED_CHAINS } from "../wallet/data";
 import { ChainLogo } from "../wallet/ChainLogo";
@@ -43,8 +43,10 @@ import { useSwapSecurity, useTokenSecurity } from "@/hooks/useSecurityCheck";
 import { AlertTriangle, AlertCircle, Info } from "lucide-react";
 import { solanaClient } from "@/lib/solana/client";
 import { VersionedTransaction } from "@solana/web3.js";
+import { ultraClient } from "@/lib/ultra/client";
 import { Chain, EVMChain } from "../wallet/data"; // Ensure Chain type is imported
 import { useSolanaTokenList } from "@/hooks/useSolanaTokenList";
+import { useSolanaShield } from "@/hooks/useSolanaShield";
 
 // OneInch V6 Router
 const AGGREGATION_ROUTER_V6 = "0x111111125421ca6dc452d289314280a0f8842a65";
@@ -185,6 +187,12 @@ export function SwapFlow() {
   const [showSlippageSettings, setShowSlippageSettings] = useState(false);
   const [percentage, setPercentage] = useState(0);
 
+  // Search state persistence
+  const [fromSearchQuery, setFromSearchQuery] = useState("");
+  const [toSearchQuery, setToSearchQuery] = useState("");
+  const [fromRemoteResults, setFromRemoteResults] = useState<TokenBalance[]>([]); // Added for persistence
+  const [toRemoteResults, setToRemoteResults] = useState<TokenBalance[]>([]);     // Added for persistence
+
   const { user, sendTransaction } = usePrivy();
   const { wallets } = useWallets();
 
@@ -221,6 +229,16 @@ export function SwapFlow() {
 
   // "To" token list:
   const toTokenList = selectedChain === 'Solana' ? solanaTokenList : filteredTokensForChain;
+
+  // Solana Shield warnings for selected tokens (primary for Solana)
+  // Memoize to prevent infinite re-renders due to new array reference on every render
+  const solanaTokensForShield = useMemo(() => {
+    return selectedChain === 'Solana'
+      ? [fromToken, toToken].filter((t): t is TokenBalance => !!t && t.chain === 'Solana')
+      : [];
+  }, [selectedChain, fromToken, toToken]);
+
+  const { warnings: solanaShieldWarnings } = useSolanaShield(solanaTokensForShield, solanaTokensForShield.length > 0);
 
   // --- EVM Quote Hook ---
   const getChainId = (t: TokenBalance | null) => {
@@ -510,10 +528,19 @@ export function SwapFlow() {
         const transaction = VersionedTransaction.deserialize(txBuffer);
         const signedTx = await (solanaWallet as any).signTransaction(transaction);
         const serializedTx = signedTx.serialize();
-        const signature = await solanaClient.sendRawTransaction(
-          Buffer.from(serializedTx).toString('base64')
-        );
-        console.log("Solana Swap Executed:", signature);
+        const signedTxBase64 = Buffer.from(serializedTx).toString('base64');
+
+        const requestId = (solQuote as any)?.requestId;
+        if (!requestId || typeof requestId !== "string") {
+          throw new Error("Missing Ultra requestId for swap execution");
+        }
+
+        const executeResponse = await ultraClient.executeOrder({
+          signedTransaction: signedTxBase64,
+          requestId,
+        });
+
+        console.log("Solana Ultra Swap Executed:", executeResponse?.signature || executeResponse);
         setStep("success");
       } else {
         const txData = await fetchEvmSwap();
@@ -548,6 +575,89 @@ export function SwapFlow() {
     setError("");
   };
 
+  // Search Handler for both Solana and EVM Tokens
+  const handleSearch = useCallback(async (query: string, setResultsState?: (results: TokenBalance[]) => void): Promise<TokenBalance[]> => {
+    if (!query || query.trim().length < 2) {
+      setResultsState?.([]); // Clear results if query is too short
+      return [];
+    }
+
+    try {
+      let results: TokenBalance[] = [];
+      if (selectedChain === 'Solana') {
+        // Solana search via Jupiter, with Ultra as fallback
+        try {
+          const res = await fetch(`/api/jupiter/tokens?query=${encodeURIComponent(query)}`);
+          if (!res.ok) {
+            throw new Error("Search failed");
+          }
+          const data = await res.json();
+          results = data.map((t: { symbol: string; name: string; address: string; decimals: number; logoURI: string; }) => ({
+            symbol: t.symbol,
+            name: t.name,
+            chain: "Solana",
+            amount: 0,
+            usdValue: 0,
+            contractAddress: t.address,
+            decimals: t.decimals,
+            logo: t.logoURI,
+          }));
+        } catch {
+          const res = await fetch(`/api/ultra/search?query=${encodeURIComponent(query)}`);
+          if (!res.ok) throw new Error("Search failed");
+          const data = await res.json();
+          results = data.map((t: { symbol: string; name: string; address: string; decimals: number; logoURI: string; }) => ({
+            symbol: t.symbol,
+            name: t.name,
+            chain: "Solana",
+            amount: 0,
+            usdValue: 0,
+            contractAddress: t.address,
+            decimals: t.decimals,
+            logo: t.logoURI,
+          }));
+        }
+      } else if (selectedChain === 'EVM' && selectedEvmChain) {
+        // EVM search via Moralis (with CoinGecko fallback)
+        const res = await fetch(
+          `/api/evm/search?query=${encodeURIComponent(query)}&chain=${selectedEvmChain}`
+        );
+        if (!res.ok) {
+          // If error response, try to parse error or return empty
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || "Search failed");
+        }
+        const data = await res.json();
+        // Ensure results match TokenBalance format
+        results = data.map((t: { symbol: string; name: string; evmChain?: string; amount?: number; usdValue?: number; contractAddress: string; decimals?: number; logo?: string; }) => ({
+          symbol: t.symbol,
+          name: t.name,
+          chain: "EVM",
+          evmChain: selectedEvmChain,
+          amount: t.amount || 0,
+          usdValue: t.usdValue || 0,
+          contractAddress: t.contractAddress,
+          decimals: t.decimals || 18,
+          logo: t.logo,
+        }));
+      }
+      setResultsState?.(results); // Update parent's state
+      return results;
+    } catch (err) {
+      console.error("Token search failed", err);
+      setResultsState?.([]); // Clear results on error
+      return [];
+    }
+  }, [selectedChain, selectedEvmChain]);
+
+  const handleFromSearch = useCallback(async (query: string): Promise<TokenBalance[]> => {
+    return handleSearch(query, setFromRemoteResults);
+  }, [handleSearch]);
+
+  const handleToSearch = useCallback(async (query: string): Promise<TokenBalance[]> => {
+    return handleSearch(query, setToRemoteResults);
+  }, [handleSearch]);
+
   const getChainLabel = (token: TokenBalance) => {
     if (token.evmChain) {
       return (
@@ -575,57 +685,6 @@ export function SwapFlow() {
     return SUPPORTED_CHAINS.find(c => c.value === selectedEvmChain);
   };
   const currentChainOption = getCurrentChainOption();
-
-  // Search Handler for both Solana and EVM Tokens
-  const handleSearch = async (query: string): Promise<TokenBalance[]> => {
-    if (!query || query.trim().length < 2) return [];
-
-    try {
-      if (selectedChain === 'Solana') {
-        // Solana search via Jupiter
-        const res = await fetch(`/api/jupiter/tokens?query=${encodeURIComponent(query)}`);
-        if (!res.ok) throw new Error("Search failed");
-        const data = await res.json();
-        return data.map((t: any) => ({
-          symbol: t.symbol,
-          name: t.name,
-          chain: "Solana",
-          amount: 0,
-          usdValue: 0,
-          contractAddress: t.address,
-          decimals: t.decimals,
-          logo: t.logoURI,
-        }));
-      } else if (selectedChain === 'EVM' && selectedEvmChain) {
-        // EVM search via Moralis (with CoinGecko fallback)
-        const res = await fetch(
-          `/api/evm/search?query=${encodeURIComponent(query)}&chain=${selectedEvmChain}`
-        );
-        if (!res.ok) {
-          // If error response, try to parse error or return empty
-          const errorData = await res.json().catch(() => ({}));
-          throw new Error(errorData.error || "Search failed");
-        }
-        const data = await res.json();
-        // Ensure results match TokenBalance format
-        return data.map((t: any) => ({
-          symbol: t.symbol,
-          name: t.name,
-          chain: "EVM",
-          evmChain: selectedEvmChain,
-          amount: t.amount || 0,
-          usdValue: t.usdValue || 0,
-          contractAddress: t.contractAddress,
-          decimals: t.decimals || 18,
-          logo: t.logo,
-        }));
-      }
-      return [];
-    } catch (err) {
-      console.error("Token search failed", err);
-      return [];
-    }
-  };
 
   const renderHeader = (title: string) => (
     <div className="mb-6 flex items-center justify-between">
@@ -765,6 +824,19 @@ export function SwapFlow() {
                 <p className="font-semibold">{amount} {fromToken!.symbol}</p>
               </div>
             </div>
+            {isSolanaSwap && fromToken?.contractAddress && solanaShieldWarnings[fromToken.contractAddress]?.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {solanaShieldWarnings[fromToken.contractAddress].map((w, idx) => (
+                  <div
+                    key={`${fromToken.contractAddress}-from-${idx}`}
+                    className="flex items-start gap-2 text-xs text-[color:var(--color-depth)]/80"
+                  >
+                    <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5" />
+                    <span>{w.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex justify-center">
@@ -783,6 +855,19 @@ export function SwapFlow() {
                 <p className="font-semibold">{estimatedAmount} {toToken!.symbol}</p>
               </div>
             </div>
+            {isSolanaSwap && toToken?.contractAddress && solanaShieldWarnings[toToken.contractAddress]?.length > 0 && (
+              <div className="mt-3 space-y-1">
+                {solanaShieldWarnings[toToken.contractAddress].map((w, idx) => (
+                  <div
+                    key={`${toToken.contractAddress}-to-${idx}`}
+                    className="flex items-start gap-2 text-xs text-[color:var(--color-depth)]/80"
+                  >
+                    <AlertTriangle className="h-3 w-3 text-yellow-500 mt-0.5" />
+                    <span>{w.message}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Action Buttons */}
@@ -949,9 +1034,12 @@ export function SwapFlow() {
           onClose={() => setShowFromTokenModal(false)}
           chainFilter={selectedChain === "EVM" ? "EVM" : "Solana"} // Strict source chain filtering
           chain={selectedEvmChain}
-          onSearch={handleSearch}
+          onSearch={handleFromSearch} // Use new wrapper function
           selectedToken={fromToken}
           selectMode="from"
+          initialSearchQuery={fromSearchQuery}
+          onQueryChange={setFromSearchQuery}
+          initialRemoteResults={fromRemoteResults} // Pass initial remote results
         />
       )}
 
@@ -964,9 +1052,12 @@ export function SwapFlow() {
           chainFilter={selectedChain === "EVM" ? "EVM" : "Solana"}
           chain={selectedEvmChain}
           excludeSymbol={fromToken?.symbol}
-          onSearch={handleSearch}
+          onSearch={handleToSearch} // Use new wrapper function
           selectedToken={toToken}
           selectMode="to"
+          initialSearchQuery={toSearchQuery}
+          onQueryChange={setToSearchQuery}
+          initialRemoteResults={toRemoteResults} // Pass initial remote results
         />
       )}
     </div>

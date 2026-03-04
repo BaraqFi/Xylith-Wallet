@@ -1,4 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
+import { isAddress } from "viem";
+
+interface AlchemyTokenBalance {
+  contractAddress: string;
+  tokenBalance: string;
+  error: string | null;
+}
+
+type SupportedAlchemyChain =
+  | "ethereum"
+  | "base"
+  | "arbitrum"
+  | "optimism"
+  | "polygon"
+  | "bsc";
+
+function isSupportedChain(chain: string | null): chain is SupportedAlchemyChain {
+  if (!chain) return false;
+  return (
+    chain === "ethereum" ||
+    chain === "base" ||
+    chain === "arbitrum" ||
+    chain === "optimism" ||
+    chain === "polygon" ||
+    chain === "bsc"
+  );
+}
 
 /**
  * Server-side API route for Alchemy token balances
@@ -16,14 +43,14 @@ export async function POST(req: NextRequest) {
   try {
     const { address, chain } = await req.json();
 
-    if (!address || !chain) {
+    if (!address || !isAddress(address) || !isSupportedChain(chain)) {
       return NextResponse.json(
-        { error: "Missing address or chain" },
+        { error: "Invalid or missing address or chain" },
         { status: 400 }
       );
     }
 
-    const chainMap: Record<string, string> = {
+    const chainMap: Record<SupportedAlchemyChain, string> = {
       ethereum: `https://eth-mainnet.g.alchemy.com/v2/${apiKey}`,
       base: `https://base-mainnet.g.alchemy.com/v2/${apiKey}`,
       arbitrum: `https://arb-mainnet.g.alchemy.com/v2/${apiKey}`,
@@ -40,11 +67,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Add timeout and retry logic
-    const fetchWithTimeout = async (url: string, options: RequestInit, timeout = 8000) => {
+    // Add timeout and conservative retry logic
+    const fetchWithTimeout = async (
+      url: string,
+      options: RequestInit,
+      timeout = 5000
+    ) => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
-      
+
       try {
         const response = await fetch(url, {
           ...options,
@@ -52,10 +83,10 @@ export async function POST(req: NextRequest) {
         });
         clearTimeout(timeoutId);
         return response;
-      } catch (error: any) {
+      } catch (error: unknown) {
         clearTimeout(timeoutId);
-        if (error.name === 'AbortError') {
-          throw new Error('Request timeout');
+        if (error instanceof Error && error.name === "AbortError") {
+          throw new Error("Request timeout");
         }
         throw error;
       }
@@ -63,37 +94,46 @@ export async function POST(req: NextRequest) {
 
     let response;
     let lastError: Error | null = null;
-    const maxRetries = 2;
-    
+    const maxRetries = 1;
+
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        response = await fetchWithTimeout(apiUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
+        response = await fetchWithTimeout(
+          apiUrl,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              id: 1,
+              jsonrpc: "2.0",
+              method: "alchemy_getTokenBalances",
+              params: [address],
+            }),
           },
-          body: JSON.stringify({
-            id: 1,
-            jsonrpc: "2.0",
-            method: "alchemy_getTokenBalances",
-            params: [address],
-          }),
-        }, 8000); // 8 second timeout
-        
+          5000
+        );
+
         if (response.ok) break;
-      } catch (error: any) {
-        lastError = error;
+      } catch (error: unknown) {
+        if (error instanceof Error) {
+            lastError = error;
+        } else {
+            lastError = new Error(String(error));
+        }
         if (attempt < maxRetries) {
-          // Wait before retry (exponential backoff)
-          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * (attempt + 1))
+          );
           continue;
         }
         throw error;
       }
     }
-    
+
     if (!response) {
-      throw lastError || new Error('Failed to fetch token balances after retries');
+      throw lastError || new Error("Failed to fetch token balances after retries");
     }
 
     if (!response.ok) {
@@ -108,14 +148,17 @@ export async function POST(req: NextRequest) {
 
     // Filter out tokens with errors and zero balances
     const balances = (data.result?.tokenBalances || []).filter(
-      (token: any) => !token.error && token.tokenBalance !== "0x0" && token.tokenBalance !== "0"
+      (token: AlchemyTokenBalance) =>
+        !token.error &&
+        token.tokenBalance !== "0x0" &&
+        token.tokenBalance !== "0"
     );
 
     return NextResponse.json({ balances });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching token balances:", error);
     return NextResponse.json(
-      { error: error.message || "Failed to fetch token balances" },
+      { error: "Failed to fetch token balances" },
       { status: 500 }
     );
   }

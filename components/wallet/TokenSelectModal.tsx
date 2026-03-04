@@ -19,6 +19,9 @@ interface TokenSelectModalProps {
   /** Selected token balance object to show checkmark */
   selectedToken?: TokenBalance | null;
   selectMode?: 'from' | 'to';
+  initialSearchQuery?: string;
+  onQueryChange?: (query: string) => void;
+  initialRemoteResults?: TokenBalance[]; // New prop for persistence
 }
 
 export function TokenSelectModal({
@@ -31,9 +34,18 @@ export function TokenSelectModal({
   onSearch,
   selectedToken,
   selectMode,
+  initialSearchQuery = "",
+  onQueryChange,
+  initialRemoteResults = [], // Initialize with empty array
 }: TokenSelectModalProps) {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [remoteResults, setRemoteResults] = useState<TokenBalance[]>([]);
+  const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+
+  // Sync search query changes to parent for persistence
+  useEffect(() => {
+    onQueryChange?.(searchQuery);
+  }, [searchQuery, onQueryChange]);
+  // Initialize remoteResults with the prop, it will now be managed by the parent
+  const [remoteResults, setRemoteResults] = useState<TokenBalance[]>(initialRemoteResults);
   const [isSearching, setIsSearching] = useState(false);
 
   // Specific state for EVM CA checking (legacy support)
@@ -43,10 +55,23 @@ export function TokenSelectModal({
 
   // 1. Popular Assets (Top verified tokens - currently hardcoded fast path)
   // In a real app, this might come from a prop or specific filtered list
+  // 1. Popular Assets (Top verified tokens - currently hardcoded fast path)
   const popularTokens = useMemo(() => {
     // Basic heuristics for "Popular": SOL, USDC, USDT, ETH, WBTC, BONK, JUP
     const popularitySet = new Set(["SOL", "USDC", "USDT", "ETH", "WBTC", "BONK", "JUP"]);
-    return tokens.filter(t => popularitySet.has(t.symbol)).slice(0, 8);
+
+    // Deduplicate by symbol to avoid multiple ETH entries
+    const seenSymbols = new Set<string>();
+
+    return tokens
+      .filter(t => {
+        if (popularitySet.has(t.symbol) && !seenSymbols.has(t.symbol)) {
+          seenSymbols.add(t.symbol);
+          return true;
+        }
+        return false;
+      })
+      .slice(0, 8);
   }, [tokens]);
 
   // 2. Local Filtering
@@ -215,10 +240,12 @@ export function TokenSelectModal({
             ) : (
               <div className="space-y-1">
                 {finalResults.map((token, idx) => {
-                  const isSelected = selectedToken?.symbol === token.symbol && selectedToken?.chain === token.chain;
+                  const isSelected = selectedToken?.contractAddress && token.contractAddress
+                    ? selectedToken.contractAddress === token.contractAddress && selectedToken.chain === token.chain
+                    : selectedToken?.symbol === token.symbol && selectedToken?.chain === token.chain;
                   return (
                     <button
-                      key={`${token.symbol}-${token.chain}-${idx}`}
+                      key={`token-${token.chain}-${token.contractAddress || token.symbol}-${idx}`}
                       onClick={() => { onSelect(token); onClose(); }}
                       className={`
                                         w-full flex items-center gap-3 p-3 rounded-2xl transition-all group
@@ -261,11 +288,14 @@ export function TokenSelectModal({
                               ${token.usdValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
                             </span>
                           </>
-                        ) : token.contractAddress ? (
-                          <span className="font-mono text-[10px] text-[color:var(--color-depth)]/30 group-hover:text-[color:var(--color-depth)]/50 transition-colors bg-[color:var(--color-depth)]/5 px-1.5 py-0.5 rounded">
+                        ) : null}
+
+                        {/* Always show truncated contract address if available, useful for distinguishing same-named tokens */}
+                        {token.contractAddress && (
+                          <span className="font-mono text-[10px] text-[color:var(--color-depth)]/30 group-hover:text-[color:var(--color-depth)]/50 transition-colors bg-[color:var(--color-depth)]/5 px-1.5 py-0.5 rounded mt-0.5">
                             {token.contractAddress.slice(0, 4)}...{token.contractAddress.slice(-4)}
                           </span>
-                        ) : null}
+                        )}
                       </div>
                     </button>
                   );

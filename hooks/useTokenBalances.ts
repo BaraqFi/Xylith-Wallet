@@ -117,8 +117,66 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
 
                 if (activeChain === "Solana") {
                     // --- SOLANA FETCHING ---
-                    const solBalanceLamports = await solanaClient.getBalance(address);
-                    const splAccounts = await solanaClient.getTokenAccounts(address);
+                    let solBalanceLamports = 0;
+                    let splAccounts: { mint: string; amount: string; decimals: number }[] = [];
+
+                    try {
+                        // Primary: direct RPC via solanaClient
+                        solBalanceLamports = await solanaClient.getBalance(address);
+                        const rawAccounts = await solanaClient.getTokenAccounts(address);
+                        splAccounts = rawAccounts.map((a) => ({
+                            mint: a.mint,
+                            amount: a.amount,
+                            decimals: a.decimals,
+                        }));
+                    } catch (rpcError) {
+                        console.warn("Solana RPC failed, trying Ultra holdings fallback:", rpcError);
+                        try {
+                            const res = await fetch(
+                                `/api/ultra/holdings?address=${encodeURIComponent(address)}`,
+                            );
+                            if (res.ok) {
+                                const data = await res.json();
+                                const amountStr =
+                                    typeof data.amount === "string" ? data.amount : "0";
+                                solBalanceLamports = Number(amountStr);
+
+                                const tokensObj =
+                                    data.tokens && typeof data.tokens === "object"
+                                        ? data.tokens
+                                        : {};
+                                const accounts: {
+                                    mint: string;
+                                    amount: string;
+                                    decimals: number;
+                                }[] = [];
+                                for (const mint of Object.keys(tokensObj)) {
+                                    const arr = Array.isArray(tokensObj[mint])
+                                        ? tokensObj[mint]
+                                        : [];
+                                    for (const entry of arr) {
+                                        if (
+                                            entry &&
+                                            typeof entry.amount === "string" &&
+                                            typeof entry.decimals === "number"
+                                        ) {
+                                            accounts.push({
+                                                mint,
+                                                amount: entry.amount,
+                                                decimals: entry.decimals,
+                                            });
+                                        }
+                                    }
+                                }
+                                splAccounts = accounts;
+                            }
+                        } catch (ultraError) {
+                            console.warn(
+                                "Ultra holdings fallback also failed:",
+                                ultraError,
+                            );
+                        }
+                    }
 
                     const solBalance = solBalanceLamports / 1e9;
 
@@ -132,15 +190,8 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                         solToken.usdValue = solBalance * (solToken.pricePerToken || 0); // Price needed?
                     }
 
-                    // Update SPL Tokens
-                    // Map SPL accounts to known tokens or add new ones? 
-                    // For MVP, we likely stick to matching known tokens or just displaying what we find
-                    // Let's at least update the known ones (USDC, USDT, etc)
-
                     // Create a map of found mints
                     const foundSpls = new Map(splAccounts.map(a => [a.mint, a]));
-
-
 
                     // Update defaults and fetch analytics
                     mergedTokens.forEach((t) => {
@@ -220,9 +271,22 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                         try {
                             const moralisTokens = await getTokenBalancesFromMoralis(address, currentEvmChain);
                             moralisTokens.forEach((token) => {
-                                if (token.contractAddress) {
+                                // Normalise native tokens so we don't get duplicate ETH rows
+                                // like "Ether" vs "Ethereum" from different sources.
+                                let rawAddr = token.contractAddress?.toLowerCase() || "";
+                                if (token.symbol === "ETH" && currentEvmChain === "ethereum") {
+                                    // Moralis often uses the 0xeeee... sentinel for native ETH.
+                                    // Treat that as the canonical native address so it merges
+                                    // with our default ETH token instead of appearing twice.
+                                    const sentinel = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+                                    if (!rawAddr || rawAddr === sentinel) {
+                                        rawAddr = NATIVE_TOKEN_ADDRESSES.ethereum;
+                                    }
+                                }
+
+                                if (rawAddr) {
                                     moralisBalances.set(
-                                        token.contractAddress.toLowerCase(),
+                                        rawAddr,
                                         {
                                             balance: token.tokenBalance,
                                             metadata: {
@@ -238,7 +302,7 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                                 }
                             });
                             useMoralis = true;
-                            
+
                             // Try to get native balance from Alchemy (or fallback to RPC)
                             try {
                                 nativeBalanceHex = await getNativeBalanceFromAlchemy(address, currentEvmChain);
@@ -247,7 +311,7 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                             }
                         } catch (moralisError) {
                             console.warn("Moralis API failed, trying Alchemy fallback:", moralisError);
-                            
+
                             // Fallback to Alchemy
                             try {
                                 const tokenBalances = await getTokenBalancesFromAlchemy(address, currentEvmChain);
@@ -350,18 +414,18 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                             const balance = BigInt(balanceHex);
                             // Include tokens with balance > 0 (don't skip them)
                             if (balance === BigInt(0)) continue;
-                            
+
                             // Check if token already exists in merged list (by contract address and chain)
                             const exists = mergedTokens.some(
                                 t => t.contractAddress?.toLowerCase() === contractAddr && t.evmChain === currentEvmChain
                             );
-                            
+
                             if (!exists) {
                                 // Moralis already provides metadata
                                 const meta = tokenData.metadata;
                                 const decimals = meta?.decimals ?? 18;
                                 const amount = parseFloat(formatUnits(balance, decimals));
-                                
+
                                 mergedTokens.push({
                                     symbol: meta?.symbol || "UNKNOWN",
                                     name: meta?.name || `Unknown (${contractAddr.slice(0, 4)}...${contractAddr.slice(-4)})`,
@@ -382,12 +446,12 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                             const balance = BigInt(balanceHex);
                             // Include tokens with balance > 0 (don't skip them)
                             if (balance === BigInt(0)) continue;
-                            
+
                             // Check if token already exists in merged list (by contract address and chain)
                             const exists = mergedTokens.some(
                                 t => t.contractAddress?.toLowerCase() === contractAddr && t.evmChain === currentEvmChain
                             );
-                            
+
                             if (!exists) {
                                 // Alchemy path - fetch metadata
                                 try {
@@ -395,7 +459,7 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                                         contractAddr as Address,
                                         currentEvmChain
                                     );
-                                    
+
                                     const decimals = metadata?.decimals ?? 18;
                                     const amount = parseFloat(formatUnits(balance, decimals));
 
@@ -438,17 +502,26 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
 
                     // --- BATCH PRICE FETCH FOR EVM ---
                     try {
-                        const prices = await getTokenPricesBatch(
-                            mergedTokens.map(t => ({ symbol: t.symbol, contractAddress: t.contractAddress }))
-                        );
+                        // Call proxy API to avoid CORS and manage rate limits on server
+                        const response = await fetch('/api/prices/batch', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                tokens: mergedTokens.map(t => ({ symbol: t.symbol, contractAddress: t.contractAddress })),
+                                currency: 'usd'
+                            })
+                        });
+
+                        const prices = response.ok ? await response.json() : {};
 
                         mergedTokens.forEach(t => {
-                            if (prices[t.symbol]) {
-                                t.pricePerToken = prices[t.symbol];
-                                t.usdValue = t.amount * t.pricePerToken;
+                            const price = prices[t.symbol];
+                            if (price) {
+                                t.pricePerToken = price;
+                                t.usdValue = t.amount * price;
                                 // Initialize analytics structure with just price (chart lazy loaded later)
                                 t.analytics = {
-                                    currentPriceUsd: t.pricePerToken,
+                                    currentPriceUsd: price,
                                     priceChange24h: 0,
                                     priceChange7d: 0
                                 };

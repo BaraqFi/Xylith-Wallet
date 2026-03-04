@@ -1,7 +1,7 @@
 "use client";
 
 import { useApp } from "../app/AppContext";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useCallback } from "react";
 
 export function AiModeAlert() {
   const {
@@ -15,9 +15,9 @@ export function AiModeAlert() {
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const firstFocusableRef = useRef<HTMLButtonElement | null>(null);
 
-  const handleNo = () => {
+  const handleNo = useCallback(() => {
     setShowAiAlert(false);
-  };
+  }, [setShowAiAlert]);
 
   useEffect(() => {
     if (!showAiAlert) return;
@@ -45,7 +45,7 @@ export function AiModeAlert() {
       // Restore focus to previously focused element
       previousFocusRef.current?.focus();
     };
-  }, [showAiAlert]);
+  }, [showAiAlert, handleNo]);
 
   // Focus trap: keep focus within modal
   useEffect(() => {

@@ -111,7 +111,7 @@ export function analyzeApprovalRisk(
   let riskLevel: "low" | "medium" | "high" = "low";
 
   // Check for unlimited approval
-  const isUnlimited = approvalAmount >= MAX_UINT256 || approvalAmount === MAX_UINT256;
+  const isUnlimited = approvalAmount >= MAX_UINT256;
 
   if (isUnlimited) {
     warnings.push({
@@ -163,6 +163,20 @@ export function analyzeSwapRouteRisk(
 ): SwapRouteRiskAnalysis {
   const warnings: SecurityWarning[] = [];
   let riskLevel: "low" | "medium" | "high" = "low";
+
+  // Basic slippage sanity check
+  if (slippage <= 0 || slippage > 50) {
+    warnings.push({
+      severity: "error",
+      message: "Invalid slippage value; must be between 0 and 50%.",
+      code: "INVALID_SLIPPAGE",
+    });
+    return {
+      riskLevel: "high",
+      warnings,
+      highSlippage: true,
+    };
+  }
 
   // Check slippage
   if (slippage > 5) {

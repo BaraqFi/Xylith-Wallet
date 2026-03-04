@@ -78,27 +78,27 @@ function getPublicRpcEndpoints(): Record<EVMChain, string[]> {
   return {
     ethereum: isServer
       ? getServerEndpoints("eth", buildAnkrUrl("eth"), ["https://eth.llamarpc.com", "https://eth.merkle.io"])
-      : getClientEndpoints("ethereum", ["https://eth.llamarpc.com", "https://eth.merkle.io"]),
+      : getClientEndpoints("ethereum", []),
 
     base: isServer
       ? getServerEndpoints("base", buildAnkrUrl("base"), ["https://mainnet.base.org", "https://base.llamarpc.com"])
-      : getClientEndpoints("base", ["https://mainnet.base.org", "https://base.llamarpc.com"]),
+      : getClientEndpoints("base", ["https://mainnet.base.org"]),
 
     arbitrum: isServer
       ? getServerEndpoints("arbitrum", buildAnkrUrl("arbitrum"), ["https://arb1.arbitrum.io/rpc", "https://arbitrum.llamarpc.com"])
-      : getClientEndpoints("arbitrum", ["https://arb1.arbitrum.io/rpc", "https://arbitrum.llamarpc.com"]),
+      : getClientEndpoints("arbitrum", ["https://arb1.arbitrum.io/rpc"]),
 
     optimism: isServer
       ? getServerEndpoints("optimism", buildAnkrUrl("optimism"), ["https://mainnet.optimism.io", "https://optimism.llamarpc.com"])
-      : getClientEndpoints("optimism", ["https://mainnet.optimism.io", "https://optimism.llamarpc.com"]),
+      : getClientEndpoints("optimism", ["https://mainnet.optimism.io"]),
 
     polygon: isServer
       ? getServerEndpoints("polygon", buildAnkrUrl("polygon"), ["https://polygon-rpc.com", "https://polygon.llamarpc.com"])
-      : getClientEndpoints("polygon", ["https://polygon-rpc.com", "https://polygon.llamarpc.com"]),
+      : getClientEndpoints("polygon", ["https://polygon-rpc.com"]),
 
     bsc: isServer
       ? getServerEndpoints("bsc", buildAnkrUrl("bsc"), ["https://bsc-dataseed.binance.org", "https://bsc.llamarpc.com"])
-      : getClientEndpoints("bsc", ["https://bsc-dataseed.binance.org", "https://bsc.llamarpc.com"]),
+      : getClientEndpoints("bsc", ["https://bsc-dataseed.binance.org"]),
   };
 }
 

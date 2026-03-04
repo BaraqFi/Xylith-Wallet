@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { OneInchClient, OneInchQuoteParams, OneInchSwapParams } from "@/lib/1inch/client";
-import { parseUnits } from "viem";
+import { parseUnits, isAddress } from "viem";
 import { Quote, SwapResponse } from "@/lib/1inch/types";
 // Local debounce used below
 
@@ -44,7 +44,13 @@ export function useSwapQuote({
         let cancelled = false;
 
         async function fetchQuote() {
-            if (!fromToken || !toToken || !debouncedAmount || parseFloat(debouncedAmount) <= 0 || !chainId) {
+            if (!fromToken || !toToken || !debouncedAmount || !chainId) {
+                setQuote(null);
+                return;
+            }
+
+            const parsedAmount = Number(debouncedAmount);
+            if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
                 setQuote(null);
                 return;
             }
@@ -116,6 +122,10 @@ export function useSwapQuote({
             throw new Error("Missing parameters for swap");
         }
 
+        if (!isAddress(address)) {
+            throw new Error("Invalid from address");
+        }
+
         setIsLoading(true);
         try {
             let atomicAmount: string;
@@ -140,7 +150,7 @@ export function useSwapQuote({
                 amount: atomicAmount,
                 chainId: chainId,
                 from: address,
-                slippage: slippage,
+                slippage: Math.min(Math.max(slippage, 0.01), 50), // clamp to [0.01, 50]
                 disableEstimate: process.env.NODE_ENV === 'development', // Critical for local fork
             };
 

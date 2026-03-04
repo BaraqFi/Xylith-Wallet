@@ -63,10 +63,16 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ balance: data.result || "0x0" });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error fetching native balance:", error);
+    let message = "Failed to fetch native balance";
+    if (error instanceof Error) {
+      message = error.message;
+    } else if (typeof error === 'string') {
+      message = error;
+    }
     return NextResponse.json(
-      { error: error.message || "Failed to fetch native balance" },
+      { error: message },
       { status: 500 }
     );
   }
