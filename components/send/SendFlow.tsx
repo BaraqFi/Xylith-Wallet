@@ -360,12 +360,12 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         clearPreview();
       } else {
         // --- Solana Transaction ---
-        const solanaWallet = wallets.find(w => (w as PrivyAccountWithChain).chainType === 'solana');
-        if (!solanaWallet) {
+        const solanaWallet = wallets.find(w => (w as PrivyAccountWithChain).chainType === 'solana') as PrivyAccountWithChain | undefined;
+        if (!solanaWallet || !solanaWallet.address) {
           throw new Error("Solana wallet not connected");
         }
 
-        const fromPubkey = new PublicKey(wallet.address);
+        const fromPubkey = new PublicKey(solanaWallet.address);
         const toPubkey = new PublicKey(recipient);
         const decimals = selectedToken.decimals ?? 9;
         const amountLamports = Math.floor(parseFloat(amount) * Math.pow(10, decimals));

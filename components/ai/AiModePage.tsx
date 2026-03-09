@@ -56,6 +56,7 @@ export function AiModePage() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isFundModalOpen, setIsFundModalOpen] = useState(false);
 
   // --- Effects ---
   useEffect(() => {
@@ -103,6 +104,10 @@ export function AiModePage() {
     await new Promise(r => setTimeout(r, 1500));
     const newWallet = generateWallet();
     setWallet(newWallet);
+    addLog(
+      'SYSTEM',
+      `AI wallet created.\nEVM: ${shortenAddress(newWallet.evmAddress)}\nSolana: ${shortenAddress(newWallet.solAddress)}`
+    );
     setOrbState('IDLE');
   };
 
@@ -396,6 +401,14 @@ export function AiModePage() {
           >
             <Settings size={22} className="text-[color:var(--color-depth)]/80" strokeWidth={2.5} />
           </button>
+          {wallet && (
+            <button
+              onClick={() => setIsFundModalOpen(true)}
+              className="px-3 h-10 rounded-full bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 text-xs font-medium text-[color:var(--color-depth)] border border-[color:var(--color-border)] shadow-sm"
+            >
+              Fund AI Wallet
+            </button>
+          )}
         </div>
         <ModeToggle />
       </div>
@@ -473,6 +486,57 @@ export function AiModePage() {
           </div>
         </div>
       </div>
+
+      {/* Fund AI Wallet Modal */}
+      {isFundModalOpen && wallet && (
+        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4">
+          <div className="wallet-card w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-[color:var(--color-depth)]">
+                Fund AI Wallet
+              </h2>
+              <button
+                onClick={() => setIsFundModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center border border-[color:var(--color-border)]"
+              >
+                <span className="text-sm">&#10005;</span>
+              </button>
+            </div>
+            <p className="text-xs text-[color:var(--color-depth)]/60">
+              These are the AI&apos;s own ephemeral wallets, separate from your Privy wallets.
+              Send only small amounts you are comfortable letting the AI manage.
+            </p>
+            <div className="space-y-3">
+              <div className="text-xs text-[color:var(--color-depth)]/70 space-y-1">
+                <div className="font-semibold">EVM (Ethereum) Address</div>
+                <div className="font-mono break-all text-[color:var(--color-depth)]/90">
+                  {wallet.evmAddress}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(wallet.evmAddress)}
+                  className="mt-1 inline-flex items-center rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[10px] uppercase tracking-wide text-[color:var(--color-depth)]/70 hover:bg-[color:var(--color-depth)]/5"
+                >
+                  Copy EVM Address
+                </button>
+              </div>
+              <div className="text-xs text-[color:var(--color-depth)]/70 space-y-1">
+                <div className="font-semibold">Solana Address</div>
+                <div className="font-mono break-all text-[color:var(--color-depth)]/90">
+                  {wallet.solAddress}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard?.writeText(wallet.solAddress)}
+                  className="mt-1 inline-flex items-center rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[10px] uppercase tracking-wide text-[color:var(--color-depth)]/70 hover:bg-[color:var(--color-depth)]/5"
+                >
+                  Copy Solana Address
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

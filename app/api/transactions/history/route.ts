@@ -172,48 +172,123 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ items: cached });
         }
 
-        const response = await fetch(apiUrl, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                id: 1,
-                jsonrpc: "2.0",
-                method: "alchemy_getAssetTransfers",
-                params: [
-                    {
-                        fromBlock: "0x0",
-                        toBlock: "latest",
-                        fromAddress: address,
-                        toAddress: address,
-                        category: ["external", "erc20", "erc721", "erc1155"],
-                        withMetadata: true,
-                        excludeZeroValue: false,
-                        maxCount: `0x${limit.toString(16)}`,
-                        order: "desc",
-                    },
-                ],
+        // To get a complete history we need BOTH:
+        // - outgoing transfers (fromAddress = user)
+        // - incoming transfers (toAddress = user)
+        //
+        // Alchemy's getAssetTransfers treats fromAddress + toAddress as an AND filter,
+        // so we must query them separately and then merge.
+        const requestBodyBase = {
+            id: 1,
+            jsonrpc: "2.0",
+            method: "alchemy_getAssetTransfers",
+            params: [
+                {
+                    fromBlock: "0x0",
+                    toBlock: "latest",
+                    category: ["external", "erc20", "erc721", "erc1155"],
+                    withMetadata: true,
+                    excludeZeroValue: false,
+                    maxCount: `0x${limit.toString(16)}`,
+                    order: "desc",
+                },
+            ],
+        };
+
+        const [outgoingRes, incomingRes] = await Promise.all([
+            fetch(apiUrl, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    ...requestBodyBase,
+                    params: [
+                        {
+                            ...(requestBodyBase.params[0] as any),
+                            fromAddress: address,
+                        },
+                    ],
+                }),
+                next: { revalidate: 60 },
             }),
-            // Allow Vercel/Next to cache successful responses briefly per payload.
-            next: { revalidate: 60 },
+            fetch(apiUrl, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    ...requestBodyBase,
+                    params: [
+                        {
+                            ...(requestBodyBase.params[0] as any),
+                            toAddress: address,
+                        },
+                    ],
+                }),
+                next: { revalidate: 60 },
+            }),
+        ]);
+
+        if (!outgoingRes.ok) {
+            throw new Error(`Alchemy API error (outgoing): ${outgoingRes.statusText}`);
+        }
+        if (!incomingRes.ok) {
+            throw new Error(`Alchemy API error (incoming): ${incomingRes.statusText}`);
+        }
+
+        const outgoingData = await outgoingRes.json();
+        const incomingData = await incomingRes.json();
+
+        if (outgoingData.error) {
+            throw new Error(`Alchemy API error (outgoing): ${outgoingData.error.message}`);
+        }
+        if (incomingData.error) {
+            throw new Error(`Alchemy API error (incoming): ${incomingData.error.message}`);
+        }
+
+        const outgoingTransfers: AlchemyTransfer[] = outgoingData.result?.transfers || [];
+        const incomingTransfers: AlchemyTransfer[] = incomingData.result?.transfers || [];
+
+        // Merge and de-duplicate transfers. We key by a combination of fields
+        // that uniquely identify a transfer.
+        const transferMap = new Map<string, AlchemyTransfer>();
+
+        const addTransfers = (items: AlchemyTransfer[]) => {
+            for (const t of items) {
+                const key = [
+                    t.hash,
+                    t.from || "",
+                    t.to || "",
+                    t.value || "",
+                    t.asset || "",
+                    t.blockNum,
+                ].join(":");
+                if (!transferMap.has(key)) {
+                    transferMap.set(key, t);
+                }
+            }
+        };
+
+        addTransfers(outgoingTransfers);
+        addTransfers(incomingTransfers);
+
+        const mergedTransfers = Array.from(transferMap.values());
+
+        // Sort newest → oldest by block timestamp if available
+        mergedTransfers.sort((a, b) => {
+            const aTime = a.metadata?.blockTimestamp
+                ? new Date(a.metadata.blockTimestamp).getTime()
+                : 0;
+            const bTime = b.metadata?.blockTimestamp
+                ? new Date(b.metadata.blockTimestamp).getTime()
+                : 0;
+            return bTime - aTime;
         });
-
-        if (!response.ok) {
-            throw new Error(`Alchemy API error: ${response.statusText}`);
-        }
-
-        const data = await response.json();
-
-        if (data.error) {
-            throw new Error(`Alchemy API error: ${data.error.message}`);
-        }
-
-        const transfers = data.result?.transfers || [];
         
         // Enrich transactions with token metadata and fiat values
         const enrichedTransactions = await Promise.all(
-            transfers.map(async (transfer: AlchemyTransfer) => {
+            mergedTransfers.map(async (transfer: AlchemyTransfer) => {
                 const category = transfer.category || "external";
                 const isNative = category === "external";
                 const contractAddress = isNative ? undefined : transfer.rawContract?.address;

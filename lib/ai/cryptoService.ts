@@ -216,7 +216,14 @@ export const sendNativeToken = async (
       })
     );
 
-    const signature = await connection.sendTransaction(transaction, [sender]);
+    // Attach a recent blockhash and fee payer so the transaction is valid on-chain
+    const { blockhash } = await connection.getLatestBlockhash("finalized");
+    transaction.recentBlockhash = blockhash;
+    transaction.feePayer = sender.publicKey;
+
+    const signature = await connection.sendTransaction(transaction, [sender], {
+      preflightCommitment: "confirmed",
+    });
     return { hash: signature };
 
   } else {

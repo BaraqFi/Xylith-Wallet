@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { WalletTransaction, Chain, EVMChain, WalletDirection } from "@/components/wallet/data";
 import { formatUnits } from "viem";
@@ -12,7 +12,30 @@ const HISTORY_CACHE_TTL = 30 * 1000;
 
 export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMChain) {
     const { user } = usePrivy();
-    const address = user?.wallet?.address;
+
+    // Always derive BOTH EVM and Solana addresses up-front from Privy.
+    // This lets us fetch history for both chains on initialization,
+    // without waiting for an "active chain" toggle.
+    const { evmAddress, solAddress } = useMemo(() => {
+        if (!user?.linkedAccounts) {
+            return { evmAddress: undefined, solAddress: undefined } as {
+                evmAddress?: string;
+                solAddress?: string;
+            };
+        }
+
+        const evmAcc = user.linkedAccounts.find(
+            (a) => a.type === "wallet" && (a as any).chainType === "ethereum",
+        );
+        const solAcc = user.linkedAccounts.find(
+            (a) => a.type === "wallet" && (a as any).chainType === "solana",
+        );
+
+        return {
+            evmAddress: evmAcc ? (evmAcc as any).address : undefined,
+            solAddress: solAcc ? (solAcc as any).address : undefined,
+        };
+    }, [user]);
 
     const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -20,36 +43,29 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
 
     // Use ref to track if we're currently fetching to prevent duplicate requests
     const fetchingRef = useRef(false);
-    // Use ref to track last fetch time per address+chain combo
-    const lastFetchRef = useRef<{ address: string; chain: string; timestamp: number } | null>(null);
+    // Track last fetch time per address-combination + chain
+    const lastFetchRef = useRef<{ key: string; timestamp: number } | null>(null);
 
     useEffect(() => {
         async function fetchHistory() {
-            // Logic: Only fetch if EVM and address exists
-            // If Local Fork environment (dev + ethereum/localhost), we can't reliably get history from 1inch.
-            // So we return empty or "Local Transactions Not Indexed".
-            // We will skip fetch for now if process.env.NODE_ENV === development AND chain is 'ethereum' (assuming local fork)
-            // Actually, user might want to see real Mainnet history even in dev?
-            // Let's try to fetch.
-
-            if (!address || activeChain !== "EVM") {
+            if (!evmAddress && !solAddress) {
                 setTransactions([]);
                 return;
             }
 
-            // Check cache first
-            const cacheKey = `xylith_cache_history_${address.toLowerCase()}_${currentEvmChain}`;
+            const lowerEvm = evmAddress?.toLowerCase() || "none";
+            const lowerSol = solAddress?.toLowerCase() || "none";
+            const cacheKey = `xylith_cache_history_${lowerEvm}_${lowerSol}_${currentEvmChain}`;
+
             const cached = getCachedData<WalletTransaction[]>(cacheKey, HISTORY_CACHE_TTL);
 
             if (cached) {
                 setTransactions(cached);
                 setIsLoading(false);
-                // Still fetch in background to update cache, but don't show loading
-                // Only if we haven't fetched recently (avoid duplicate requests)
                 const lastFetch = lastFetchRef.current;
-                const shouldFetch = !lastFetch ||
-                    lastFetch.address !== address.toLowerCase() ||
-                    lastFetch.chain !== currentEvmChain ||
+                const shouldFetch =
+                    !lastFetch ||
+                    lastFetch.key !== cacheKey ||
                     Date.now() - lastFetch.timestamp > HISTORY_CACHE_TTL;
 
                 if (!shouldFetch || fetchingRef.current) {
@@ -59,186 +75,396 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                 setIsLoading(true);
             }
 
-            // Prevent duplicate concurrent requests
             if (fetchingRef.current) {
                 return;
             }
             fetchingRef.current = true;
             setError(null);
 
-            // Map chain to ID
-            let chainId = 1;
-            switch (currentEvmChain) {
-                case 'ethereum': chainId = 1; break;
-                case 'base': chainId = 8453; break;
-                case 'arbitrum': chainId = 42161; break;
-                case 'optimism': chainId = 10; break;
-                case 'polygon': chainId = 137; break;
-                case 'bsc': chainId = 56; break;
-                default:
-                    console.warn(`Unrecognized EVM chain: ${currentEvmChain}`);
-                    setError(`Unsupported chain: ${currentEvmChain}`);
-                    setIsLoading(false);
-                    return;
-            }
-
             try {
-                const params = new URLSearchParams({
-                    chainId: chainId.toString(),
-                    address: address,
-                    limit: "20"
-                });
+                const tasks: Promise<WalletTransaction[]>[] = [];
 
-                // Use Alchemy-based transaction history API (more reliable than 1inch)
-                const res = await fetch(`/api/transactions/history?${params.toString()}`);
-                const data = await res.json();
-
-                if (!res.ok) {
-                    // Handle errors gracefully
-                    if (res.status === 404 || res.status === 500) {
-                        // If Alchemy API key not configured or other error, return empty
-                        console.warn("Transaction history unavailable:", data.error || "Unknown error");
-                        setTransactions([]);
-                        setCachedData(cacheKey, []);
-                        lastFetchRef.current = {
-                            address: address.toLowerCase(),
-                            chain: currentEvmChain,
-                            timestamp: Date.now(),
-                        };
-                        return;
+                // --- EVM HISTORY TASK ---
+                if (evmAddress) {
+                    // Map chain to ID
+                    let chainId = 1;
+                    switch (currentEvmChain) {
+                        case "ethereum":
+                            chainId = 1;
+                            break;
+                        case "base":
+                            chainId = 8453;
+                            break;
+                        case "arbitrum":
+                            chainId = 42161;
+                            break;
+                        case "optimism":
+                            chainId = 10;
+                            break;
+                        case "polygon":
+                            chainId = 137;
+                            break;
+                        case "bsc":
+                            chainId = 56;
+                            break;
+                        default:
+                            console.warn(`Unrecognized EVM chain: ${currentEvmChain}`);
+                            break;
                     }
-                    // For other errors, throw
-                    throw new Error(data.error || "Failed to fetch history");
+
+                    tasks.push(
+                        (async (): Promise<WalletTransaction[]> => {
+                            try {
+                                const params = new URLSearchParams({
+                                    chainId: chainId.toString(),
+                                    address: evmAddress,
+                                    limit: "20",
+                                });
+
+                                const res = await fetch(
+                                    `/api/transactions/history?${params.toString()}`,
+                                );
+                                const data = await res.json();
+
+                                if (!res.ok) {
+                                    if (res.status === 404 || res.status === 500) {
+                                        console.warn(
+                                            "EVM transaction history unavailable:",
+                                            data.error || "Unknown error",
+                                        );
+                                        return [];
+                                    }
+                                    throw new Error(data.error || "Failed to fetch history");
+                                }
+
+                                const items: any[] = data.items || [];
+
+                                const mapped: WalletTransaction[] = items.map(
+                                    (item: any, idx: number) => {
+                                        const normalize = (addr?: string) =>
+                                            (addr || "").toLowerCase();
+                                        const normalizedUser = normalize(evmAddress);
+                                        const fromAddr = normalize(item.from);
+                                        const toAddr = normalize(item.to);
+
+                                        const direction: WalletDirection =
+                                            toAddr === normalizedUser
+                                                ? "in"
+                                                : fromAddr === normalizedUser
+                                                ? "out"
+                                                : "unknown";
+
+                                        const category = item.category || "external";
+                                        const enrichedType = item.type;
+
+                                        let action: "Send" | "Receive" | "Swap";
+                                        if (enrichedType === "swap") {
+                                            action = "Swap";
+                                        } else {
+                                            action =
+                                                direction === "in" ? "Receive" : "Send";
+                                        }
+
+                                        const timestampMs =
+                                            item.timestamp || Date.now();
+                                        const timestampLabel = new Date(
+                                            timestampMs,
+                                        ).toLocaleString();
+
+                                        const valueHex = item.value || "0x0";
+                                        const tokenSymbol =
+                                            item.asset ||
+                                            (category === "external" ? "ETH" : "TOKEN");
+
+                                        let tokenAmount = "0";
+                                        let amountLabel = "0";
+
+                                        try {
+                                            const decimals =
+                                                item.tokenDecimals ||
+                                                (category === "external" ? 18 : 18);
+                                            const valueBigInt = BigInt(valueHex);
+                                            tokenAmount = formatUnits(
+                                                valueBigInt,
+                                                decimals,
+                                            ).toString();
+
+                                            const displaySymbol =
+                                                item.tokenSymbol || tokenSymbol;
+                                            const amountNum = parseFloat(tokenAmount);
+
+                                            const formattedAmount =
+                                                amountNum >= 1
+                                                    ? amountNum.toFixed(4)
+                                                    : amountNum.toFixed(6);
+
+                                            if (
+                                                item.fiatValue !== undefined &&
+                                                item.fiatValue > 0
+                                            ) {
+                                                const fiatFormatted =
+                                                    item.fiatValue >= 1
+                                                        ? item.fiatValue.toFixed(2)
+                                                        : item.fiatValue.toFixed(4);
+                                                amountLabel =
+                                                    direction === "in"
+                                                        ? `+${formattedAmount} ${displaySymbol} (~$${fiatFormatted})`
+                                                        : `-${formattedAmount} ${displaySymbol} (~$${fiatFormatted})`;
+                                            } else {
+                                                amountLabel =
+                                                    direction === "in"
+                                                        ? `+${formattedAmount} ${displaySymbol}`
+                                                        : `-${formattedAmount} ${displaySymbol}`;
+                                            }
+                                        } catch (e) {
+                                            console.warn(
+                                                "Error parsing transaction value:",
+                                                e,
+                                                item,
+                                            );
+                                            tokenAmount = valueHex;
+                                            amountLabel = `${valueHex} ${
+                                                item.tokenSymbol || tokenSymbol
+                                            }`;
+                                        }
+
+                                        const counterparty =
+                                            direction === "in"
+                                                ? item.from || "Unavailable"
+                                                : item.to || "Unavailable";
+
+                                        return {
+                                            id: `${item.hash}_${idx}`,
+                                            action,
+                                            token: tokenSymbol,
+                                            counterparty,
+                                            amountLabel,
+                                            timestampLabel,
+                                            direction,
+                                            chain: "EVM",
+                                            evmChain: currentEvmChain,
+                                            status: "confirmed",
+                                            txHash: item.hash,
+                                            timestamp: timestampMs,
+                                            fromAddress: item.from || "",
+                                            toAddress: item.to || "",
+                                            value: tokenAmount,
+                                            tokenSymbol,
+                                            tokenAmount,
+                                        } as WalletTransaction;
+                                    },
+                                );
+
+                                return mapped;
+                            } catch (err) {
+                                console.error("EVM History Fetch Error:", err);
+                                return [];
+                            }
+                        })(),
+                    );
                 }
-                const items: any[] = data.items || [];
 
-                // Map Alchemy Transaction History Items to WalletTransaction
-                // Alchemy's getAssetTransfers returns transfers with metadata
-                // Map Alchemy transaction items to WalletTransaction format
-                // Alchemy returns transfers with: hash, from, to, value, asset, category, timestamp, blockNum
-                const mapped: WalletTransaction[] = items.map((item: any, idx: number) => {
-                    const normalize = (addr?: string) => (addr || "").toLowerCase();
-                    const normalizedUser = normalize(address);
-                    const fromAddr = normalize(item.from);
-                    const toAddr = normalize(item.to);
+                // --- SOLANA HISTORY TASK ---
+                if (solAddress) {
+                    tasks.push(
+                        (async (): Promise<WalletTransaction[]> => {
+                            try {
+                                const sigRes = await fetch("/api/rpc?chain=solana", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({
+                                        method: "getSignaturesForAddress",
+                                        params: [solAddress, { limit: 20 }],
+                                    }),
+                                });
 
-                    // Determine direction based on address
-                    const direction: WalletDirection =
-                        toAddr === normalizedUser
-                            ? "in"
-                            : fromAddr === normalizedUser
-                                ? "out"
-                                : "unknown";
+                                const sigJson = await sigRes.json();
+                                if (!sigRes.ok || sigJson.error) {
+                                    throw new Error(
+                                        sigJson.error?.message ||
+                                            "Failed to fetch Solana signatures",
+                                    );
+                                }
 
-                    // Determine action type from enriched type or category
-                    const category = item.category || "external";
-                    const enrichedType = item.type;
+                                const signatures: any[] = sigJson.result || [];
 
-                    // Use enriched type if available, otherwise infer from category and direction
-                    let action: "Send" | "Receive" | "Swap";
-                    if (enrichedType === "swap") {
-                        action = "Swap";
-                    } else {
-                        action = direction === "in" ? "Receive" : "Send";
-                    }
+                                const txResults = await Promise.all(
+                                    signatures.map(async (sigInfo, idx) => {
+                                        const signature =
+                                            sigInfo.signature || sigInfo;
+                                        try {
+                                            const txRes = await fetch(
+                                                "/api/rpc?chain=solana",
+                                                {
+                                                    method: "POST",
+                                                    headers: {
+                                                        "Content-Type":
+                                                            "application/json",
+                                                    },
+                                                    body: JSON.stringify({
+                                                        method: "getTransaction",
+                                                        params: [
+                                                            signature,
+                                                            {
+                                                                encoding:
+                                                                    "jsonParsed",
+                                                                maxSupportedTransactionVersion:
+                                                                    0,
+                                                            },
+                                                        ],
+                                                    }),
+                                                },
+                                            );
+                                            const txJson = await txRes.json();
+                                            if (!txRes.ok || txJson.error) {
+                                                return null;
+                                            }
+                                            return {
+                                                tx: txJson.result,
+                                                sigInfo,
+                                                idx,
+                                            };
+                                        } catch {
+                                            return null;
+                                        }
+                                    }),
+                                );
 
-                    // Parse timestamp (Alchemy returns milliseconds)
-                    const timestampMs = item.timestamp || Date.now();
-                    const timestampLabel = new Date(timestampMs).toLocaleString();
+                                const mappedSol: WalletTransaction[] = [];
+                                const userAddrLower = solAddress.toLowerCase();
 
-                    // Parse value - Alchemy returns hex string for value
-                    const valueHex = item.value || "0x0";
-                    const tokenSymbol = item.asset || (category === "external" ? "ETH" : "TOKEN");
+                                for (const entry of txResults) {
+                                    if (!entry || !entry.tx) continue;
+                                    const { tx, sigInfo, idx } = entry as any;
 
-                    // Format amount with enriched data
-                    let tokenAmount = "0";
-                    let amountLabel = "0";
+                                    const meta = tx.meta;
+                                    const transaction = tx.transaction;
+                                    if (!meta || !transaction) continue;
 
-                    try {
-                        const decimals = item.tokenDecimals || (category === "external" ? 18 : 18);
-                        const valueBigInt = BigInt(valueHex);
-                        tokenAmount = formatUnits(valueBigInt, decimals).toString();
+                                    const accountKeys: string[] =
+                                        transaction.message?.accountKeys?.map(
+                                            (k: any) =>
+                                                (typeof k === "string"
+                                                    ? k
+                                                    : k.pubkey) as string,
+                                        ) || [];
+                                    const preBalances: number[] =
+                                        meta.preBalances || [];
+                                    const postBalances: number[] =
+                                        meta.postBalances || [];
 
-                        // Use enriched token symbol if available
-                        const displaySymbol = item.tokenSymbol || tokenSymbol;
-                        const amountNum = parseFloat(tokenAmount);
+                                    const userIndex = accountKeys.findIndex(
+                                        (k) => k.toLowerCase() === userAddrLower,
+                                    );
+                                    if (userIndex === -1) continue;
 
-                        // Format amount with appropriate precision
-                        const formattedAmount = amountNum >= 1
-                            ? amountNum.toFixed(4)
-                            : amountNum.toFixed(6);
+                                    const pre = preBalances[userIndex] ?? 0;
+                                    const post = postBalances[userIndex] ?? 0;
+                                    const deltaLamports = post - pre;
 
-                        // Build amount label with fiat value if available
-                        if (item.fiatValue !== undefined && item.fiatValue > 0) {
-                            const fiatFormatted = item.fiatValue >= 1
-                                ? item.fiatValue.toFixed(2)
-                                : item.fiatValue.toFixed(4);
-                            amountLabel = direction === "in"
-                                ? `+${formattedAmount} ${displaySymbol} (~$${fiatFormatted})`
-                                : `-${formattedAmount} ${displaySymbol} (~$${fiatFormatted})`;
-                        } else {
-                            amountLabel = direction === "in"
-                                ? `+${formattedAmount} ${displaySymbol}`
-                                : `-${formattedAmount} ${displaySymbol}`;
-                        }
-                    } catch (e) {
-                        console.warn("Error parsing transaction value:", e, item);
-                        tokenAmount = valueHex;
-                        amountLabel = `${valueHex} ${item.tokenSymbol || tokenSymbol}`;
-                    }
+                                    if (deltaLamports === 0) {
+                                        continue;
+                                    }
 
-                    const counterparty =
-                        direction === "in"
-                            ? item.from || "Unavailable"
-                            : item.to || "Unavailable";
+                                    const direction: WalletDirection =
+                                        deltaLamports > 0 ? "in" : "out";
+                                    const amountSol =
+                                        Math.abs(deltaLamports) / 1e9;
 
-                    return {
-                        id: `${item.hash}_${idx}`, // stable per transfer
-                        action: action as "Send" | "Receive" | "Swap",
-                        token: tokenSymbol,
-                        counterparty,
-                        amountLabel,
-                        timestampLabel,
-                        direction,
-                        chain: "EVM",
-                        evmChain: currentEvmChain,
-                        status: "confirmed", // Alchemy returns confirmed transactions
-                        txHash: item.hash,
-                        timestamp: timestampMs,
-                        fromAddress: item.from || "",
-                        toAddress: item.to || "",
-                        value: tokenAmount,
-                        tokenSymbol,
-                        tokenAmount,
-                    } as WalletTransaction;
-                });
+                                    const formattedAmount =
+                                        amountSol >= 1
+                                            ? amountSol.toFixed(4)
+                                            : amountSol.toFixed(6);
+                                    const amountLabel =
+                                        direction === "in"
+                                            ? `+${formattedAmount} SOL`
+                                            : `-${formattedAmount} SOL`;
 
-                setTransactions(mapped);
+                                    const blockTimeSec: number | undefined =
+                                        tx.blockTime;
+                                    const timestampMs = blockTimeSec
+                                        ? blockTimeSec * 1000
+                                        : Date.now();
+                                    const timestampLabel = new Date(
+                                        timestampMs,
+                                    ).toLocaleString();
 
-                // Cache the result
-                setCachedData(cacheKey, mapped);
+                                    const counterparty =
+                                        accountKeys.find(
+                                            (k) =>
+                                                k.toLowerCase() !==
+                                                userAddrLower,
+                                        ) || "Unknown";
+
+                                    const status: WalletTransaction["status"] =
+                                        meta.err ? "failed" : "confirmed";
+
+                                    mappedSol.push({
+                                        id: `${
+                                            tx.transaction?.signatures?.[0] ??
+                                            sigInfo.signature
+                                        }_${idx}`,
+                                        action:
+                                            direction === "in"
+                                                ? "Receive"
+                                                : "Send",
+                                        token: "SOL",
+                                        counterparty,
+                                        amountLabel,
+                                        timestampLabel,
+                                        direction,
+                                        chain: "Solana",
+                                        evmChain: undefined,
+                                        status,
+                                        txHash:
+                                            tx.transaction?.signatures?.[0] ??
+                                            sigInfo.signature,
+                                        timestamp: timestampMs,
+                                        fromAddress: accountKeys[0] || "",
+                                        toAddress: counterparty,
+                                        value: amountSol.toString(),
+                                        tokenSymbol: "SOL",
+                                        tokenAmount: amountSol.toString(),
+                                    });
+                                }
+
+                                return mappedSol;
+                            } catch (err) {
+                                console.error(
+                                    "Solana History Fetch Error:",
+                                    err,
+                                );
+                                return [];
+                            }
+                        })(),
+                    );
+                }
+
+                const results = await Promise.all(tasks);
+                const combined = results.flat();
+
+                // Sort newest -> oldest by timestamp
+                combined.sort((a, b) => b.timestamp - a.timestamp);
+
+                setTransactions(combined);
+                setCachedData(cacheKey, combined);
                 lastFetchRef.current = {
-                    address: address.toLowerCase(),
-                    chain: currentEvmChain,
+                    key: cacheKey,
                     timestamp: Date.now(),
                 };
-
             } catch (err: any) {
                 console.error("History Fetch Error:", err);
+                setError("Failed to load history");
 
-                // Handle 404 gracefully - it might just mean no history exists
-                if (err?.message?.includes("404") || err?.message?.includes("Not Found")) {
-                    setError(null); // Don't show error for 404, just empty list
-                    setTransactions([]);
-                    // Cache empty result to avoid repeated 404s
-                    setCachedData(cacheKey, []);
-                } else {
-                    setError("Failed to load history");
-                    // On error, try to use cached data if available
-                    const cached = getCachedData<WalletTransaction[]>(cacheKey, HISTORY_CACHE_TTL * 2); // Use stale cache on error
-                    if (cached) {
-                        setTransactions(cached);
-                    }
+                const lowerEvm = evmAddress?.toLowerCase() || "none";
+                const lowerSol = solAddress?.toLowerCase() || "none";
+                const fallbackKey = `xylith_cache_history_${lowerEvm}_${lowerSol}_${currentEvmChain}`;
+                const cached = getCachedData<WalletTransaction[]>(
+                    fallbackKey,
+                    HISTORY_CACHE_TTL * 2,
+                );
+                if (cached) {
+                    setTransactions(cached);
                 }
             } finally {
                 setIsLoading(false);
@@ -247,7 +473,9 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
         }
 
         fetchHistory();
-    }, [address, activeChain, currentEvmChain]);
+        // We intentionally do NOT depend on activeChain for fetching,
+        // so that both EVM and Solana history are aggregated eagerly.
+    }, [evmAddress, solAddress, currentEvmChain]);
 
     return { transactions, isLoading, error };
 }
