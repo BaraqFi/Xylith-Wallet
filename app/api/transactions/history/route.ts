@@ -339,12 +339,13 @@ export async function GET(req: NextRequest) {
                 }
 
                 // Calculate fiat value (simplified - uses current price)
-                // In production, you'd want historical prices
+                // NOTE: Alchemy `getAssetTransfers` returns `value` already in token units (may be decimal).
+                // So we should not BigInt() it (would throw for values like "0.0004").
                 let fiatValue: number | undefined;
-                if (transfer.value && tokenDecimals) {
+                if (transfer.value) {
                     try {
-                        const valueBigInt = BigInt(transfer.value);
-                        const amount = Number(valueBigInt) / Math.pow(10, tokenDecimals);
+                        const amount = Number(transfer.value);
+                        if (!Number.isFinite(amount)) throw new Error("Non-numeric transfer value");
                         
                         // Fetch current price for fiat value estimate
                         // Note: This is an estimate - real historical prices would be better

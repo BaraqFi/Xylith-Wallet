@@ -37,6 +37,7 @@
     "react-dom": "19.2.1",
     "recharts": "^3.7.0",
     "rpc-websockets": "^9.3.3",
+    "jose": "^5.9.2",
     "tailwind-merge": "^3.4.0",
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^13.0.0",

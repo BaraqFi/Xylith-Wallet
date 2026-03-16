@@ -4,42 +4,46 @@
  */
 
 import { NextRequest } from "next/server";
+import { createRemoteJWKSet, jwtVerify, JWTPayload } from "jose";
 
 const PRIVY_APP_ID = "cmid35rfp01xlks0cujzvl6wk";
 const PRIVY_APP_SECRET = process.env.PRIVY_APP_SECRET!;
 const PRIVY_API_BASE = "https://auth.privy.io";
 
-/** Basic Auth header for Privy API calls */
+/** JWKS endpoint for verifying Privy-issued access tokens (public, no secret needed). */
+const PRIVY_JWKS_URL = new URL(
+    `https://auth.privy.io/api/v1/apps/${PRIVY_APP_ID}/jwks.json`,
+);
+const PRIVY_JWKS = createRemoteJWKSet(PRIVY_JWKS_URL);
+
+/** Basic Auth header for Privy API calls (metadata reads/writes only). */
 function getPrivyAuthHeader(): string {
-    return `Basic ${Buffer.from(`${PRIVY_APP_ID}:${PRIVY_APP_SECRET}`).toString("base64")}`;
+    return `Basic ${Buffer.from(`${PRIVY_APP_ID}:${PRIVY_APP_SECRET}`).toString(
+        "base64",
+    )}`;
 }
 
 /**
- * Verifies the Privy access token from the Authorization header.
- * Returns the authenticated user's Privy ID, or null if invalid.
+ * Verifies the Privy access token from the Authorization header using JWKS.
+ * Returns the authenticated user's Privy ID (sub), or null if invalid.
  */
-export async function verifyPrivyToken(req: NextRequest): Promise<string | null> {
+export async function verifyPrivyToken(
+    req: NextRequest,
+): Promise<string | null> {
     const authHeader = req.headers.get("authorization");
     if (!authHeader?.startsWith("Bearer ")) return null;
 
     const token = authHeader.slice(7);
 
     try {
-        const res = await fetch(`${PRIVY_API_BASE}/api/v1/token/verify`, {
-            method: "POST",
-            headers: {
-                "Authorization": getPrivyAuthHeader(),
-                "privy-app-id": PRIVY_APP_ID,
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ token }),
+        const { payload } = await jwtVerify(token, PRIVY_JWKS, {
+            audience: PRIVY_APP_ID,
+            issuer: "privy.io",
         });
-
-        if (!res.ok) return null;
-
-        const data = await res.json();
-        return data.userId || data.user_id || null;
-    } catch {
+        // sub is of the form "did:privy:<userId>"
+        return typeof payload.sub === "string" ? payload.sub : null;
+    } catch (err) {
+        console.error("Privy token verification failed:", err);
         return null;
     }
 }

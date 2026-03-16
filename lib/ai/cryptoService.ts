@@ -30,20 +30,39 @@ function getRpcProxyUrl(chain: RpcChainForProxy): string {
   return `${base}/api/rpc?chain=${chain}`;
 }
 
-function getEvmProvider(chain: Exclude<Chain, "SOL">): ethers.JsonRpcProvider {
+async function evmRpc<T>(
+  chain: Exclude<Chain, "SOL">,
+  method: string,
+  params: unknown[] = [],
+): Promise<T> {
   const mapped = CHAIN_MAP[chain];
   if (!mapped) {
     throw new Error(`Unsupported EVM chain for AI RPC: ${chain}`);
   }
 
   const url = getRpcProxyUrl(mapped);
-  return new ethers.JsonRpcProvider(url);
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id: 1, jsonrpc: "2.0", method, params }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`RPC_HTTP_${res.status}`);
+  }
+
+  const data = (await res.json()) as { result?: T; error?: { message?: string } };
+  if (data.error) {
+    throw new Error(data.error.message || "RPC_ERROR");
+  }
+  return data.result as T;
 }
 
 function getSolanaConnection(): Connection {
+  // @solana/web3.js expects an absolute http(s) URL in the browser.
   const url =
     typeof window !== "undefined"
-      ? "/api/rpc?chain=solana"
+      ? `${window.location.origin}/api/rpc?chain=solana`
       : (process.env.NEXT_PUBLIC_SITE_URL ||
         (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`) ||
         "http://localhost:3000") + "/api/rpc?chain=solana";
@@ -104,15 +123,12 @@ export const estimateGasCost = async (
     if (chain === "SOL") {
       return "0.000005 SOL";
     } else {
-      const provider = getEvmProvider(chain);
-      const gasEstimate = await provider.estimateGas({
-        from,
-        to,
-        value: ethers.parseEther(amount.toString()),
-      });
-      const feeData = await provider.getFeeData();
-      const gasPrice = feeData.gasPrice ?? 0n;
-      const costWei = gasEstimate * gasPrice;
+      const valueHex = `0x${ethers.parseEther(amount.toString()).toString(16)}`;
+      const gasHex = await evmRpc<string>(chain, "eth_estimateGas", [{ from, to, value: valueHex }]);
+      const gasPriceHex = await evmRpc<string>(chain, "eth_gasPrice", []);
+      const gas = BigInt(gasHex);
+      const gasPrice = BigInt(gasPriceHex);
+      const costWei = gas * gasPrice;
       return `${parseFloat(ethers.formatEther(costWei)).toFixed(6)} ${chain}`;
     }
   } catch {
@@ -131,9 +147,8 @@ export const getNativeBalance = async (address: string, chain: Chain): Promise<n
       const balance = await connection.getBalance(publicKey);
       return balance / LAMPORTS_PER_SOL;
     } else {
-      const provider = getEvmProvider(chain);
-      const balance = await provider.getBalance(address);
-      return parseFloat(ethers.formatEther(balance));
+      const balHex = await evmRpc<string>(chain, "eth_getBalance", [address, "latest"]);
+      return parseFloat(ethers.formatEther(BigInt(balHex)));
     }
   } catch (error) {
     throw error;
@@ -158,9 +173,28 @@ export const getTransactionHistory = async (chain: Chain, address: string, limit
       }));
 
     } else {
-      // For EVM chains, defer to the main app's indexed history instead of
-      // calling third-party explorers from AI. This keeps history logic in one place.
-      return [];
+      // For EVM, use our existing server route that already indexes/merges history.
+      // This avoids adding new third-party dependencies in the AI client.
+      const chainId = chain === "ETH" ? 1 : undefined;
+      if (!chainId) return [];
+
+      const url = typeof window !== "undefined"
+        ? `/api/transactions/history?chainId=${chainId}&address=${encodeURIComponent(address)}&limit=${limit}`
+        : `${process.env.NEXT_PUBLIC_SITE_URL || (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`) || "http://localhost:3000"}/api/transactions/history?chainId=${chainId}&address=${encodeURIComponent(address)}&limit=${limit}`;
+
+      const res = await fetch(url, { method: "GET" });
+      if (!res.ok) return [];
+
+      const data = await res.json() as { items?: Array<{ hash: string; timestamp?: number; value?: string; }> };
+      const items = Array.isArray(data.items) ? data.items : [];
+
+      return items.slice(0, limit).map((tx) => ({
+        hash: tx.hash,
+        timestamp: typeof tx.timestamp === "number" ? tx.timestamp : Date.now(),
+        success: true,
+        value: typeof tx.value === "string" ? Number(tx.value) || 0 : 0,
+        chain: chain,
+      }));
     }
   } catch (error) {
     console.error(`History fetch failed for ${chain}:`, error);

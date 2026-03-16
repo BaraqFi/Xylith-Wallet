@@ -26,6 +26,7 @@ const COMMANDS = [
   { id: 'send', label: '/send', desc: 'Transfer assets', prompt: 'Send ' },
   { id: 'swap', label: '/swap', desc: 'Trade tokens', prompt: 'Swap ' },
   { id: 'history', label: '/history', desc: 'View transactions', prompt: 'Show history' },
+  { id: 'wallet', label: '/wallet', desc: 'Show wallet addresses', prompt: 'SHOW_WALLET' },
   { id: 'clear', label: '/clear', desc: 'Clear chat', prompt: 'CLEAR_LOGS' },
 ];
 
@@ -141,19 +142,17 @@ export function AiModePage() {
     }
   }, [inputText]);
 
-  // Fetch balances using user's real wallet addresses
+  // Fetch balances using user's real wallet addresses (AI scope: ETH + SOL only)
   useEffect(() => {
     if (!evmAddress) return;
     const fetchBalances = async () => {
       const results = await Promise.allSettled([
         getNativeBalance(evmAddress, 'ETH'),
-        getNativeBalance(evmAddress, 'BASE'),
-        getNativeBalance(evmAddress, 'ARB'),
         ...(solAddress ? [getNativeBalance(solAddress, 'SOL')] : [Promise.resolve(0)]),
       ]);
       setBalances(prev => {
         const getVal = (index: number, f: number) => results[index].status === 'fulfilled' ? (results[index] as PromiseFulfilledResult<number>).value : f;
-        return { ETH: { native: getVal(0, prev.ETH.native) }, BASE: { native: getVal(1, prev.BASE.native) }, ARB: { native: getVal(2, prev.ARB.native) }, SOL: { native: getVal(3, prev.SOL.native) } };
+        return { ...prev, ETH: { native: getVal(0, prev.ETH.native) }, SOL: { native: getVal(1, prev.SOL.native) } };
       });
     };
     fetchBalances();
@@ -278,6 +277,17 @@ export function AiModePage() {
       return;
     }
 
+    if (inputText.trim() === 'SHOW_WALLET') {
+      setInputText('');
+      addLog('USER', '/wallet');
+      const lines = [
+        `ETH: ${evmAddress}`,
+        `SOL: ${solAddress || 'Not available'}`,
+      ];
+      addLog('AGENT', lines.join('\n'));
+      return;
+    }
+
     const cmd = inputText;
     setInputText('');
     addLog('USER', cmd);
@@ -310,6 +320,10 @@ export function AiModePage() {
         setOrbState('PROCESSING');
 
         let chain = (command.chain || 'ETH') as Chain;
+        if (chain !== "ETH" && chain !== "SOL") {
+          chain = "ETH";
+          addLog('SYSTEM', "AI mode currently supports only ETH and SOL. Defaulting to ETH.");
+        }
         let amountUSD = command.amountUSD;
 
         // Auto-detect chain from Contract Address if provided
@@ -364,7 +378,11 @@ export function AiModePage() {
       } else {
         setOrbState('IDLE');
         if (command.intent === 'BALANCE') {
-          const chain = (command.chain || 'ETH') as Chain;
+          let chain = (command.chain || 'ETH') as Chain;
+          if (chain !== "ETH" && chain !== "SOL") {
+            chain = "ETH";
+            addLog('SYSTEM', "AI mode currently supports only ETH and SOL. Defaulting to ETH.");
+          }
           const addr = command.recipient || (chain === 'SOL' ? (solAddress || '') : evmAddress);
           try {
             const bal = await getNativeBalance(addr, chain);
@@ -379,12 +397,17 @@ export function AiModePage() {
           const results: string[] = [];
 
           if (command.chain) {
-            const targetAddr = command.recipient || (command.chain === 'SOL' ? (solAddress || '') : evmAddress);
-            const txs = await getTransactionHistory(command.chain, targetAddr, limit);
+            let chain = command.chain as Chain;
+            if (chain !== "ETH" && chain !== "SOL") {
+              chain = "ETH";
+              addLog('SYSTEM', "AI mode currently supports only ETH and SOL. Defaulting to ETH.");
+            }
+            const targetAddr = command.recipient || (chain === 'SOL' ? (solAddress || '') : evmAddress);
+            const txs = await getTransactionHistory(chain, targetAddr, limit);
             if (txs.length === 0) {
-              results.push(`${command.chain}: No recent transactions found.`);
+              results.push(`${chain}: No recent transactions found.`);
             } else {
-              results.push(`${command.chain} History (${targetAddr.slice(0, 6)}...):`);
+              results.push(`${chain} History (${targetAddr.slice(0, 6)}...):`);
               txs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)} | ${tx.success ? 'OK' : 'FAIL'}`));
             }
           } else {

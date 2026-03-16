@@ -13,7 +13,12 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { address, chain } = await req.json();
+    // Some callers may send an empty body; guard to avoid throwing a SyntaxError.
+    const raw = await req.text();
+    if (!raw) {
+      return NextResponse.json({ error: "Missing request body" }, { status: 400 });
+    }
+    const { address, chain } = JSON.parse(raw) as { address?: string; chain?: string };
 
     if (!address || !chain) {
       return NextResponse.json(
