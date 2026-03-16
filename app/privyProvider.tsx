@@ -107,6 +107,9 @@ export default function Providers({ children }: { children: ReactNode }) {
         ],
       }}
     >
+      {/* All Alchemy Account Kit operations (EIP-7702 delegation, session keys,
+          transaction signing) run server-side in /api/ai/* routes where
+          ALCHEMY_API_KEY is accessed securely. No API keys on the client. */}
       {children}
     </PrivyProvider>
   );

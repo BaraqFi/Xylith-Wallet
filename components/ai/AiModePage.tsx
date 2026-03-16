@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
-import { AICommand, LogEntry, WalletState, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
-import { generateWallet, getPriceEstimate, getNativeBalance, sendNativeToken, validateAddress, estimateGasCost, detectChainFromAddress, executeSwap, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
-import { parseUserCommand, summarizeHistory } from "@/lib/ai/geminiService";
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { usePrivy } from '@privy-io/react-auth';
+import { AICommand, LogEntry, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
+import { getPriceEstimate, getNativeBalance, validateAddress, estimateGasCost, detectChainFromAddress, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
+import { sanitizeError } from "@/lib/ai/errorSanitizer";
 import { AiChatMessage as ChatMessage } from "./AiChatMessage";
 import { AiActionCard as ActionCard } from "./AiActionCard";
 import { AiOrb as Orb } from "./AiOrb";
@@ -24,8 +25,20 @@ const COMMANDS = [
 ];
 
 export function AiModePage() {
+  const { user, getAccessToken } = usePrivy();
+
+  // --- Derive wallet addresses from Privy user (no ephemeral wallets) ---
+  const evmAccount = user?.linkedAccounts?.find(
+    (a) => a.type === 'wallet' && 'chainType' in a && a.chainType === 'ethereum' && 'walletClientType' in a && a.walletClientType === 'privy'
+  );
+  const evmAddress = evmAccount && 'address' in evmAccount ? (evmAccount.address as string) : undefined;
+
+  const solAccount = user?.linkedAccounts?.find(
+    (a) => a.type === 'wallet' && 'chainType' in a && a.chainType === 'solana' && 'walletClientType' in a && a.walletClientType === 'privy'
+  );
+  const solAddress = solAccount && 'address' in solAccount ? (solAccount.address as string) : undefined;
+
   // --- State ---
-  const [wallet, setWallet] = useState<WalletState | null>(null);
   const [, setBalances] = useState<BalanceMap>({ ETH: { native: 0 }, BASE: { native: 0 }, ARB: { native: 0 }, SOL: { native: 0 } });
 
   const [logs, setLogs] = useState<LogEntry[]>([
@@ -45,6 +58,9 @@ export function AiModePage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
+  // AI session status: determines whether we show the splash or go straight to chat.
+  const [aiSessionStatus, setAiSessionStatus] = useState<'unknown' | 'none' | 'active' | 'expired'>('unknown');
+
   const [spendingLimit, setSpendingLimit] = useState<SpendingLimit>({
     amount: 1000,
     period: 'DAILY',
@@ -56,16 +72,61 @@ export function AiModePage() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const [isFundModalOpen, setIsFundModalOpen] = useState(false);
+
+  // --- Helpers ---
+  const addLog = useCallback((type: LogEntry['type'], content: string, txId?: string) => {
+    setLogs(prev => [...prev, { id: uuidv4(), timestamp: Date.now(), type, content, txId }]);
+  }, []);
+
+  /** Get Privy auth token for backend API calls */
+  const getAuthHeaders = useCallback(async () => {
+    const token = await getAccessToken();
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    };
+  }, [getAccessToken]);
 
   // --- Effects ---
+
+  // Check AI session status when component mounts or user changes
+  useEffect(() => {
+    if (!user) return;
+
+    const checkSession = async () => {
+      try {
+        const headers = await getAuthHeaders();
+        const res = await fetch("/api/ai/session", {
+          method: "GET",
+          headers,
+        });
+        if (!res.ok) {
+          setAiSessionStatus("none");
+          return;
+        }
+        const data = await res.json();
+        if (data.status === "active") {
+          setAiSessionStatus("active");
+        } else if (data.status === "expired") {
+          setAiSessionStatus("expired");
+        } else {
+          setAiSessionStatus("none");
+        }
+      } catch {
+        setAiSessionStatus("none");
+      }
+    };
+    checkSession();
+  }, [user, getAuthHeaders]);
+
+  // Auto-scroll chat
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [logs]);
 
-  // Handle Slash Command Detection
+  // Slash command detection
   useEffect(() => {
     if (inputText.startsWith('/')) {
       setShowCommands(true);
@@ -74,14 +135,15 @@ export function AiModePage() {
     }
   }, [inputText]);
 
+  // Fetch balances using user's real wallet addresses
   useEffect(() => {
-    if (!wallet) return;
+    if (!evmAddress) return;
     const fetchBalances = async () => {
       const results = await Promise.allSettled([
-        getNativeBalance(wallet.evmAddress, 'ETH'),
-        getNativeBalance(wallet.evmAddress, 'BASE'),
-        getNativeBalance(wallet.evmAddress, 'ARB'),
-        getNativeBalance(wallet.solAddress, 'SOL')
+        getNativeBalance(evmAddress, 'ETH'),
+        getNativeBalance(evmAddress, 'BASE'),
+        getNativeBalance(evmAddress, 'ARB'),
+        ...(solAddress ? [getNativeBalance(solAddress, 'SOL')] : [Promise.resolve(0)]),
       ]);
       setBalances(prev => {
         const getVal = (index: number, f: number) => results[index].status === 'fulfilled' ? (results[index] as PromiseFulfilledResult<number>).value : f;
@@ -91,24 +153,35 @@ export function AiModePage() {
     fetchBalances();
     const interval = setInterval(fetchBalances, 45000);
     return () => clearInterval(interval);
-  }, [wallet]);
+  }, [evmAddress, solAddress]);
 
   // --- Logic ---
 
-  const addLog = (type: LogEntry['type'], content: string, txId?: string) => {
-    setLogs(prev => [...prev, { id: uuidv4(), timestamp: Date.now(), type, content, txId }]);
-  };
-
-  const handleCreateWallet = async () => {
+  /** Activate AI mode: create session key + 7702 delegation via backend */
+  const handleActivateAiMode = async () => {
     setOrbState('PROCESSING');
-    await new Promise(r => setTimeout(r, 1500));
-    const newWallet = generateWallet();
-    setWallet(newWallet);
-    addLog(
-      'SYSTEM',
-      `AI wallet created.\nEVM: ${shortenAddress(newWallet.evmAddress)}\nSolana: ${shortenAddress(newWallet.solAddress)}`
-    );
-    setOrbState('IDLE');
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch("/api/ai/session", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.status === "active") {
+        setAiSessionStatus("active");
+        if (data.message) {
+          addLog('SYSTEM', data.message);
+        }
+      } else {
+        addLog('ERROR', sanitizeError(data.error || "Failed to initialize AI session."));
+      }
+    } catch (error) {
+      addLog('ERROR', sanitizeError(error));
+    } finally {
+      setOrbState('IDLE');
+    }
   };
 
   const handleSelectCommand = (cmd: typeof COMMANDS[0]) => {
@@ -123,7 +196,7 @@ export function AiModePage() {
   };
 
   const handleCommand = async () => {
-    if (!inputText.trim() || orbState === 'THINKING' || !wallet) return;
+    if (!inputText.trim() || orbState === 'THINKING' || !evmAddress) return;
 
     if (inputText.trim() === 'CLEAR_LOGS') {
       setLogs([]);
@@ -138,12 +211,13 @@ export function AiModePage() {
     setShowCommands(false);
 
     try {
+      const headers = await getAuthHeaders();
       const commandRes = await fetch("/api/ai/parse", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           userText: cmd,
-          wallet: { evmAddress: wallet.evmAddress, solAddress: wallet.solAddress }
+          wallet: { evmAddress, solAddress: solAddress || '' }
         })
       });
 
@@ -164,7 +238,7 @@ export function AiModePage() {
         let chain = (command.chain || 'ETH') as Chain;
         let amountUSD = command.amountUSD;
 
-        // Auto-detect chain from Contract Address if provided (e.g. "Buy {CA}")
+        // Auto-detect chain from Contract Address if provided
         if (command.contractAddress && !command.chain) {
           const detected = detectChainFromAddress(command.contractAddress);
           if (detected) chain = detected;
@@ -178,7 +252,7 @@ export function AiModePage() {
 
         // Validation
         if (command.recipient && !validateAddress(chain, command.recipient)) {
-          addLog('ERROR', `Invalid address for ${chain}.`);
+          addLog('ERROR', "The address provided is not valid.");
           setOrbState('ERROR');
           setTimeout(() => setOrbState('IDLE'), 2000);
           return;
@@ -207,16 +281,17 @@ export function AiModePage() {
         setActiveTx(newTx);
         addLog('AGENT', command.reply);
 
-        // Gas / Simulation
-        const targetAddr = command.recipient || command.contractAddress || "0x0000000"; // Fallback for est
-        const gas = await estimateGasCost(chain, chain === 'SOL' ? wallet.solAddress : wallet.evmAddress, targetAddr, amountToken);
+        // Gas estimation
+        const targetAddr = command.recipient || command.contractAddress || "0x0000000";
+        const fromAddr = chain === 'SOL' ? (solAddress || '') : evmAddress;
+        const gas = await estimateGasCost(chain, fromAddr, targetAddr, amountToken);
         setActiveTx(prev => prev ? ({ ...prev, gasEstimate: gas, status: 'NEEDS_APPROVAL' }) : null);
 
       } else {
         setOrbState('IDLE');
         if (command.intent === 'BALANCE') {
           const chain = (command.chain || 'ETH') as Chain;
-          const addr = command.recipient || (chain === 'SOL' ? wallet.solAddress : wallet.evmAddress);
+          const addr = command.recipient || (chain === 'SOL' ? (solAddress || '') : evmAddress);
           try {
             const bal = await getNativeBalance(addr, chain);
             addLog('AGENT', `Current balance: ${bal.toFixed(4)} ${chain}`);
@@ -229,20 +304,16 @@ export function AiModePage() {
           const limit = command.limit || 5;
           const results: string[] = [];
 
-          // Case 1: Specific Chain requested
           if (command.chain) {
-            const targetAddr = command.recipient || (command.chain === 'SOL' ? wallet.solAddress : wallet.evmAddress);
+            const targetAddr = command.recipient || (command.chain === 'SOL' ? (solAddress || '') : evmAddress);
             const txs = await getTransactionHistory(command.chain, targetAddr, limit);
             if (txs.length === 0) {
-              results.push(`${command.chain}: No recent transactions found (or API limit reached).`);
+              results.push(`${command.chain}: No recent transactions found.`);
             } else {
               results.push(`${command.chain} History (${targetAddr.slice(0, 6)}...):`);
               txs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)} | ${tx.success ? 'OK' : 'FAIL'}`));
             }
-          }
-          // Case 2: No Chain specified -> Fetch BOTH (if recipient is generic/null)
-          else {
-            // If recipient provided, we must detect chain first
+          } else {
             if (command.recipient) {
               const detected = detectChainFromAddress(command.recipient);
               if (detected) {
@@ -253,10 +324,9 @@ export function AiModePage() {
                 results.push("Could not identify chain for provided address.");
               }
             } else {
-              // Fetch Both Defaults
               const [solTxs, ethTxs] = await Promise.all([
-                getTransactionHistory('SOL', wallet.solAddress, limit),
-                getTransactionHistory('ETH', wallet.evmAddress, limit)
+                solAddress ? getTransactionHistory('SOL', solAddress, limit) : Promise.resolve([]),
+                getTransactionHistory('ETH', evmAddress, limit)
               ]);
 
               results.push(`SOL History (${limit} latest):`);
@@ -265,16 +335,17 @@ export function AiModePage() {
 
               results.push(`ETH History (${limit} latest):`);
               if (ethTxs.length) ethTxs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)}`));
-              else results.push("No transactions / API Limit.");
+              else results.push("No transactions.");
             }
           }
 
           addLog('AGENT', results.join('\n'));
 
         } else if (command.intent === 'HISTORY_SUMMARY') {
+          const headers = await getAuthHeaders();
           const summaryRes = await fetch("/api/ai/summarize", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers,
             body: JSON.stringify({ history: transactions })
           });
 
@@ -283,54 +354,86 @@ export function AiModePage() {
           }
 
           const data = (await summaryRes.json()) as { summary?: string };
-          addLog('AGENT', data.summary || "SUMMARY_UNAVAILABLE");
+          addLog('AGENT', data.summary || "Summary unavailable.");
         } else {
           addLog('AGENT', command.reply);
         }
       }
 
-    } catch {
-      addLog('ERROR', "I couldn't process that.");
+    } catch (error) {
+      addLog('ERROR', sanitizeError(error));
       setOrbState('ERROR');
       setTimeout(() => setOrbState('IDLE'), 2000);
     }
   };
 
+  /** Execute a confirmed transaction via the backend session key */
   const handleExecuteTx = async (tx: Transaction) => {
-    if (!wallet) return;
+    if (!evmAddress) return;
 
-    // Don't close card immediately, allow "BROADCASTING" state to show
     setActiveTx(prev => prev ? ({ ...prev, status: 'BROADCASTING' }) : null);
     setOrbState('PROCESSING');
 
     try {
-      let result;
-
-      if (tx.type === 'SEND') {
-        if (!tx.recipient) throw new Error("No recipient");
-        result = await sendNativeToken(wallet, tx.chain, tx.recipient, tx.amount);
-      } else if (tx.type === 'SWAP' || tx.type === 'BRIDGE') {
-        // Use the simulated swap/bridge executor
-        // If ContractAddress is missing (e.g. bridge), we use a placeholder logic inside executeSwap
-        result = await executeSwap(wallet, tx.chain, tx.contractAddress || "0xROUTER", tx.amount);
-      } else {
-        throw new Error("Unknown transaction type");
+      // For Solana transactions, we can't use session keys (EVM-only).
+      // Surface a message that Solana txs require direct wallet confirmation.
+      if (tx.chain === 'SOL') {
+        addLog('SYSTEM', "Solana transactions require direct wallet confirmation. This will be prompted separately.");
+        setActiveTx(prev => prev ? ({ ...prev, status: 'FAILED', error: 'Solana AI auto-execution not yet supported.' }) : null);
+        setOrbState('ERROR');
+        setTimeout(() => setOrbState('IDLE'), 2000);
+        return;
       }
 
-      const completedTx = { ...tx, status: 'COMPLETED' as const, hash: result.hash };
+      // EVM: Execute via backend session key
+      const headers = await getAuthHeaders();
 
-      setActiveTx(completedTx); // Updates card to Success state
-      setTransactions(prev => [...prev, completedTx]);
-      setSpendingLimit(prev => ({ ...prev, currentUsage: prev.currentUsage + tx.amountUSD }));
+      // Build the calls array based on transaction type
+      const calls = [];
+      if (tx.type === 'SEND' && tx.recipient) {
+        // Native token send
+        const valueWei = BigInt(Math.floor(tx.amount * 1e18));
+        calls.push({
+          to: tx.recipient,
+          value: `0x${valueWei.toString(16)}`,
+          data: '0x',
+        });
+      } else if (tx.type === 'SWAP' || tx.type === 'BRIDGE') {
+        // For swaps/bridges, the calldata would come from a DEX API (1inch, 0x, etc.)
+        // For now, we build a placeholder call to the contract address
+        calls.push({
+          to: tx.contractAddress || tx.recipient || '0x0000000000000000000000000000000000000000',
+          value: `0x${BigInt(Math.floor(tx.amount * 1e18)).toString(16)}`,
+          data: '0x',
+        });
+      }
 
-      addLog('SUCCESS', `Confirmed. Hash: ${result.hash.slice(0, 8)}...`);
-      setOrbState('IDLE');
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "UNKNOWN_ERROR";
-      addLog('ERROR', `Transaction failed: ${message}`);
+      const res = await fetch("/api/ai/execute", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ calls }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.status === 'success') {
+        const hash = data.result?.receipts?.[0]?.transactionHash || data.result?.id || 'pending';
+        const completedTx = { ...tx, status: 'COMPLETED' as const, hash };
+
+        setActiveTx(completedTx);
+        setTransactions(prev => [...prev, completedTx]);
+        setSpendingLimit(prev => ({ ...prev, currentUsage: prev.currentUsage + tx.amountUSD }));
+
+        addLog('SUCCESS', `Confirmed. Hash: ${typeof hash === 'string' ? hash.slice(0, 10) : hash}...`);
+        setOrbState('IDLE');
+      } else {
+        throw new Error(data.error || 'Transaction execution failed');
+      }
+    } catch (error) {
+      const message = sanitizeError(error);
+      addLog('ERROR', message);
       setOrbState('ERROR');
       setActiveTx(prev => prev ? ({ ...prev, status: 'FAILED', error: message }) : null);
-      // Timeout managed by ActionCard useEffect now
     }
   };
 
@@ -344,14 +447,24 @@ export function AiModePage() {
 
   // --- Render ---
 
-  if (!wallet) return (
+  // If user has no EVM wallet or AI session is not active, show the splash page
+  if (!evmAddress || (aiSessionStatus !== 'active' && aiSessionStatus !== 'unknown')) return (
     <div className="h-full w-full bg-transparent text-[color:var(--color-depth)] flex flex-col overflow-hidden">
       <div className="flex items-center justify-between px-4 pt-1 pb-0 sm:px-6 sm:pt-2 z-30 shrink-0">
         <div />
         <ModeToggle />
       </div>
       <div className="flex-1 min-h-0">
-        <SplashPage onGenerate={handleCreateWallet} isGenerating={orbState === 'PROCESSING'} />
+        <SplashPage onGenerate={handleActivateAiMode} isGenerating={orbState === 'PROCESSING'} />
+      </div>
+    </div>
+  );
+
+  // Still checking session status
+  if (aiSessionStatus === 'unknown') return (
+    <div className="h-full w-full bg-transparent text-[color:var(--color-depth)] flex items-center justify-center">
+      <div className="text-xs text-[color:var(--color-depth)]/50 animate-pulse tracking-widest uppercase">
+        Loading...
       </div>
     </div>
   );
@@ -367,20 +480,13 @@ export function AiModePage() {
           onClose={() => setIsSettingsOpen(false)}
           spendingLimit={spendingLimit}
           onUpdateLimit={setSpendingLimit}
-          wallet={wallet}
+          wallet={null}
         />
       )}
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
 
       {/* ── ORB — z-0 background ── */}
       <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none opacity-80">
-        {/* 
-          PWA standalone on mobile was leaving too much vertical dead space
-          around the orb, which visually pushed the chat area down.
-          The sizing below makes the orb larger and slightly lower on small
-          viewports, and caps it by viewport height as well as width so it
-          stays balanced across PWA / mobile web / desktop.
-        */}
         <div className="relative w-[min(110vw,520px)] h-[min(110vw,520px)] max-h-[70vh] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] -translate-y-[10%] sm:-translate-y-[8%] md:-translate-y-[6%]">
           <Orb state={orbState} />
         </div>
@@ -401,14 +507,6 @@ export function AiModePage() {
           >
             <Settings size={22} className="text-[color:var(--color-depth)]/80" strokeWidth={2.5} />
           </button>
-          {wallet && (
-            <button
-              onClick={() => setIsFundModalOpen(true)}
-              className="px-3 h-10 rounded-full bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 text-xs font-medium text-[color:var(--color-depth)] border border-[color:var(--color-border)] shadow-sm"
-            >
-              Fund AI Wallet
-            </button>
-          )}
         </div>
         <ModeToggle />
       </div>
@@ -486,57 +584,6 @@ export function AiModePage() {
           </div>
         </div>
       </div>
-
-      {/* Fund AI Wallet Modal */}
-      {isFundModalOpen && wallet && (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/40 px-4">
-          <div className="wallet-card w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-[color:var(--color-depth)]">
-                Fund AI Wallet
-              </h2>
-              <button
-                onClick={() => setIsFundModalOpen(false)}
-                className="w-8 h-8 rounded-full bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 flex items-center justify-center border border-[color:var(--color-border)]"
-              >
-                <span className="text-sm">&#10005;</span>
-              </button>
-            </div>
-            <p className="text-xs text-[color:var(--color-depth)]/60">
-              These are the AI&apos;s own ephemeral wallets, separate from your Privy wallets.
-              Send only small amounts you are comfortable letting the AI manage.
-            </p>
-            <div className="space-y-3">
-              <div className="text-xs text-[color:var(--color-depth)]/70 space-y-1">
-                <div className="font-semibold">EVM (Ethereum) Address</div>
-                <div className="font-mono break-all text-[color:var(--color-depth)]/90">
-                  {wallet.evmAddress}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard?.writeText(wallet.evmAddress)}
-                  className="mt-1 inline-flex items-center rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[10px] uppercase tracking-wide text-[color:var(--color-depth)]/70 hover:bg-[color:var(--color-depth)]/5"
-                >
-                  Copy EVM Address
-                </button>
-              </div>
-              <div className="text-xs text-[color:var(--color-depth)]/70 space-y-1">
-                <div className="font-semibold">Solana Address</div>
-                <div className="font-mono break-all text-[color:var(--color-depth)]/90">
-                  {wallet.solAddress}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigator.clipboard?.writeText(wallet.solAddress)}
-                  className="mt-1 inline-flex items-center rounded-full border border-[color:var(--color-border)] px-3 py-1 text-[10px] uppercase tracking-wide text-[color:var(--color-depth)]/70 hover:bg-[color:var(--color-depth)]/5"
-                >
-                  Copy Solana Address
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

@@ -1,14 +1,10 @@
-import { WalletState, Chain, TxHistoryItem } from "./types";
+import { Chain, TxHistoryItem } from "./types";
 import { ethers } from "ethers";
 import {
   Connection,
-  Keypair,
   LAMPORTS_PER_SOL,
   PublicKey,
-  SystemProgram,
-  Transaction as SolTransaction,
 } from "@solana/web3.js";
-import { Buffer } from "buffer";
 
 // --- Configuration ---
 // AI engine must NEVER talk directly to third‑party RPC URLs with embedded keys.
@@ -49,16 +45,11 @@ function getSolanaConnection(): Connection {
     typeof window !== "undefined"
       ? "/api/rpc?chain=solana"
       : (process.env.NEXT_PUBLIC_SITE_URL ||
-          (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`) ||
-          "http://localhost:3000") + "/api/rpc?chain=solana";
+        (process.env.VERCEL_URL && `https://${process.env.VERCEL_URL}`) ||
+        "http://localhost:3000") + "/api/rpc?chain=solana";
 
   return new Connection(url, "confirmed");
 }
-
-const DEX_ROUTERS = {
-  ETH: "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D", // Uniswap V2 Router (Example)
-  SOL: "JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB" // Jupiter Aggregator (Example)
-};
 
 // --- Rate Limiting Strategy ---
 const ETH_LIMIT_WINDOW = 3 * 60 * 1000;
@@ -74,20 +65,6 @@ const checkEthRateLimit = () => {
     throw new Error(`Rate limit exceeded (ETH). Wait ${waitTime}s.`);
   }
   ethRequestTimestamps.push(now);
-};
-
-// --- Wallet Management ---
-export const generateWallet = (): WalletState => {
-  const evmWallet = ethers.Wallet.createRandom();
-  const solAccount = Keypair.generate();
-  const solPrivateKey = Buffer.from(solAccount.secretKey).toString('hex');
-
-  return {
-    evmAddress: evmWallet.address,
-    evmPrivateKey: evmWallet.privateKey,
-    solAddress: solAccount.publicKey.toString(),
-    solPrivateKey: solPrivateKey
-  };
 };
 
 // --- Validation & Estimation ---
@@ -159,7 +136,6 @@ export const getNativeBalance = async (address: string, chain: Chain): Promise<n
       return parseFloat(ethers.formatEther(balance));
     }
   } catch (error) {
-    // console.error(`Error fetching balance for ${chain}:`, error);
     throw error;
   }
 };
@@ -177,7 +153,7 @@ export const getTransactionHistory = async (chain: Chain, address: string, limit
         hash: sig.signature,
         timestamp: sig.blockTime || Date.now() / 1000,
         success: !sig.err,
-        value: 0, // Difficult to get exact value without parsing transaction details
+        value: 0,
         chain: 'SOL'
       }));
 
@@ -190,73 +166,6 @@ export const getTransactionHistory = async (chain: Chain, address: string, limit
     console.error(`History fetch failed for ${chain}:`, error);
     return [];
   }
-};
-
-// --- Write Operations (Transactions) ---
-export const sendNativeToken = async (
-  wallet: WalletState,
-  chain: Chain,
-  recipient: string,
-  amount: number
-): Promise<{ hash: string }> => {
-
-  if (chain === 'ETH') checkEthRateLimit();
-
-  if (chain === 'SOL') {
-    const connection = getSolanaConnection();
-    const secretKey = Uint8Array.from(Buffer.from(wallet.solPrivateKey, 'hex'));
-    const sender = Keypair.fromSecretKey(secretKey);
-    const toPublicKey = new PublicKey(recipient);
-
-    const transaction = new SolTransaction().add(
-      SystemProgram.transfer({
-        fromPubkey: sender.publicKey,
-        toPubkey: toPublicKey,
-        lamports: Math.floor(amount * LAMPORTS_PER_SOL),
-      })
-    );
-
-    // Attach a recent blockhash and fee payer so the transaction is valid on-chain
-    const { blockhash } = await connection.getLatestBlockhash("finalized");
-    transaction.recentBlockhash = blockhash;
-    transaction.feePayer = sender.publicKey;
-
-    const signature = await connection.sendTransaction(transaction, [sender], {
-      preflightCommitment: "confirmed",
-    });
-    return { hash: signature };
-
-  } else {
-    const provider = getEvmProvider(chain);
-    const signer = new ethers.Wallet(wallet.evmPrivateKey, provider);
-
-    const tx = await signer.sendTransaction({
-      to: recipient,
-      value: ethers.parseEther(amount.toString()),
-    });
-
-    return { hash: tx.hash };
-  }
-};
-
-/**
- * Simulates a Swap or Bridge transaction.
- * In a production app, this would construct a transaction using 1inch API (EVM) or Jupiter SDK (Solana).
- * For this demo, it performs a 0-value (or nominal) transfer to the router address to prove on-chain execution capability.
- */
-export const executeSwap = async (
-  wallet: WalletState,
-  chain: Chain,
-  tokenAddress: string,
-  amountIn: number
-): Promise<{ hash: string }> => {
-  // For the Hackathon/Demo: We treat the "Recipient" as the DEX Router.
-  // We send the 'Native' token to the router to simulate the swap start.
-  const router = chain === 'SOL' ? DEX_ROUTERS.SOL : DEX_ROUTERS.ETH;
-
-  // Note: We are ignoring the contract interaction data (calldata) for simplicity
-  // because we don't have the ABIs imported. We just show we can sign and send.
-  return sendNativeToken(wallet, chain, router, amountIn);
 };
 
 // --- Utilities ---

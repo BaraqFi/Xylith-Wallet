@@ -99,9 +99,10 @@ export function AiModeAlert() {
           Enable AI Mode
         </h2>
         <p className="text-sm text-[color:var(--color-depth)]/70 mb-6">
-          AI Mode allows you to execute on-chain transactions through chat commands.
-          The AI agent can send tokens, swap assets, and perform trades on your behalf
-          using secure session-based permissions.
+          AI Mode upgrades your wallet with a one-time delegation so the AI agent
+          can execute transactions on your behalf within set spending limits.
+          You stay in control — your wallet address doesn&apos;t change, and you can
+          revoke access at any time from settings.
         </p>
         <div className="flex items-center gap-2 mb-6">
           <input

@@ -34,13 +34,17 @@ export interface Transaction {
 }
 
 /**
- * Holds the local wallet secrets.
+ * AI session info stored in Privy user metadata.
+ * No private keys — Alchemy Signer handles all key material in Turnkey enclaves.
+ * The sessionReference is an opaque identifier pointing to the session Alchemy manages.
  */
-export interface WalletState {
-  evmAddress: string;
-  evmPrivateKey: string;
-  solAddress: string;
-  solPrivateKey: string;
+export interface AiSessionInfo {
+  /** The Alchemy session permissions object returned by grantPermissions() */
+  sessionPermissions: unknown;
+  /** Unix timestamp (ms) when this session expires */
+  sessionExpiry: number;
+  /** The public address of the session key signer */
+  signerAddress: string;
 }
 
 export interface BalanceMap {
@@ -93,7 +97,7 @@ export interface AICommand {
   targetToken?: string;
   recipient?: string;
   contractAddress?: string;
-  reply: string; 
+  reply: string;
   reasoning: string;
   riskAssessment: 'LOW' | 'MEDIUM' | 'HIGH';
   technicalSummary: string;

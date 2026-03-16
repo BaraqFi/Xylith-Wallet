@@ -1,22 +1,22 @@
 import React, { useState } from 'react';
-import { SpendingLimit, WalletState } from '@/lib/ai/types';
-import { X, Eye, EyeOff, Save, Key, PenTool, CheckCircle, ShieldCheck } from 'lucide-react';
+import { SpendingLimit } from '@/lib/ai/types';
+import { X, Save, PenTool, CheckCircle, ShieldCheck } from 'lucide-react';
 import clsx from 'clsx';
 
 interface SettingsModalProps {
   onClose: () => void;
   spendingLimit: SpendingLimit;
   onUpdateLimit: (limit: SpendingLimit) => void;
-  wallet: WalletState;
+  wallet: null;
 }
 
 /**
  * Modal dialog for configuring application settings.
+ * Private keys are no longer displayed — Alchemy's Turnkey enclaves manage all key material.
  */
 export const AiSettingsModal: React.FC<SettingsModalProps> = ({
-  onClose, spendingLimit, onUpdateLimit, wallet
+  onClose, spendingLimit, onUpdateLimit
 }) => {
-  const [showKeys, setShowKeys] = useState(false);
   const [amount, setAmount] = useState(spendingLimit.amount);
   const [period, setPeriod] = useState(spendingLimit.period);
   const [defaultBuy, setDefaultBuy] = useState(spendingLimit.defaultBuyAmountUSD || 50);
@@ -105,7 +105,7 @@ export const AiSettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* On-Chain Signing Simulation */}
+              {/* On-Chain Signing */}
               <div className="pt-2 border-t border-[color:var(--color-border)]">
                 <button
                   onClick={handleSignAllowance}
@@ -120,37 +120,8 @@ export const AiSettingsModal: React.FC<SettingsModalProps> = ({
                   {isSigned ? <><CheckCircle size={14} /> Allowance & Period Signed</> : <><PenTool size={14} /> Sign New Allowance On-Chain</>}
                 </button>
                 <p className="text-[10px] text-[color:var(--color-depth)]/60 mt-2 text-center leading-relaxed">
-                  Signing updates the smart contract spending limits for this session key.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Private Keys Section */}
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-semibold text-red-500 uppercase tracking-wider flex items-center gap-2">
-                <Key size={14} /> Session Keys
-              </h3>
-              <button
-                onClick={() => setShowKeys(!showKeys)}
-                className="text-xs text-[color:var(--color-depth)]/60 hover:text-[color:var(--color-depth)] flex items-center gap-1"
-              >
-                {showKeys ? <><EyeOff size={12} /> Hide</> : <><Eye size={12} /> Reveal</>}
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div className="bg-[color:var(--color-depth)]/5 rounded-lg p-3 border border-[color:var(--color-border)] relative group">
-                <span className="absolute top-2 right-2 text-[10px] text-[color:var(--color-depth)]/40 font-bold">EVM</span>
-                <p className={`font-mono text-xs break-all ${showKeys ? 'text-[color:var(--color-depth)]/80' : 'text-[color:var(--color-depth)]/30 blur-sm select-none'}`}>
-                  {wallet.evmPrivateKey}
-                </p>
-              </div>
-              <div className="bg-[color:var(--color-depth)]/5 rounded-lg p-3 border border-[color:var(--color-border)] relative group">
-                <span className="absolute top-2 right-2 text-[10px] text-[color:var(--color-depth)]/40 font-bold">SOL</span>
-                <p className={`font-mono text-xs break-all ${showKeys ? 'text-[color:var(--color-depth)]/80' : 'text-[color:var(--color-depth)]/30 blur-sm select-none'}`}>
-                  {wallet.solPrivateKey}
+                  Signing updates the on-chain session key spending limits.
+                  Your private keys are secured in Alchemy&apos;s Turnkey enclaves and never exposed.
                 </p>
               </div>
             </div>
