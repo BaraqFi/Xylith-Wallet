@@ -5,7 +5,8 @@ import {
     getEmbeddedEvmAddress,
 } from "@/lib/ai/privyServer";
 import { sanitizeError } from "@/lib/ai/errorSanitizer";
-import { executeWithSessionKey, generateSessionKeySigner } from "@/lib/ai/alchemyServer";
+import { executeWithSessionKey } from "@/lib/ai/alchemyServer";
+import { decryptSessionKeyHex } from "@/lib/ai/sessionKeyCrypto";
 import type { Hex } from "viem";
 
 export const runtime = "nodejs";
@@ -43,6 +44,8 @@ export async function POST(req: NextRequest) {
         const meta = user.custom_metadata;
         const sessionKey = meta?.alchemySessionKey as string | undefined;
         const sessionExpiry = meta?.sessionExpiry as number | undefined;
+        const sessionPermissionsRaw = meta?.sessionPermissions as string | undefined;
+        const sessionKeyEnc = meta?.sessionKeyEnc as string | undefined;
 
         if (!sessionKey || !sessionExpiry) {
             return NextResponse.json(
@@ -55,6 +58,20 @@ export async function POST(req: NextRequest) {
         if (sessionExpiry <= now) {
             return NextResponse.json(
                 { error: "Your AI session has expired. Please re-activate AI mode." },
+                { status: 403 }
+            );
+        }
+
+        if (!sessionKeyEnc) {
+            return NextResponse.json(
+                { error: "AI session key not available. Please re-activate AI mode." },
+                { status: 403 }
+            );
+        }
+
+        if (!sessionPermissionsRaw) {
+            return NextResponse.json(
+                { error: "AI session permissions not installed. Please re-activate AI mode." },
                 { status: 403 }
             );
         }
@@ -85,12 +102,21 @@ export async function POST(req: NextRequest) {
             data: (call.data || "0x") as Hex,
         }));
 
-        // Build the permissions context from the stored session key address.
-        // The session key address references the session managed by Alchemy's Turnkey enclave.
-        const permissionsContext = { context: sessionKey as `0x${string}` };
+        let permissionsContext: any = null;
+        try {
+            permissionsContext = JSON.parse(sessionPermissionsRaw);
+        } catch {
+            return NextResponse.json(
+                { error: "AI session permissions are corrupted. Please re-activate AI mode." },
+                { status: 403 }
+            );
+        }
 
-        // The session key signer is managed by Alchemy's Turnkey enclave.
-        const sessionKeySigner = generateSessionKeySigner();
+        // Decrypt the stored session key private key and reconstruct a signer.
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { LocalAccountSigner } = require("@aa-sdk/core");
+        const sessionKeyPrivateKey = decryptSessionKeyHex(sessionKeyEnc);
+        const sessionKeySigner = LocalAccountSigner.privateKeyToAccountSigner(sessionKeyPrivateKey);
 
         const result = await executeWithSessionKey(
             evmAddress as Hex,

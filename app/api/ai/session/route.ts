@@ -10,10 +10,17 @@ import {
   generateSessionKeySigner,
   SESSION_LIFETIME_SEC,
 } from "@/lib/ai/alchemyServer";
-import { LocalAccountSigner } from "@aa-sdk/core";
 import { sanitizeError } from "@/lib/ai/errorSanitizer";
+import { encryptSessionKeyHex } from "@/lib/ai/sessionKeyCrypto";
+import crypto from "crypto";
 
 export const runtime = "nodejs";
+
+type SessionBody = {
+  // When present, client has already installed the session key and returns the permissions context.
+  sessionPermissions?: unknown;
+  signerAddress?: string;
+};
 
 /**
  * GET /api/ai/session
@@ -114,36 +121,49 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Parse optional spending cap from request body
-    let spendCapWei: `0x${string}` = "0x2386F26FC10000"; // default: 0.01 ETH
-    try {
-      const body = await req.json();
-      if (body.spendCapWei) {
-        spendCapWei = body.spendCapWei;
-      }
-    } catch {
-      // No body or invalid JSON — use default spending cap
-    }
+    const body = (await req.json().catch(() => ({}))) as SessionBody;
 
-    // Generate a new session key signer
-    const sessionKeySigner = generateSessionKeySigner();
-
-    // The owner signer is the user's Privy embedded wallet.
-    // For session creation, we need the owner to sign the delegation + permission grant.
-    // This is handled via the Alchemy Account Kit — the delegation tx will be
-    // submitted through the bundler, and the user's Privy wallet signs it.
-    //
-    // NOTE: In the full flow, the client-side Privy embedded wallet signs the
-    // EIP-7702 authorization. The server prepares the session and stores the reference.
-    // For now, we use a placeholder that creates the session key and stores the reference,
-    // with the actual 7702 delegation happening when the first transaction is sent.
-    const sessionKeyAddress = await sessionKeySigner.getAddress();
     const expiresAt = now + SESSION_LIFETIME_SEC;
 
-    // Store session reference in Privy user metadata
+    // Step 2: client posts the permissions context after installing the session key.
+    if (body.sessionPermissions && body.signerAddress) {
+      const metadataSet = await setPrivyUserMetadata(userId, {
+        alchemySessionKey: body.signerAddress,
+        sessionExpiry: expiresAt,
+        sessionPermissions: JSON.stringify(body.sessionPermissions),
+      });
+
+      if (!metadataSet) {
+        return NextResponse.json(
+          { error: "Failed to persist session. Please try again." },
+          { status: 500 }
+        );
+      }
+
+      return NextResponse.json({
+        status: "active",
+        session: {
+          signerAddress: body.signerAddress,
+          expiresAt,
+          evmAddress,
+        },
+        message: `AI mode activated. Session valid for ${SESSION_LIFETIME_SEC / 3600}h.`,
+      });
+    }
+
+    // Step 1: server generates and stores an encrypted session key. Client must install it.
+    const sessionKeyPrivateKey = `0x${crypto.randomBytes(32).toString("hex")}`;
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { LocalAccountSigner } = require("@aa-sdk/core");
+    const sessionKeySigner = LocalAccountSigner.privateKeyToAccountSigner(sessionKeyPrivateKey);
+    const sessionKeyAddress = await sessionKeySigner.getAddress();
+    const sessionKeyEnc = encryptSessionKeyHex(sessionKeyPrivateKey);
+
     const metadataSet = await setPrivyUserMetadata(userId, {
       alchemySessionKey: sessionKeyAddress,
       sessionExpiry: expiresAt,
+      sessionKeyEnc,
+      sessionPermissions: "",
     });
 
     if (!metadataSet) {
@@ -154,13 +174,12 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({
-      status: "active",
+      status: "needs_client_grant",
       session: {
         signerAddress: sessionKeyAddress,
         expiresAt,
         evmAddress,
       },
-      message: `AI mode activated. Session valid for ${SESSION_LIFETIME_SEC / 3600}h.`,
     });
   } catch (error) {
     console.error("AI Session POST error:", error);

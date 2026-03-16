@@ -2,9 +2,14 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
+import { useWallets } from '@privy-io/react-auth';
 import { AICommand, LogEntry, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
 import { getPriceEstimate, getNativeBalance, validateAddress, estimateGasCost, detectChainFromAddress, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
 import { sanitizeError } from "@/lib/ai/errorSanitizer";
+import { createSmartWalletClient } from "@account-kit/wallet-client";
+import { WalletClientSigner } from "@aa-sdk/core";
+import { createWalletClient, custom } from "viem";
+import { alchemy, mainnet as alchemyMainnet } from "@account-kit/infra";
 import { AiChatMessage as ChatMessage } from "./AiChatMessage";
 import { AiActionCard as ActionCard } from "./AiActionCard";
 import { AiOrb as Orb } from "./AiOrb";
@@ -26,6 +31,7 @@ const COMMANDS = [
 
 export function AiModePage() {
   const { user, getAccessToken } = usePrivy();
+  const { wallets } = useWallets();
 
   // --- Derive wallet addresses from Privy user (no ephemeral wallets) ---
   const evmAccount = user?.linkedAccounts?.find(
@@ -169,13 +175,81 @@ export function AiModePage() {
       });
 
       const data = await res.json();
-      if (res.ok && data.status === "active") {
-        setAiSessionStatus("active");
-        if (data.message) {
-          addLog('SYSTEM', data.message);
-        }
-      } else {
+      if (!res.ok) {
         addLog('ERROR', sanitizeError(data.error || "Failed to initialize AI session."));
+        return;
+      }
+
+      if (data.status === "active") {
+        setAiSessionStatus("active");
+        if (data.message) addLog('SYSTEM', data.message);
+        return;
+      }
+
+      if (data.status !== "needs_client_grant") {
+        addLog('ERROR', "Unexpected session state. Please try again.");
+        return;
+      }
+
+      // Client-side: delegate (if needed) + install session key permissions.
+      const sessionKeyAddress: string | undefined = data.session?.signerAddress;
+      if (!sessionKeyAddress || !evmAddress) {
+        addLog('ERROR', "Missing session key or wallet address.");
+        return;
+      }
+
+      const privyWallet = wallets.find((w) => w.walletClientType === "privy") || wallets[0];
+      if (!privyWallet) {
+        addLog('ERROR', "Wallet not connected.");
+        return;
+      }
+
+      const provider = await privyWallet.getEthereumProvider();
+      const viemWalletClient = createWalletClient({
+        chain: (await import("viem/chains")).mainnet,
+        transport: custom(provider),
+      });
+      const signer = new WalletClientSigner(viemWalletClient as any, "wallet");
+
+      const client = createSmartWalletClient({
+        // IMPORTANT: No Alchemy API key on the client. We use a server-side JSON-RPC proxy.
+        transport: alchemy({ rpcUrl: "/api/alchemy/wallet?chain=ethereum" }),
+        chain: alchemyMainnet,
+        signer,
+      });
+
+      // Ensure 7702 delegation by sending an empty call set (no-op delegation flow).
+      const prepared = await client.prepareCalls({
+        calls: [],
+        from: evmAddress as any,
+      });
+      const signed = await client.signPreparedCalls(prepared);
+      await client.sendPreparedCalls(signed);
+
+      const permissions = await client.grantPermissions({
+        account: evmAddress as any,
+        expirySec: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+        key: { publicKey: sessionKeyAddress as any, type: "secp256k1" },
+        permissions: [
+          // NOTE: allowance is in wei; for now use 0.1 ETH cap.
+          { type: "native-token-transfer", data: { allowance: "0x16345785D8A0000" } },
+        ],
+      });
+
+      const completeRes = await fetch("/api/ai/session", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          sessionPermissions: permissions,
+          signerAddress: sessionKeyAddress,
+        }),
+      });
+      const completeData = await completeRes.json();
+      if (completeRes.ok && completeData.status === "active") {
+        setAiSessionStatus("active");
+        if (completeData.message) addLog('SYSTEM', completeData.message);
+      } else {
+        addLog('ERROR', sanitizeError(completeData.error || "Failed to activate AI mode."));
       }
     } catch (error) {
       addLog('ERROR', sanitizeError(error));

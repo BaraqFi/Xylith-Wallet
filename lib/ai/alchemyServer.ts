@@ -36,7 +36,9 @@ function getAlchemyTransport() {
  * The signer's address is used as the `from` in calls, which triggers
  * EIP-7702 delegation automatically on first use.
  */
-export function createServerClient(signer: ReturnType<typeof LocalAccountSigner.privateKeyToAccountSigner>) {
+export function createServerClient(
+    signer: ReturnType<typeof LocalAccountSigner.privateKeyToAccountSigner>
+) {
     return createSmartWalletClient({
         transport: getAlchemyTransport(),
         chain: alchemyMainnet,
@@ -111,22 +113,19 @@ export async function createAiSession(
  */
 export async function executeWithSessionKey(
     ownerAddress: Hex,
-    sessionKeySigner: ReturnType<typeof LocalAccountSigner.generatePrivateKeySigner>,
-    permissions: PermissionsContext,
+    sessionKeySigner: ReturnType<typeof LocalAccountSigner.privateKeyToAccountSigner>,
+    permissions: unknown,
     calls: Array<{ to: Hex; value?: Hex; data?: Hex }>,
 ) {
-    // Create a client for the owner account (uses owner address for 7702 context)
-    const ownerSigner = LocalAccountSigner.privateKeyToAccountSigner(
-        "0x0000000000000000000000000000000000000000000000000000000000000001" as Hex // placeholder — we sign with session key
-    );
-    const client = createServerClient(ownerSigner);
+    // We can prepare calls against the owner's address, then sign with the session key.
+    const client = createServerClient(sessionKeySigner);
 
     // Prepare the calls under the owner's account
     const preparedCalls = await client.prepareCalls({
         calls,
         from: ownerAddress,
         capabilities: {
-            permissions: permissions,
+            permissions,
         } as Record<string, unknown>,
     });
 
@@ -137,7 +136,7 @@ export async function executeWithSessionKey(
     const result = await client.sendPreparedCalls({
         ...signedCalls,
         capabilities: {
-            permissions: permissions,
+            permissions,
         } as Record<string, unknown>,
     });
 
