@@ -6,10 +6,7 @@ import { useWallets } from '@privy-io/react-auth';
 import { AICommand, LogEntry, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
 import { getPriceEstimate, getNativeBalance, validateAddress, estimateGasCost, detectChainFromAddress, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
 import { sanitizeError } from "@/lib/ai/errorSanitizer";
-import { createSmartWalletClient } from "@account-kit/wallet-client";
-import { WalletClientSigner } from "@aa-sdk/core";
 import { createWalletClient, custom } from "viem";
-import { alchemy, mainnet as alchemyMainnet } from "@account-kit/infra";
 import { AiChatMessage as ChatMessage } from "./AiChatMessage";
 import { AiActionCard as ActionCard } from "./AiActionCard";
 import { AiOrb as Orb } from "./AiOrb";
@@ -202,6 +199,11 @@ export function AiModePage() {
         addLog('ERROR', "Wallet not connected.");
         return;
       }
+
+      // Dynamic imports to avoid Turbopack HMR bug with ox/WebAuthnP256
+      const { createSmartWalletClient } = await import("@account-kit/wallet-client");
+      const { WalletClientSigner } = await import("@aa-sdk/core");
+      const { alchemy, mainnet: alchemyMainnet } = await import("@account-kit/infra");
 
       const provider = await privyWallet.getEthereumProvider();
       const viemWalletClient = createWalletClient({

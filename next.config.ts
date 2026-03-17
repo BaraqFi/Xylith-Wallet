@@ -18,7 +18,12 @@ const nextConfig: NextConfig = {
     }
     return config;
   },
-  turbopack: {},
+  turbopack: {
+    resolveAlias: {
+      'qrcode/lib/renderer/terminal': '',
+      'qrcode/lib/renderer/utf8': '',
+    },
+  },
 };
 
 export default nextConfig;
