@@ -10,6 +10,7 @@ import { decryptSessionKeyHex } from "@/lib/ai/sessionKeyCrypto";
 import { assertAiEnv } from "@/lib/ai/env";
 import { rateLimit } from "@/lib/api/rateLimit";
 import { getSession, putSession } from "@/lib/ai/sessionStore";
+import { getTokenPricesBatch } from "@/lib/services/tokenAnalyticsService";
 import { LocalAccountSigner } from "@aa-sdk/core";
 import { isAddress, isHex, type Hex } from "viem";
 
@@ -137,7 +138,31 @@ export async function POST(req: NextRequest) {
         // Reset the counter when the configured period has elapsed, then reject if this
         // transaction would push cumulative spend over the user's limit.
         const spendLimitUsd = session.spendLimitUsd ?? 0;
-        const amountUsd = typeof body.amountUsd === "number" && body.amountUsd > 0 ? body.amountUsd : 0;
+        const clientAmountUsd =
+            typeof body.amountUsd === "number" && body.amountUsd > 0 ? body.amountUsd : 0;
+
+        // Value the native ETH actually moved by these calls at the live price,
+        // and take the max of that and the client's estimate. The client figure
+        // alone is trivially understated by a hostile caller; the derived figure
+        // alone misses anything not expressed as call value. Price-fetch failure
+        // falls back to the client estimate (the on-chain allowance still caps).
+        let derivedUsd = 0;
+        const totalValueWei = formattedCalls.reduce(
+            (sum, call) => sum + BigInt(call.value),
+            BigInt(0),
+        );
+        if (totalValueWei > BigInt(0)) {
+            try {
+                const prices = await getTokenPricesBatch([{ symbol: "ETH" }], "usd");
+                const ethUsd = prices["ETH"];
+                if (typeof ethUsd === "number" && Number.isFinite(ethUsd) && ethUsd > 0) {
+                    derivedUsd = (Number(totalValueWei) / 1e18) * ethUsd;
+                }
+            } catch {
+                // fall back to the client estimate below
+            }
+        }
+        const amountUsd = Math.max(derivedUsd, clientAmountUsd);
         let spentUsd = session.spentUsd ?? 0;
         let periodStart = session.periodStart ?? now;
         if (spendLimitUsd > 0) {
