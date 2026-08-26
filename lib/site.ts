@@ -33,6 +33,6 @@ export const site = {
   /** The marketing site — linked from the sign-in screen. */
   marketingUrl: envUrl(
     process.env.NEXT_PUBLIC_MARKETING_URL,
-    "https://xylith-home.vercel.app",
+    "https://xylith.vercel.app",
   ),
 } as const;

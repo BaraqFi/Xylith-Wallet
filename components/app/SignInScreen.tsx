@@ -92,10 +92,17 @@ export function SignInScreen() {
           </a>
           <span aria-hidden="true" className="h-3 w-px bg-[color:var(--color-border)]" />
           <a
-            href={`${site.marketingUrl}/privacy`}
+            href="/privacy"
             className="transition-colors hover:text-[color:var(--color-accent)]"
           >
             Privacy
+          </a>
+          <span aria-hidden="true" className="h-3 w-px bg-[color:var(--color-border)]" />
+          <a
+            href="/terms"
+            className="transition-colors hover:text-[color:var(--color-accent)]"
+          >
+            Terms
           </a>
         </div>
       </div>
