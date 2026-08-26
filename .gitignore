@@ -32,6 +32,9 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# ...but keep the example: it documents which variables are required and
+# carries no real values.
+!.env.example
 
 # vercel
 .vercel
@@ -64,3 +67,8 @@ security_audit_findings.md
 
 smartAccount/
 aiLayerLogic.md
+
+# internal working docs (prompts/checklists), same policy as docs/ above
+aiAudit.md
+aiCleanup.md
+aiPreLaunch.md
