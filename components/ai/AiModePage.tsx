@@ -42,6 +42,9 @@ import { v4 as uuidv4 } from 'uuid';
 const toBaseUnits = (amount: number, decimals: number): bigint =>
   parseUnits(amount.toFixed(decimals), decimals);
 
+/** Client-only preferences (the spend limit itself lives server-side). */
+const PREFS_STORAGE_KEY = 'xylith_ai_prefs';
+
 // --- Slash Commands Config ---
 const COMMANDS = [
   { id: 'balance', label: '/balance', desc: 'Check funds', prompt: 'Check my balance' },
@@ -104,6 +107,11 @@ export function AiModePage() {
 
   // AI session status: determines whether we show the splash or go straight to chat.
   const [aiSessionStatus, setAiSessionStatus] = useState<'unknown' | 'none' | 'active' | 'expired'>('unknown');
+  // The active session key, needed to re-grant permissions when limits change.
+  const [sessionSignerAddress, setSessionSignerAddress] = useState<string | null>(null);
+  const [isApplyingLimits, setIsApplyingLimits] = useState(false);
+  /** True when the saved limit differs from what is actually installed on-chain. */
+  const [limitsDirty, setLimitsDirty] = useState(false);
 
   const [spendingLimit, setSpendingLimit] = useState<SpendingLimit>({
     amount: 1000,
@@ -172,6 +180,19 @@ export function AiModePage() {
         if (cancelled) return;
         if (data.status === "active") {
           setAiSessionStatus("active");
+          setSessionSignerAddress(data.session?.signerAddress ?? null);
+          // The server's stored policy is the truth for spend accounting, so
+          // settings reflect what is actually installed rather than defaults.
+          if (typeof data.session?.spendLimitUsd === 'number') {
+            setSpendingLimit((prev) => ({
+              ...prev,
+              amount: data.session.spendLimitUsd > 0 ? data.session.spendLimitUsd : prev.amount,
+              isEnabled: data.session.spendLimitUsd > 0,
+              period: data.session.spendPeriod === 'WEEKLY' ? 'WEEKLY' : 'DAILY',
+              currentUsage: data.session.spentUsd ?? 0,
+            }));
+          }
+          setLimitsDirty(false);
         } else if (data.status === "expired") {
           setAiSessionStatus("expired");
         } else {
@@ -205,12 +226,230 @@ export function AiModePage() {
     }
   }, [inputText]);
 
+  // Restore client-side preferences (the spend limit is hydrated from the
+  // server session instead, since that is what the accounting uses).
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(PREFS_STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { defaultBuyAmountUSD?: number };
+      if (typeof saved.defaultBuyAmountUSD === 'number' && saved.defaultBuyAmountUSD > 0) {
+        setSpendingLimit((prev) => ({ ...prev, defaultBuyAmountUSD: saved.defaultBuyAmountUSD! }));
+      }
+    } catch {
+      // ignore unreadable/corrupt preferences
+    }
+  }, []);
+
   // NOTE: a 45s native-balance poll used to live here, writing into state that
   // nothing read. It also consumed the entire client-side ETH RPC budget, so any
   // command needing a balance or gas estimate failed with "Too many requests".
   // Balances now come from the holdings hooks above.
 
   // --- Logic ---
+
+  /**
+   * Build a smart-wallet client bound to the user's Privy wallet.
+   * Shared by activation and by re-granting permissions from settings.
+   */
+  const buildSmartWalletClient = useCallback(async () => {
+    const privyWallet = wallets.find((w) => w.walletClientType === "privy") || wallets[0];
+    if (!privyWallet) throw new Error("Wallet not connected.");
+
+    // Dynamic imports to avoid Turbopack HMR bug with ox/WebAuthnP256
+    const { createSmartWalletClient } = await import("@account-kit/wallet-client");
+    const { WalletClientSigner } = await import("@aa-sdk/core");
+    const { alchemy, mainnet: alchemyMainnet } = await import("@account-kit/infra");
+
+    const provider = await privyWallet.getEthereumProvider();
+    const viemWalletClient = createWalletClient({
+      chain: (await import("viem/chains")).mainnet,
+      transport: custom(provider),
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- viem/aa-sdk client generic interop
+    const baseSigner = new WalletClientSigner(viemWalletClient as any, "wallet");
+
+    // viem cannot sign EIP-7702 authorizations with a JSON-RPC account
+    // (AccountTypeNotSupportedError) — the embedded key lives in Privy's
+    // enclave, so authorization signing must go through Privy's dedicated
+    // hook. Messages and typed data still sign through the wallet client.
+    const signer = {
+      signerType: baseSigner.signerType,
+      inner: baseSigner.inner,
+      getAddress: () => baseSigner.getAddress(),
+      signMessage: (message: Parameters<typeof baseSigner.signMessage>[0]) =>
+        baseSigner.signMessage(message),
+      signTypedData: (params: Parameters<typeof baseSigner.signTypedData>[0]) =>
+        baseSigner.signTypedData(params),
+      signAuthorization: async (unsignedAuth: {
+        address?: `0x${string}`;
+        contractAddress?: `0x${string}`;
+        chainId: number;
+        nonce: number;
+      }) => {
+        const contractAddress = (unsignedAuth.address ??
+          unsignedAuth.contractAddress) as `0x${string}`;
+        const signed = await signPrivyAuthorization({
+          contractAddress,
+          chainId: unsignedAuth.chainId,
+          nonce: unsignedAuth.nonce,
+        });
+        return {
+          ...unsignedAuth,
+          address: contractAddress,
+          r: signed.r,
+          s: signed.s,
+          v: (signed as { v?: bigint }).v,
+          yParity: (signed as { yParity?: number }).yParity,
+        };
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- structural SmartAccountSigner
+    } as any;
+
+    return createSmartWalletClient({
+      // IMPORTANT: No Alchemy API key on the client. We use a server-side JSON-RPC proxy.
+      transport: alchemy({ rpcUrl: "/api/alchemy/wallet?chain=ethereum" }),
+      chain: alchemyMainnet,
+      signer,
+    });
+  }, [wallets, signPrivyAuthorization]);
+
+  /**
+   * Grant session-key permissions for a spend policy and persist them server-side.
+   * This is what actually puts limits on-chain — used both when activating and
+   * when the user changes limits in settings.
+   */
+  const grantAndPersistPermissions = useCallback(async (
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SDK client type
+    client: any,
+    sessionKeyAddress: string,
+    limit: SpendingLimit,
+  ) => {
+    if (!evmAddress) throw new Error("No wallet address.");
+
+    // Derive the on-chain native-transfer allowance from the user's configured
+    // USD limit and the live ETH price. This is the hard cap the session key
+    // cannot exceed on-chain. Falls back to a conservative 0.1 ETH if unset.
+    const CONSERVATIVE_ALLOWANCE_WEI = BigInt("0x16345785D8A0000"); // 0.1 ETH
+    let allowanceWei = CONSERVATIVE_ALLOWANCE_WEI;
+    if (limit.isEnabled && limit.amount > 0) {
+      const ethPrice = await getLiveUsdPrice("ETH");
+      if (ethPrice > 0) {
+        const ethAmount = limit.amount / ethPrice;
+        const wei = toBaseUnits(ethAmount, 18);
+        if (wei > BigInt(0)) allowanceWei = wei;
+      }
+    }
+    const allowanceHex = `0x${allowanceWei.toString(16)}`;
+
+    // 1inch v6 aggregation router on Ethereum mainnet — allows the session key to
+    // execute swaps (native-input) while native spend stays bounded by the allowance.
+    const ONEINCH_ROUTER_MAINNET = "0x111111125421cA6dc452d289314280a0f8842A65";
+
+    // Authorize transfers of the ERC-20s the wallet currently holds, capped per
+    // token at the same USD limit. Without a per-token erc20-token-transfer
+    // permission the session key cannot move that token at all. Tokens acquired
+    // later are covered the next time permissions are granted.
+    const erc20Permissions = holdings
+      .filter((h) => h.chain === 'ETH' && !h.isNative && h.address)
+      .slice(0, 20) // keep the grant payload bounded
+      .map((h) => {
+        const capUsd = limit.isEnabled && limit.amount > 0 ? limit.amount : 0;
+        // Cap at the USD limit where a price is known, else the held balance.
+        const capTokens = capUsd > 0 && h.pricePerToken > 0
+          ? Math.min(capUsd / h.pricePerToken, h.amount)
+          : h.amount;
+        const allowance = toBaseUnits(capTokens, h.decimals);
+        return {
+          type: "erc20-token-transfer",
+          data: {
+            allowance: `0x${allowance.toString(16)}`,
+            address: h.address as `0x${string}`,
+          },
+        };
+      });
+
+    const permissions = await client.grantPermissions({
+      account: evmAddress as `0x${string}`,
+      expirySec: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
+      key: { publicKey: sessionKeyAddress as `0x${string}`, type: "secp256k1" },
+      permissions: [
+        { type: "native-token-transfer", data: { allowance: allowanceHex } },
+        { type: "contract-access", data: { address: ONEINCH_ROUTER_MAINNET } },
+        ...erc20Permissions,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SDK permission union type
+      ] as any,
+    });
+
+    const headers = await getAuthHeaders();
+    const completeRes = await fetch("/api/ai/session", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        sessionPermissions: permissions,
+        signerAddress: sessionKeyAddress,
+        spendLimitUsd: limit.isEnabled ? limit.amount : 0,
+        spendPeriod: limit.period,
+      }),
+    });
+    const completeData = await completeRes.json();
+    if (!completeRes.ok || completeData.status !== "active") {
+      console.error("Session permission persist failed:", completeData);
+      throw new Error(completeData.error || "Failed to install session permissions.");
+    }
+    return { erc20Count: erc20Permissions.length, completeData };
+  }, [evmAddress, holdings, getAuthHeaders]);
+
+  /**
+   * Save settings locally. The spend limit only binds the agent once it is
+   * granted on-chain, so a changed limit is flagged dirty until it is signed;
+   * the default buy amount is a pure client preference and persists here.
+   */
+  const handleSavePreferences = useCallback((limit: SpendingLimit) => {
+    if (limit.amount !== spendingLimit.amount || limit.period !== spendingLimit.period) {
+      setLimitsDirty(true);
+    }
+    setSpendingLimit(limit);
+    try {
+      window.localStorage.setItem(
+        PREFS_STORAGE_KEY,
+        JSON.stringify({ defaultBuyAmountUSD: limit.defaultBuyAmountUSD }),
+      );
+    } catch {
+      // storage unavailable (private mode) — preference just won't persist
+    }
+  }, [spendingLimit]);
+
+  /**
+   * Re-grant permissions with new limits from settings. This is the real
+   * "sign new allowance" — it replaces the on-chain caps and resets the
+   * server-side spend counter for the new period.
+   */
+  const handleApplyOnChainLimits = useCallback(async (limit: SpendingLimit) => {
+    if (!sessionSignerAddress) {
+      addLog('ERROR', "No active AI session to update. Activate AI mode first.");
+      return;
+    }
+    setIsApplyingLimits(true);
+    setOrbState('PROCESSING');
+    try {
+      addLog('SYSTEM', 'Updating on-chain limits — approve the signature request.');
+      const client = await buildSmartWalletClient();
+      const { erc20Count } = await grantAndPersistPermissions(client, sessionSignerAddress, limit);
+      setSpendingLimit({ ...limit, currentUsage: 0 });
+      setLimitsDirty(false);
+      addLog(
+        'SUCCESS',
+        `On-chain limits updated: $${limit.amount} ${limit.period.toLowerCase()}${erc20Count > 0 ? `, ${erc20Count} token${erc20Count === 1 ? '' : 's'} authorized` : ''}.`,
+      );
+    } catch (error) {
+      console.error("Applying on-chain limits failed:", error);
+      addLog('ERROR', `Could not update limits: ${sanitizeError(error)}`);
+    } finally {
+      setIsApplyingLimits(false);
+      setOrbState('IDLE');
+    }
+  }, [sessionSignerAddress, buildSmartWalletClient, grantAndPersistPermissions, addLog]);
 
   /** Activate AI mode: create session key + 7702 delegation via backend */
   const handleActivateAiMode = async () => {
@@ -247,68 +486,7 @@ export function AiModePage() {
         return;
       }
 
-      const privyWallet = wallets.find((w) => w.walletClientType === "privy") || wallets[0];
-      if (!privyWallet) {
-        addLog('ERROR', "Wallet not connected.");
-        return;
-      }
-
-      // Dynamic imports to avoid Turbopack HMR bug with ox/WebAuthnP256
-      const { createSmartWalletClient } = await import("@account-kit/wallet-client");
-      const { WalletClientSigner } = await import("@aa-sdk/core");
-      const { alchemy, mainnet: alchemyMainnet } = await import("@account-kit/infra");
-
-      const provider = await privyWallet.getEthereumProvider();
-      const viemWalletClient = createWalletClient({
-        chain: (await import("viem/chains")).mainnet,
-        transport: custom(provider),
-      });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- viem/aa-sdk client generic interop
-      const baseSigner = new WalletClientSigner(viemWalletClient as any, "wallet");
-
-      // viem cannot sign EIP-7702 authorizations with a JSON-RPC account
-      // (AccountTypeNotSupportedError) — the embedded key lives in Privy's
-      // enclave, so authorization signing must go through Privy's dedicated
-      // hook. Messages and typed data still sign through the wallet client.
-      const signer = {
-        signerType: baseSigner.signerType,
-        inner: baseSigner.inner,
-        getAddress: () => baseSigner.getAddress(),
-        signMessage: (message: Parameters<typeof baseSigner.signMessage>[0]) =>
-          baseSigner.signMessage(message),
-        signTypedData: (params: Parameters<typeof baseSigner.signTypedData>[0]) =>
-          baseSigner.signTypedData(params),
-        signAuthorization: async (unsignedAuth: {
-          address?: `0x${string}`;
-          contractAddress?: `0x${string}`;
-          chainId: number;
-          nonce: number;
-        }) => {
-          const contractAddress = (unsignedAuth.address ??
-            unsignedAuth.contractAddress) as `0x${string}`;
-          const signed = await signPrivyAuthorization({
-            contractAddress,
-            chainId: unsignedAuth.chainId,
-            nonce: unsignedAuth.nonce,
-          });
-          return {
-            ...unsignedAuth,
-            address: contractAddress,
-            r: signed.r,
-            s: signed.s,
-            v: (signed as { v?: bigint }).v,
-            yParity: (signed as { yParity?: number }).yParity,
-          };
-        },
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- structural SmartAccountSigner
-      } as any;
-
-      const client = createSmartWalletClient({
-        // IMPORTANT: No Alchemy API key on the client. We use a server-side JSON-RPC proxy.
-        transport: alchemy({ rpcUrl: "/api/alchemy/wallet?chain=ethereum" }),
-        chain: alchemyMainnet,
-        signer,
-      });
+      const client = await buildSmartWalletClient();
 
       // A 7702-delegated EOA carries code of the form 0xef0100 || <implementation>.
       // Checking first lets a re-activation skip the delegation entirely (no extra
@@ -359,83 +537,19 @@ export function AiModePage() {
         addLog('SYSTEM', 'Smart account ready. Installing the AI session key — one more signature.');
       }
 
-      // Derive the on-chain native-transfer allowance from the user's configured
-      // USD limit and the live ETH price. This is the hard cap the session key
-      // cannot exceed on-chain. Falls back to a conservative 0.1 ETH if unset.
-      const CONSERVATIVE_ALLOWANCE_WEI = BigInt("0x16345785D8A0000"); // 0.1 ETH
-      let allowanceWei = CONSERVATIVE_ALLOWANCE_WEI;
-      if (spendingLimit.isEnabled && spendingLimit.amount > 0) {
-        const ethPrice = await getLiveUsdPrice("ETH");
-        if (ethPrice > 0) {
-          const ethAmount = spendingLimit.amount / ethPrice;
-          const wei = BigInt(Math.floor(ethAmount * 1e18));
-          if (wei > BigInt(0)) allowanceWei = wei;
-        }
-      }
-      const allowanceHex = `0x${allowanceWei.toString(16)}`;
-
-      // 1inch v6 aggregation router on Ethereum mainnet — allows the session key to
-      // execute swaps (native-input) while native spend stays bounded by the allowance.
-      const ONEINCH_ROUTER_MAINNET = "0x111111125421cA6dc452d289314280a0f8842A65";
-
-      // Authorize transfers of the ERC-20s the wallet currently holds, capped per
-      // token at the same USD limit. Without a per-token erc20-token-transfer
-      // permission the session key cannot move that token at all. Tokens acquired
-      // after activation are covered on the next activation (sessions last 24h).
-      const erc20Permissions = holdings
-        .filter((h) => h.chain === 'ETH' && !h.isNative && h.address)
-        .slice(0, 20) // keep the grant payload bounded
-        .map((h) => {
-          const capUsd = spendingLimit.isEnabled && spendingLimit.amount > 0
-            ? spendingLimit.amount
-            : 0;
-          // Cap at the USD limit where a price is known, else the held balance.
-          const capTokens = capUsd > 0 && h.pricePerToken > 0
-            ? Math.min(capUsd / h.pricePerToken, h.amount)
-            : h.amount;
-          const allowance = toBaseUnits(capTokens, h.decimals);
-          return {
-            type: "erc20-token-transfer",
-            data: {
-              allowance: `0x${allowance.toString(16)}`,
-              address: h.address as `0x${string}`,
-            },
-          };
-        });
-
-      const permissions = await client.grantPermissions({
-        account: evmAddress as `0x${string}`,
-        expirySec: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
-        key: { publicKey: sessionKeyAddress as `0x${string}`, type: "secp256k1" },
-        permissions: [
-          { type: "native-token-transfer", data: { allowance: allowanceHex } },
-          { type: "contract-access", data: { address: ONEINCH_ROUTER_MAINNET } },
-          ...erc20Permissions,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SDK permission union type
-        ] as any,
-      });
-      if (erc20Permissions.length > 0) {
-        addLog('SYSTEM', `Authorized AI transfers for ${erc20Permissions.length} token${erc20Permissions.length === 1 ? '' : 's'} you hold.`);
+      const { erc20Count, completeData } = await grantAndPersistPermissions(
+        client,
+        sessionKeyAddress,
+        spendingLimit,
+      );
+      if (erc20Count > 0) {
+        addLog('SYSTEM', `Authorized AI transfers for ${erc20Count} token${erc20Count === 1 ? '' : 's'} you hold.`);
       }
 
-      const completeRes = await fetch("/api/ai/session", {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          sessionPermissions: permissions,
-          signerAddress: sessionKeyAddress,
-          spendLimitUsd: spendingLimit.isEnabled ? spendingLimit.amount : 0,
-          spendPeriod: spendingLimit.period,
-        }),
-      });
-      const completeData = await completeRes.json();
-      if (completeRes.ok && completeData.status === "active") {
-        setAiSessionStatus("active");
-        if (completeData.message) addLog('SYSTEM', completeData.message);
-      } else {
-        console.error("AI activation completion failed:", completeData);
-        addLog('ERROR', sanitizeError(completeData.error || "Failed to activate AI mode."));
-      }
+      setAiSessionStatus("active");
+      setSessionSignerAddress(sessionKeyAddress);
+      setLimitsDirty(false);
+      if (completeData.message) addLog('SYSTEM', completeData.message);
     } catch (error) {
       // The chat surfaces a sanitized message; keep the real error in the
       // console so live failures are diagnosable.
@@ -1070,8 +1184,11 @@ export function AiModePage() {
         <SettingsModal
           onClose={() => setIsSettingsOpen(false)}
           spendingLimit={spendingLimit}
-          onUpdateLimit={setSpendingLimit}
-          wallet={null}
+          onUpdateLimit={handleSavePreferences}
+          onApplyOnChain={handleApplyOnChainLimits}
+          isSessionActive={aiSessionStatus === 'active' && !!sessionSignerAddress}
+          isApplying={isApplyingLimits}
+          limitsDirty={limitsDirty}
         />
       )}
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />

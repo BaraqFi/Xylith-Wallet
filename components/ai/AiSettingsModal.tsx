@@ -7,24 +7,36 @@ interface SettingsModalProps {
   onClose: () => void;
   spendingLimit: SpendingLimit;
   onUpdateLimit: (limit: SpendingLimit) => void;
-  wallet: null;
+  /** Re-grants session-key permissions on-chain with the given policy. */
+  onApplyOnChain: (limit: SpendingLimit) => Promise<void>;
+  /** Whether there is a session whose permissions can be replaced. */
+  isSessionActive: boolean;
+  /** True while a grant signature is in flight. */
+  isApplying: boolean;
+  /** True when the saved limit has not been pushed on-chain yet. */
+  limitsDirty: boolean;
 }
 
 /**
  * Modal dialog for configuring application settings.
- * Private keys are no longer displayed — Alchemy's Turnkey enclaves manage all key material.
+ * Private keys are never displayed — the session key is held server-side and
+ * the on-chain grant is what actually bounds the agent.
  */
 export const AiSettingsModal: React.FC<SettingsModalProps> = ({
-  onClose, spendingLimit, onUpdateLimit
+  onClose, spendingLimit, onUpdateLimit, onApplyOnChain, isSessionActive, isApplying, limitsDirty
 }) => {
   const [amount, setAmount] = useState(spendingLimit.amount);
   const [period, setPeriod] = useState(spendingLimit.period);
   const [defaultBuy, setDefaultBuy] = useState(spendingLimit.defaultBuyAmountUSD || 50);
-  const [isSigned, setIsSigned] = useState(false);
   const hasChanges =
     amount !== spendingLimit.amount ||
     period !== spendingLimit.period ||
     defaultBuy !== (spendingLimit.defaultBuyAmountUSD || 50);
+
+  // Limits only bind the agent once they are granted on-chain, so track whether
+  // what's on screen matches what's installed.
+  const limitChanged = amount !== spendingLimit.amount || period !== spendingLimit.period;
+  const needsOnChainUpdate = limitChanged || limitsDirty;
 
   const handleSave = () => {
     onUpdateLimit({
@@ -36,11 +48,15 @@ export const AiSettingsModal: React.FC<SettingsModalProps> = ({
     onClose();
   };
 
-  const handleSignAllowance = () => {
-    // Simulate on-chain signing delay
-    setTimeout(() => {
-      setIsSigned(true);
-    }, 1000);
+  const handleSignAllowance = async () => {
+    await onApplyOnChain({
+      ...spendingLimit,
+      amount: Number(amount),
+      period,
+      defaultBuyAmountUSD: Number(defaultBuy),
+      isEnabled: Number(amount) > 0,
+    });
+    onClose();
   };
 
   return (
@@ -105,23 +121,42 @@ export const AiSettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
+              {/* Usage against the installed limit */}
+              {isSessionActive && spendingLimit.amount > 0 && (
+                <div className="text-[11px] text-[color:var(--color-depth)]/60 flex justify-between">
+                  <span>Spent this period</span>
+                  <span className="font-medium text-[color:var(--color-depth)]/80">
+                    ${spendingLimit.currentUsage.toFixed(2)} / ${spendingLimit.amount}
+                  </span>
+                </div>
+              )}
+
               {/* On-Chain Signing */}
               <div className="pt-2 border-t border-[color:var(--color-border)]">
                 <button
                   onClick={handleSignAllowance}
-                  disabled={isSigned}
+                  disabled={isApplying || !isSessionActive || !needsOnChainUpdate}
                   className={clsx(
                     "w-full py-2 border rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all mt-2",
-                    isSigned
+                    !isSessionActive || (!needsOnChainUpdate && !isApplying)
                       ? "bg-[color:var(--color-accent)]/15 border-[color:var(--color-accent)]/30 text-[color:var(--color-depth)] cursor-default"
                       : "bg-[color:var(--color-depth)]/5 border-[color:var(--color-border)] text-[color:var(--color-depth)]/80 hover:bg-[color:var(--color-depth)]/10"
                   )}
                 >
-                  {isSigned ? <><CheckCircle size={14} /> Allowance & Period Signed</> : <><PenTool size={14} /> Sign New Allowance On-Chain</>}
+                  {isApplying ? (
+                    <><PenTool size={14} className="animate-pulse" /> Waiting for signature…</>
+                  ) : !isSessionActive ? (
+                    <>Activate AI mode to set limits</>
+                  ) : needsOnChainUpdate ? (
+                    <><PenTool size={14} /> Sign New Allowance On-Chain</>
+                  ) : (
+                    <><CheckCircle size={14} /> Limits active on-chain</>
+                  )}
                 </button>
                 <p className="text-[10px] text-[color:var(--color-depth)]/60 mt-2 text-center leading-relaxed">
-                  Signing updates the on-chain session key spending limits.
-                  Your private keys are secured in Alchemy&apos;s Turnkey enclaves and never exposed.
+                  {needsOnChainUpdate && isSessionActive
+                    ? "Saving stores your preference. The agent is only bound once the new allowance is signed on-chain."
+                    : "The agent cannot spend beyond the allowance granted to its session key on-chain."}
                 </p>
               </div>
             </div>

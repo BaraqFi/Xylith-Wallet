@@ -76,6 +76,11 @@ export async function GET(req: NextRequest) {
         signerAddress: sessionKey,
         expiresAt: sessionExpiry,
         evmAddress,
+        // The stored spend policy is the authority for accounting, so the client
+        // hydrates its settings from here rather than showing local defaults.
+        spendLimitUsd: session.spendLimitUsd ?? 0,
+        spendPeriod: session.spendPeriod ?? "DAILY",
+        spentUsd: session.spentUsd ?? 0,
       },
     });
   } catch (error) {
