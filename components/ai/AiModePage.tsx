@@ -17,6 +17,7 @@ import {
   findHolding,
   holdingsVocabulary,
   formatHoldingLine,
+  formatTokenAmount,
 } from "@/lib/ai/tokenHoldings";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { createWalletClient, custom, parseUnits, encodeFunctionData, parseAbi } from "viem";
@@ -47,6 +48,7 @@ const COMMANDS = [
   { id: 'send', label: '/send', desc: 'Transfer assets', prompt: 'Send ' },
   { id: 'swap', label: '/swap', desc: 'Trade tokens', prompt: 'Swap ' },
   { id: 'history', label: '/history', desc: 'View transactions', prompt: 'Show history' },
+  { id: 'tokens', label: '/tokens', desc: 'Tokens you hold', prompt: 'SHOW_TOKENS' },
   { id: 'wallet', label: '/wallet', desc: 'Show wallet addresses', prompt: 'SHOW_WALLET' },
   { id: 'clear', label: '/clear', desc: 'Clear chat', prompt: 'CLEAR_LOGS' },
 ];
@@ -71,8 +73,9 @@ export function AiModePage() {
   // Token holdings on the chains AI mode supports. These are the ONLY tokens the
   // agent can name or act on — reusing the manual wallet's balance hook (and its
   // caching) rather than a second fetching path.
-  const { balances: evmTokenBalances } = useTokenBalances('EVM', 'ethereum');
-  const { balances: solTokenBalances } = useTokenBalances('Solana', 'ethereum');
+  const { balances: evmTokenBalances, isLoading: isLoadingEvmTokens } = useTokenBalances('EVM', 'ethereum');
+  const { balances: solTokenBalances, isLoading: isLoadingSolTokens } = useTokenBalances('Solana', 'ethereum');
+  const isLoadingHoldings = isLoadingEvmTokens || isLoadingSolTokens;
   const holdings = useMemo(
     () => [
       ...toAiHoldings(evmTokenBalances, 'ETH'),
@@ -463,6 +466,38 @@ export function AiModePage() {
       return;
     }
 
+    // Answered straight from the holdings the agent already knows about — no
+    // model round-trip, so it stays instant and free.
+    if (inputText.trim() === 'SHOW_TOKENS') {
+      setInputText('');
+      addLog('USER', '/tokens');
+
+      if (holdings.length === 0) {
+        addLog(
+          'AGENT',
+          isLoadingHoldings
+            ? "Still loading your balances — try /tokens again in a moment."
+            : "No tokens with a balance on Ethereum or Solana yet.",
+        );
+        return;
+      }
+
+      const lines: string[] = [];
+      ([['ETH', 'Ethereum'], ['SOL', 'Solana']] as const).forEach(([chainKey, label]) => {
+        const owned = holdings.filter((h) => h.chain === chainKey);
+        if (owned.length === 0) return;
+        lines.push(`${label}:`);
+        owned.forEach((h) => lines.push(`  • ${formatHoldingLine(h, false)}`));
+      });
+
+      const total = holdings.reduce((sum, h) => sum + h.usdValue, 0);
+      if (total > 0) lines.push(`Total: ~$${total.toFixed(2)}`);
+      if (isLoadingHoldings) lines.push('(still refreshing…)');
+
+      addLog('AGENT', lines.join('\n'));
+      return;
+    }
+
     const cmd = inputText;
     setInputText('');
     addLog('USER', cmd);
@@ -590,7 +625,7 @@ export function AiModePage() {
             return;
           }
 
-          addLog('SYSTEM', `${pct}% of your ${assetSymbol} balance = ${amountToken.toFixed(6)} ${assetSymbol}.`);
+          addLog('SYSTEM', `${pct}% of your ${assetSymbol} balance = ${formatTokenAmount(amountToken)} ${assetSymbol}.`);
         } else if (typeof command.amountToken === 'number' && command.amountToken > 0) {
           amountToken = command.amountToken;
         } else if (amountUSD) {
@@ -599,7 +634,7 @@ export function AiModePage() {
 
         // Don't build a transfer the balance can't cover.
         if (isTokenTransfer && amountToken > holding.amount) {
-          addLog('ERROR', `You only have ${holding.amount.toFixed(6)} ${assetSymbol}.`);
+          addLog('ERROR', `You only have ${formatTokenAmount(holding.amount)} ${assetSymbol}.`);
           setOrbState('ERROR');
           setTimeout(() => setOrbState('IDLE'), 2000);
           return;

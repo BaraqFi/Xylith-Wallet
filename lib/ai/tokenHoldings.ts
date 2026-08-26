@@ -80,9 +80,22 @@ export function holdingsVocabulary(holdings: AiTokenHolding[]): string[] {
   ).slice(0, 40);
 }
 
-/** One-line-per-token summary for balance answers. */
-export function formatHoldingLine(h: AiTokenHolding): string {
-  const amount = h.amount < 1 ? h.amount.toFixed(6) : h.amount.toFixed(4);
+/**
+ * Human-readable token amount: precision where it matters (dust) without
+ * dragging trailing zeros through million-unit memecoin balances.
+ */
+export function formatTokenAmount(amount: number): string {
+  if (!Number.isFinite(amount)) return "0";
+  const maximumFractionDigits = amount >= 1000 ? 2 : amount >= 1 ? 4 : 6;
+  return amount.toLocaleString("en-US", { maximumFractionDigits });
+}
+
+/**
+ * One-line-per-token summary for balance answers.
+ * `includeChain` is off when the caller already groups by chain.
+ */
+export function formatHoldingLine(h: AiTokenHolding, includeChain = true): string {
   const usd = h.usdValue > 0 ? ` (~$${h.usdValue.toFixed(2)})` : "";
-  return `${amount} ${h.symbol} on ${h.chain}${usd}`;
+  const where = includeChain ? ` on ${h.chain}` : "";
+  return `${formatTokenAmount(h.amount)} ${h.symbol}${where}${usd}`;
 }

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Command, Cpu, Globe, ArrowLeftRight, Clock } from 'lucide-react';
+import { X, Command, Cpu, Globe, ArrowLeftRight, Clock, Wallet } from 'lucide-react';
 
 interface HelpModalProps {
     isOpen: boolean;
@@ -89,6 +89,30 @@ export const AiHelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                                 <code className="text-xs font-bold text-[color:var(--color-depth)]/80">&quot;History for {`{Address}`}&quot;</code>
                                 <span className="text-[10px] text-[color:var(--color-accent)] font-bold font-mono">ANY WALLET</span>
                             </div>
+                        </div>
+                    </section>
+
+                    {/* Slash Commands */}
+                    <section>
+                        <h3 className="text-xs font-bold text-[color:var(--color-depth)] uppercase tracking-widest mb-3 flex items-center gap-2 border-b border-[color:var(--color-border)] pb-2">
+                            <Wallet size={14} className="text-[color:var(--color-accent)]" /> Slash Commands
+                        </h3>
+                        <p className="text-sm text-[color:var(--color-depth)]/70 mb-3 leading-relaxed">
+                            Type / in the prompt to pick one. These answer instantly, without the model.
+                        </p>
+                        <div className="space-y-2">
+                            {[
+                                { cmd: '/tokens', desc: 'Every token you hold, with USD totals' },
+                                { cmd: '/balance', desc: 'Balance for one token, or all of them' },
+                                { cmd: '/wallet', desc: 'Your ETH and SOL addresses' },
+                                { cmd: '/history', desc: 'Recent on-chain activity' },
+                                { cmd: '/clear', desc: 'Clear the chat' },
+                            ].map((c) => (
+                                <div key={c.cmd} className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex items-center justify-between gap-3">
+                                    <code className="text-xs font-bold text-[color:var(--color-depth)]/80">{c.cmd}</code>
+                                    <span className="text-[10px] text-[color:var(--color-depth)]/50 text-right">{c.desc}</span>
+                                </div>
+                            ))}
                         </div>
                     </section>
 
