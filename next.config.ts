@@ -4,6 +4,26 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   transpilePackages: ["@web3icons/react"],
 
+  // Baseline security headers. HSTS comes from Vercel automatically; a full
+  // CSP is deferred — Privy's auth iframe and Next's inline scripts need a
+  // carefully tested policy, and a broken CSP on a wallet blocks sign-in.
+  // frame-ancestors alone closes the clickjacking hole without that risk
+  // (Privy's iframe is a child of our page, so framing *us* stays deniable).
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+        ],
+      },
+    ];
+  },
+
   // Keep externals for Pino/thread-stream (avoids bundling tests/workers)
   serverExternalPackages: ['pino', 'pino-pretty', 'thread-stream'],
 
