@@ -171,7 +171,7 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                                             timestampMs,
                                         ).toLocaleString();
 
-                                        const valueHex = item.value || "0x0";
+                                        const rawValue = item.value ?? "0";
                                         const tokenSymbol =
                                             item.asset ||
                                             (category === "external" ? "ETH" : "TOKEN");
@@ -180,18 +180,31 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                                         let amountLabel = "0";
 
                                         try {
-                                            const decimals =
-                                                item.tokenDecimals ||
-                                                (category === "external" ? 18 : 18);
-                                            const valueBigInt = BigInt(valueHex);
-                                            tokenAmount = formatUnits(
-                                                valueBigInt,
-                                                decimals,
-                                            ).toString();
+                                            // /api/transactions/history passes through Alchemy
+                                            // getAssetTransfers, whose `value` is already a
+                                            // decimal amount in token units (e.g. 0.0004) —
+                                            // NOT wei. BigInt() on it throws. Keep the hex-wei
+                                            // path only for a source that actually sends hex.
+                                            const decimals = item.tokenDecimals || 18;
+                                            const amountNum =
+                                                typeof rawValue === "string" &&
+                                                rawValue.startsWith("0x")
+                                                    ? parseFloat(
+                                                          formatUnits(
+                                                              BigInt(rawValue),
+                                                              decimals,
+                                                          ),
+                                                      )
+                                                    : Number(rawValue);
+                                            if (!Number.isFinite(amountNum)) {
+                                                throw new Error(
+                                                    `Unparseable transfer value: ${rawValue}`,
+                                                );
+                                            }
+                                            tokenAmount = String(amountNum);
 
                                             const displaySymbol =
                                                 item.tokenSymbol || tokenSymbol;
-                                            const amountNum = parseFloat(tokenAmount);
 
                                             const formattedAmount =
                                                 amountNum >= 1
@@ -222,8 +235,8 @@ export function useTransactionHistory(activeChain: Chain, currentEvmChain: EVMCh
                                                 e,
                                                 item,
                                             );
-                                            tokenAmount = valueHex;
-                                            amountLabel = `${valueHex} ${
+                                            tokenAmount = String(rawValue);
+                                            amountLabel = `${rawValue} ${
                                                 item.tokenSymbol || tokenSymbol
                                             }`;
                                         }
