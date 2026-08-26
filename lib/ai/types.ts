@@ -92,7 +92,12 @@ export interface AICommand {
   intent: 'SEND' | 'SWAP' | 'BRIDGE' | 'BALANCE' | 'CHAT' | 'HISTORY' | 'HISTORY_SUMMARY';
   chain?: Chain;
   targetChain?: Chain;
+  /** A dollar amount: "send $50". */
   amountUSD?: number;
+  /** An explicit token quantity: "send 0.5 ETH". */
+  amountToken?: number;
+  /** A share of the balance, 1-100: "half" -> 50, "all" -> 100. */
+  amountPercent?: number;
   limit?: number; // For History requests
   token?: string;
   targetToken?: string;

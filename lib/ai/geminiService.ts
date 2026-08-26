@@ -55,7 +55,24 @@ Capabilities & Rules:
 
 4. BUY / SELL ACTIONS:
    - "Buy {CA}" -> Detect chain from CA. If Base58 -> Chain: SOL. If 0x -> Chain: ETH (default) or BASE/ARB if specified.
-   - If no amount specified, leave amountUSD null (app defaults).
+   - If no amount specified, leave all amount fields null (app defaults).
+
+5. AMOUNT RESOLUTION (critical — pick exactly ONE field):
+   Amounts are expressed three different ways. Never convert between them
+   yourself; you do not know balances or prices. The app resolves whichever
+   field you set.
+   - DOLLAR amounts -> amountUSD.
+     "send $50", "buy 20 dollars of ETH", "$12.50 worth" -> amountUSD: 50 / 20 / 12.5
+   - TOKEN quantities -> amountToken. This is the amount OF THE TOKEN, not dollars.
+     "send 0.5 ETH", "transfer 2 SOL", "send 0.001 eth" -> amountToken: 0.5 / 2 / 0.001
+   - SHARES of the balance -> amountPercent (1-100).
+     "half my ETH", "half my balance" -> amountPercent: 50
+     "all my SOL", "everything", "max", "my entire balance" -> amountPercent: 100
+     "a quarter of my ETH", "25%" -> amountPercent: 25
+     "a third of my balance" -> amountPercent: 33
+     "10 percent" -> amountPercent: 10
+   - If the user gives no amount at all, leave ALL THREE null. Never invent a
+     number, and never put a token quantity in amountUSD.
 
 5. RISK_ASSESSMENT:
    - "HIGH" if interacting with new contracts or sending > $500.
@@ -83,7 +100,21 @@ export const parseUserCommand = async (
             intent: { type: Type.STRING, enum: ['SEND', 'SWAP', 'BRIDGE', 'BALANCE', 'CHAT', 'HISTORY', 'HISTORY_SUMMARY'] },
             chain: { type: Type.STRING, enum: ['ETH', 'BASE', 'ARB', 'SOL'], nullable: true },
             targetChain: { type: Type.STRING, enum: ['ETH', 'BASE', 'ARB', 'SOL'], nullable: true },
-            amountUSD: { type: Type.NUMBER, nullable: true },
+            amountUSD: {
+              type: Type.NUMBER,
+              nullable: true,
+              description: "Dollar amount, only when the user spoke in dollars.",
+            },
+            amountToken: {
+              type: Type.NUMBER,
+              nullable: true,
+              description: "Token quantity, e.g. 0.5 for 'send 0.5 ETH'.",
+            },
+            amountPercent: {
+              type: Type.NUMBER,
+              nullable: true,
+              description: "Share of balance 1-100, e.g. 50 for 'half my ETH'.",
+            },
             limit: { type: Type.NUMBER, nullable: true },
             token: { type: Type.STRING, nullable: true },
             targetToken: { type: Type.STRING, nullable: true },

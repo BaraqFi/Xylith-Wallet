@@ -12,7 +12,7 @@ import { AICommand, LogEntry, Transaction, SpendingLimit, Chain, BalanceMap } fr
 import { getNativeBalance, validateAddress, estimateGasCost, detectChainFromAddress, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
 import { getLiveUsdPrice } from "@/lib/ai/prices";
 import { sanitizeError } from "@/lib/ai/errorSanitizer";
-import { createWalletClient, custom } from "viem";
+import { createWalletClient, custom, parseUnits } from "viem";
 import { SystemProgram, PublicKey, Transaction as SolTransaction } from "@solana/web3.js";
 import { solanaClient } from "@/lib/solana/client";
 import { AiChatMessage as ChatMessage } from "./AiChatMessage";
@@ -24,6 +24,15 @@ import { AiSplashPage as SplashPage } from "./AiSplashPage";
 import { ModeToggle } from "@/components/app/ModeToggle";
 import { Settings, ArrowUp, Command, HelpCircle } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * Convert a token amount to base units without float truncation.
+ * `Math.floor(amount * 1e18)` loses precision on computed amounts (a half
+ * balance, a USD conversion), so the value is fixed to the token's decimals
+ * first and parsed exactly.
+ */
+const toBaseUnits = (amount: number, decimals: number): bigint =>
+  parseUnits(amount.toFixed(decimals), decimals);
 
 // --- Slash Commands Config ---
 const COMMANDS = [
@@ -449,12 +458,6 @@ export function AiModePage() {
           if (detected) chain = detected;
         }
 
-        // Apply Default Buy Amount if "Buy" detected (Swap with no amount)
-        if (command.intent === 'SWAP' && !amountUSD) {
-          amountUSD = spendingLimit.defaultBuyAmountUSD;
-          addLog('SYSTEM', `Applying default buy amount: $${amountUSD}`);
-        }
-
         // Validation
         if (command.recipient && !validateAddress(chain, command.recipient)) {
           addLog('ERROR', "The address provided is not valid.");
@@ -464,7 +467,81 @@ export function AiModePage() {
         }
 
         const price = await getLiveUsdPrice(chain);
-        const amountToken = amountUSD ? amountUSD / price : 0;
+        const nativeSymbol = chain === 'SOL' ? 'SOL' : 'ETH';
+        const ownerAddress = chain === 'SOL' ? (solAddress || '') : evmAddress;
+
+        // Resolve the amount. The parser expresses it as a share of balance, a
+        // token quantity, or a dollar figure — resolved here in that order,
+        // because only the app knows balances and live prices.
+        let amountToken = 0;
+
+        if (typeof command.amountPercent === 'number' && command.amountPercent > 0) {
+          // Shares are of the NATIVE balance; AI mode does not hold ERC-20 balances.
+          const requestedToken = (command.token || nativeSymbol).toUpperCase();
+          if (requestedToken !== nativeSymbol) {
+            addLog('ERROR', `Percentage amounts are only supported for ${nativeSymbol} right now.`);
+            setOrbState('ERROR');
+            setTimeout(() => setOrbState('IDLE'), 2000);
+            return;
+          }
+
+          const pct = Math.min(command.amountPercent, 100);
+          const balance = await getNativeBalance(ownerAddress, chain);
+          if (!Number.isFinite(balance) || balance <= 0) {
+            addLog('ERROR', `Could not read your ${nativeSymbol} balance, or it is empty.`);
+            setOrbState('ERROR');
+            setTimeout(() => setOrbState('IDLE'), 2000);
+            return;
+          }
+
+          amountToken = balance * (pct / 100);
+
+          // Native sends must leave gas behind, or the transaction cannot be
+          // paid for. Matters most for "send everything".
+          const gasTarget = command.recipient || ownerAddress;
+          const gasCost = parseFloat(await estimateGasCost(chain, ownerAddress, gasTarget, 0)) || 0;
+          const reserve = gasCost * 1.2; // headroom for gas-price drift
+          if (amountToken + reserve > balance) {
+            amountToken = Math.max(balance - reserve, 0);
+            addLog('SYSTEM', `Reserving ~${reserve.toFixed(6)} ${nativeSymbol} for gas.`);
+          }
+
+          if (amountToken <= 0) {
+            addLog('ERROR', `Your ${nativeSymbol} balance is too low to cover this send plus gas.`);
+            setOrbState('ERROR');
+            setTimeout(() => setOrbState('IDLE'), 2000);
+            return;
+          }
+
+          addLog('SYSTEM', `${pct}% of your ${nativeSymbol} balance = ${amountToken.toFixed(6)} ${nativeSymbol}.`);
+        } else if (typeof command.amountToken === 'number' && command.amountToken > 0) {
+          amountToken = command.amountToken;
+        } else if (amountUSD) {
+          amountToken = amountUSD / price;
+        }
+
+        // Buys default to the configured amount when none was given.
+        if (amountToken <= 0 && command.intent === 'SWAP') {
+          amountUSD = spendingLimit.defaultBuyAmountUSD;
+          amountToken = price > 0 ? amountUSD / price : 0;
+          addLog('SYSTEM', `Applying default buy amount: $${amountUSD}`);
+        }
+
+        // Never build a zero-value transfer: that used to happen silently
+        // whenever the amount was phrased in tokens or as a share.
+        if (amountToken <= 0) {
+          addLog('ERROR', "I couldn't work out an amount from that. Try \"send 0.01 ETH to 0x…\", \"send $20 of ETH…\", or \"send half my ETH…\".");
+          setOrbState('ERROR');
+          setTimeout(() => setOrbState('IDLE'), 2000);
+          return;
+        }
+
+        // Keep the USD figure in step with whatever the amount resolved to, so
+        // the confirmation card and spend accounting agree.
+        amountUSD =
+          typeof command.amountUSD === 'number' && command.amountUSD > 0
+            ? command.amountUSD
+            : amountToken * price;
 
         const newTx: Transaction = {
           id: uuidv4(),
@@ -608,7 +685,7 @@ export function AiModePage() {
 
         const fromPubkey = new PublicKey(solWallet.address);
         const toPubkey = new PublicKey(tx.recipient);
-        const lamports = Math.floor(tx.amount * 1e9);
+        const lamports = Number(toBaseUnits(tx.amount, 9));
 
         const transaction = new SolTransaction().add(
           SystemProgram.transfer({ fromPubkey, toPubkey, lamports })
@@ -647,7 +724,7 @@ export function AiModePage() {
       const calls: Array<{ to: string; value?: string; data?: string }> = [];
       if (tx.type === 'SEND' && tx.recipient) {
         // Native token send
-        const valueWei = BigInt(Math.floor(tx.amount * 1e18));
+        const valueWei = toBaseUnits(tx.amount, 18);
         calls.push({
           to: tx.recipient,
           value: `0x${valueWei.toString(16)}`,
@@ -669,7 +746,7 @@ export function AiModePage() {
           throw new Error("SWAP_MISSING_DEST_TOKEN");
         }
 
-        const amountWei = BigInt(Math.floor(tx.amount * 1e18)).toString();
+        const amountWei = toBaseUnits(tx.amount, 18).toString();
         const params = new URLSearchParams({
           chainId: "1",
           src: NATIVE,
