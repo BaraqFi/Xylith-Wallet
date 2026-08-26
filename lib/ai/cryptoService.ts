@@ -71,8 +71,13 @@ function getSolanaConnection(): Connection {
 }
 
 // --- Rate Limiting Strategy ---
-const ETH_LIMIT_WINDOW = 3 * 60 * 1000;
-const ETH_LIMIT_MAX = 5;
+// A runaway-loop guard, nothing more. These calls go through our /api/rpc proxy,
+// which does the real per-IP limiting and provider rotation server-side. The
+// previous budget (5 calls per 3 minutes) was tight enough that ordinary use —
+// one balance read plus a gas estimate — exhausted it and surfaced as a bogus
+// "Too many requests" on the user's first command.
+const ETH_LIMIT_WINDOW = 60 * 1000;
+const ETH_LIMIT_MAX = 30;
 let ethRequestTimestamps: number[] = [];
 
 const checkEthRateLimit = () => {

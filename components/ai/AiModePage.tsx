@@ -8,7 +8,7 @@ import { useWallets, useSign7702Authorization } from '@privy-io/react-auth';
 import { useWallets as useSolanaWallets } from '@privy-io/react-auth/solana';
 import { pickSolanaWallet, signSolanaTransactionBytes } from '@/lib/solana/privyWallet';
 import { Buffer } from 'buffer';
-import { AICommand, LogEntry, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
+import { AICommand, LogEntry, Transaction, SpendingLimit, Chain } from "@/lib/ai/types";
 import { getNativeBalance, validateAddress, estimateGasCost, detectChainFromAddress, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
 import { getLiveUsdPrice } from "@/lib/ai/prices";
 import { sanitizeError } from "@/lib/ai/errorSanitizer";
@@ -85,8 +85,6 @@ export function AiModePage() {
   );
 
   // --- State ---
-  const [, setBalances] = useState<BalanceMap>({ ETH: { native: 0 }, BASE: { native: 0 }, ARB: { native: 0 }, SOL: { native: 0 } });
-
   const [logs, setLogs] = useState<LogEntry[]>([
     {
       id: 'init-2',
@@ -139,18 +137,39 @@ export function AiModePage() {
   useEffect(() => {
     if (!user) return;
 
-    const checkSession = async () => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const checkSession = async (attempt = 0) => {
       try {
-        const headers = await getAuthHeaders();
+        // Without a token the request is a guaranteed 401, which would flip an
+        // active session to "none" and bounce the user back to the splash.
+        // Privy can hand one over a beat late, so wait for it instead.
+        const token = await getAccessToken();
+        if (cancelled) return;
+        if (!token) {
+          if (attempt < 5) {
+            timer = setTimeout(() => checkSession(attempt + 1), 1000);
+          } else {
+            setAiSessionStatus("none");
+          }
+          return;
+        }
+
         const res = await fetch("/api/ai/session", {
           method: "GET",
-          headers,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
         });
+        if (cancelled) return;
         if (!res.ok) {
           setAiSessionStatus("none");
           return;
         }
         const data = await res.json();
+        if (cancelled) return;
         if (data.status === "active") {
           setAiSessionStatus("active");
         } else if (data.status === "expired") {
@@ -159,11 +178,16 @@ export function AiModePage() {
           setAiSessionStatus("none");
         }
       } catch {
-        setAiSessionStatus("none");
+        if (!cancelled) setAiSessionStatus("none");
       }
     };
     checkSession();
-  }, [user, getAuthHeaders]);
+
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [user, getAccessToken]);
 
   // Auto-scroll chat
   useEffect(() => {
@@ -181,23 +205,10 @@ export function AiModePage() {
     }
   }, [inputText]);
 
-  // Fetch balances using user's real wallet addresses (AI scope: ETH + SOL only)
-  useEffect(() => {
-    if (!evmAddress) return;
-    const fetchBalances = async () => {
-      const results = await Promise.allSettled([
-        getNativeBalance(evmAddress, 'ETH'),
-        ...(solAddress ? [getNativeBalance(solAddress, 'SOL')] : [Promise.resolve(0)]),
-      ]);
-      setBalances(prev => {
-        const getVal = (index: number, f: number) => results[index].status === 'fulfilled' ? (results[index] as PromiseFulfilledResult<number>).value : f;
-        return { ...prev, ETH: { native: getVal(0, prev.ETH.native) }, SOL: { native: getVal(1, prev.SOL.native) } };
-      });
-    };
-    fetchBalances();
-    const interval = setInterval(fetchBalances, 45000);
-    return () => clearInterval(interval);
-  }, [evmAddress, solAddress]);
+  // NOTE: a 45s native-balance poll used to live here, writing into state that
+  // nothing read. It also consumed the entire client-side ETH RPC budget, so any
+  // command needing a balance or gas estimate failed with "Too many requests".
+  // Balances now come from the holdings hooks above.
 
   // --- Logic ---
 
@@ -592,9 +603,21 @@ export function AiModePage() {
 
         if (typeof command.amountPercent === 'number' && command.amountPercent > 0) {
           const pct = Math.min(command.amountPercent, 100);
-          const balance = isTokenTransfer
-            ? holding.amount
-            : await getNativeBalance(ownerAddress, chain);
+
+          // Prefer a fresh read when money is moving, but fall back to the
+          // holdings figure rather than failing the whole command on a
+          // transient RPC hiccup.
+          let balance: number;
+          if (isTokenTransfer) {
+            balance = holding.amount;
+          } else {
+            const cachedNative = findHolding(holdings, nativeSymbol, chain)?.amount ?? 0;
+            try {
+              balance = await getNativeBalance(ownerAddress, chain);
+            } catch {
+              balance = cachedNative;
+            }
+          }
 
           if (!Number.isFinite(balance) || balance <= 0) {
             addLog('ERROR', `Could not read your ${assetSymbol} balance, or it is empty.`);
@@ -610,7 +633,14 @@ export function AiModePage() {
           // balance stays spendable.
           if (!isTokenTransfer) {
             const gasTarget = command.recipient || ownerAddress;
-            const gasCost = parseFloat(await estimateGasCost(chain, ownerAddress, gasTarget, 0)) || 0;
+            // Fall back to a conservative reserve if estimation fails — sending
+            // the whole balance with nothing left for fees is the worse outcome.
+            let gasCost = chain === 'SOL' ? 0.00001 : 0.0003;
+            try {
+              gasCost = parseFloat(await estimateGasCost(chain, ownerAddress, gasTarget, 0)) || gasCost;
+            } catch {
+              // keep the conservative default
+            }
             const reserve = gasCost * 1.2; // headroom for gas-price drift
             if (amountToken + reserve > balance) {
               amountToken = Math.max(balance - reserve, 0);
