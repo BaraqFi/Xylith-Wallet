@@ -118,7 +118,9 @@ export function useSolanaSwapQuote({
         fetchQuote();
 
         return () => { cancelled = true; };
-    }, [fromToken, toToken, debouncedAmount, slippage]);
+        // fromAddress matters: Ultra only returns a signable transaction when a
+        // taker is present, and the wallet list loads asynchronously.
+    }, [fromToken, toToken, debouncedAmount, slippage, fromAddress]);
 
     // Function to fetch the actual swap transaction
     const fetchSwapTransaction = async () => {

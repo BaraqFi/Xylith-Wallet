@@ -7,6 +7,8 @@ import {
     defaultSolanaTokens,
     Chain,
     EVMChain,
+    NATIVE_TOKEN_SENTINEL,
+    isNativeTokenAddress,
 } from "@/components/wallet/data";
 import {
     getTokenBalancesFromAlchemy,
@@ -29,16 +31,6 @@ const localFork = {
         default: { http: ['http://127.0.0.1:8545'] },
     },
 } as const;
-
-// Native token addresses for each chain
-const NATIVE_TOKEN_ADDRESSES: Record<EVMChain, string> = {
-    ethereum: "0x0000000000000000000000000000000000000000",
-    base: "0x4200000000000000000000000000000000000006",
-    arbitrum: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
-    optimism: "0x4200000000000000000000000000000000000006",
-    polygon: "0x0000000000000000000000000000000000001010",
-    bsc: "0x0000000000000000000000000000000000000000",
-};
 
 // Cache TTL: 2 minutes for balances to be considered "fresh"
 const BALANCE_CACHE_TTL = 2 * 60 * 1000;
@@ -76,7 +68,9 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
 
             // Construct precise cache key
             const chainKey = activeChain === "EVM" ? currentEvmChain : "solana";
-            const cacheKey = `xylith_cache_balances_${address.toLowerCase()}_${chainKey}`;
+            // v2: native rows now use the 0xeeee… sentinel instead of WETH addresses;
+            // the version bump keeps stale v1 rows from resurfacing via cache.
+            const cacheKey = `xylith_cache_balances_v2_${address.toLowerCase()}_${chainKey}`;
 
             // 1. Check Cache (Stale-While-Revalidate)
             // We pass a very long TTL here because we WANT stale data immediately
@@ -271,17 +265,13 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                         try {
                             const moralisTokens = await getTokenBalancesFromMoralis(address, currentEvmChain);
                             moralisTokens.forEach((token) => {
-                                // Normalise native tokens so we don't get duplicate ETH rows
-                                // like "Ether" vs "Ethereum" from different sources.
+                                // Normalise native tokens so we don't get duplicate rows like
+                                // "Ether" vs "Ethereum" from different sources. Moralis reports
+                                // native balances either with no address or with the 0xeeee…
+                                // sentinel; both collapse onto our canonical native row.
                                 let rawAddr = token.contractAddress?.toLowerCase() || "";
-                                if (token.symbol === "ETH" && currentEvmChain === "ethereum") {
-                                    // Moralis often uses the 0xeeee... sentinel for native ETH.
-                                    // Treat that as the canonical native address so it merges
-                                    // with our default ETH token instead of appearing twice.
-                                    const sentinel = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-                                    if (!rawAddr || rawAddr === sentinel) {
-                                        rawAddr = NATIVE_TOKEN_ADDRESSES.ethereum;
-                                    }
+                                if (!rawAddr || rawAddr === NATIVE_TOKEN_SENTINEL) {
+                                    rawAddr = NATIVE_TOKEN_SENTINEL;
                                 }
 
                                 if (rawAddr) {
@@ -339,13 +329,10 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
 
                     const targetChain = client.chain;
                     const nativeDecimals = targetChain?.nativeCurrency?.decimals ?? 18;
-                    const nativeTokenAddress = NATIVE_TOKEN_ADDRESSES[currentEvmChain];
 
                     const mergedTokens: TokenBalance[] = await Promise.all(
                         defaultChainTokens.map(async (defaultToken) => {
-                            const isNative =
-                                defaultToken.contractAddress === nativeTokenAddress ||
-                                defaultToken.contractAddress === "0x0000000000000000000000000000000000000000";
+                            const isNative = isNativeTokenAddress(defaultToken.contractAddress);
 
                             let rawBalance: bigint;
                             let decimals = defaultToken.decimals ?? nativeDecimals;

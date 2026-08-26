@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useApp } from "../app/AppContext";
-import { TokenBalance, SUPPORTED_CHAINS } from "../wallet/data";
+import { TokenBalance, SUPPORTED_CHAINS, isNativeTokenAddress } from "../wallet/data";
 import { ChainLogo } from "../wallet/ChainLogo";
 import { TokenLogo } from "../wallet/TokenLogo";
 import { ChainSelectorSheet } from "../wallet/ChainSelectorSheet";
@@ -31,8 +31,13 @@ import {
   Settings,
   ChevronDown,
 } from "lucide-react";
-import { usePrivy, useWallets } from "@privy-io/react-auth";
+import { usePrivy } from "@privy-io/react-auth";
+// Solana wallets are NOT in the main useWallets() (Ethereum-only); they come
+// from the dedicated solana entrypoint.
+import { useWallets as useSolanaWallets } from "@privy-io/react-auth/solana";
+import { pickSolanaWallet, signSolanaTransactionBytes } from "@/lib/solana/privyWallet";
 import { formatUnits, parseUnits, encodeFunctionData, parseAbi } from "viem";
+import { Buffer } from "buffer";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { useSwapQuote } from "@/hooks/useSwapQuote";
 import { useSolanaSwapQuote } from "@/hooks/useSolanaSwapQuote";
@@ -41,8 +46,6 @@ import { OneInchClient } from "@/lib/1inch/client";
 import { useSwapTokenList } from "@/hooks/useSwapTokenList";
 import { useSwapSecurity, useTokenSecurity } from "@/hooks/useSecurityCheck";
 import { AlertTriangle, AlertCircle, Info } from "lucide-react";
-import { solanaClient } from "@/lib/solana/client";
-import { VersionedTransaction } from "@solana/web3.js";
 import { ultraClient } from "@/lib/ultra/client";
 import { Chain, EVMChain } from "../wallet/data"; // Ensure Chain type is imported
 import { useSolanaTokenList } from "@/hooks/useSolanaTokenList";
@@ -194,7 +197,7 @@ export function SwapFlow() {
   const [toRemoteResults, setToRemoteResults] = useState<TokenBalance[]>([]);     // Added for persistence
 
   const { user, sendTransaction } = usePrivy();
-  const { wallets } = useWallets();
+  const { wallets: solanaWallets } = useSolanaWallets();
 
   // Determine active chain context
   const activeChainForBalances = selectedChain;
@@ -271,7 +274,7 @@ export function SwapFlow() {
   });
 
   // --- Solana Quote Hook ---
-  const solanaWallet = wallets.find(w => (w as any).chainType === 'solana');
+  const solanaWallet = pickSolanaWallet(solanaWallets);
   const solanaAddress = solanaWallet?.address;
 
   const {
@@ -326,6 +329,19 @@ export function SwapFlow() {
     amount,
     fromToken?.evmChain
   );
+
+  // Compare allowance in base units — `allowance` is raw wei, so the swap
+  // amount must be scaled by the token's decimals before comparing.
+  // Natives never need approval (useAllowance short-circuits them to max).
+  const requiredAllowanceWei = useMemo(() => {
+    if (!fromToken || !amount) return BigInt(0);
+    try {
+      return parseUnits(amount, fromToken.decimals ?? 18);
+    } catch {
+      return BigInt(0);
+    }
+  }, [fromToken, amount]);
+  const needsApproval = !isSolanaSwap && allowance < requiredAllowanceWei;
 
   const getRealBalance = (token: TokenBalance | null): number => {
     if (!token) return 0;
@@ -487,10 +503,7 @@ export function SwapFlow() {
   const [isApproving, setIsApproving] = useState(false);
   const handleApprove = async () => {
     if (!fromToken || !fromToken.contractAddress || isSolanaSwap) return;
-    const isNativeToken =
-      fromToken.contractAddress.toLowerCase() ===
-      "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-    if (isNativeToken) return;
+    if (isNativeTokenAddress(fromToken.contractAddress)) return;
 
     setIsApproving(true);
     try {
@@ -501,7 +514,7 @@ export function SwapFlow() {
         args: [AGGREGATION_ROUTER_V6, amountWei]
       });
 
-      const txHash = await sendTransaction({
+      await sendTransaction({
         to: fromToken.contractAddress,
         data: data,
         chainId: getChainId(fromToken),
@@ -524,11 +537,11 @@ export function SwapFlow() {
         if (!solanaWallet) throw new Error("Solana wallet not connected");
         const txBase64 = await fetchSolSwap();
         if (!txBase64) throw new Error("Failed to prepare Solana transaction");
-        const txBuffer = Buffer.from(txBase64, 'base64');
-        const transaction = VersionedTransaction.deserialize(txBuffer);
-        const signedTx = await (solanaWallet as any).signTransaction(transaction);
-        const serializedTx = signedTx.serialize();
-        const signedTxBase64 = Buffer.from(serializedTx).toString('base64');
+        // Ultra returns a fully-built (versioned) transaction; wallet-standard
+        // signing takes the raw bytes as-is — no deserialization needed.
+        const txBytes = new Uint8Array(Buffer.from(txBase64, 'base64'));
+        const signedBytes = await signSolanaTransactionBytes(solanaWallet, txBytes);
+        const signedTxBase64 = Buffer.from(signedBytes).toString('base64');
 
         const requestId = (solQuote as any)?.requestId;
         if (!requestId || typeof requestId !== "string") {
@@ -545,13 +558,13 @@ export function SwapFlow() {
       } else {
         const txData = await fetchEvmSwap();
         if (!txData || !txData.tx) throw new Error("Failed to prepare transaction");
-        const txHash = await sendTransaction({
+        const { hash } = await sendTransaction({
           to: txData.tx.to,
           data: txData.tx.data,
           value: BigInt(txData.tx.value),
           chainId: getChainId(fromToken),
         });
-        console.log("EVM Swap Executed:", txHash);
+        console.log("EVM Swap Executed:", hash);
         setStep("success");
       }
     } catch (err: any) {
@@ -872,12 +885,11 @@ export function SwapFlow() {
 
           {/* Action Buttons */}
           <div className="space-y-2 pt-2">
-            {!isSolanaSwap && !isApproving && allowance !== undefined && allowance < parseFloat(amount) && (
+            {needsApproval ? (
               <Button onClick={handleApprove} className="w-full bg-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/90 text-white rounded-[1.5rem] py-6 text-base font-bold uppercase tracking-wider" disabled={isApproving}>
                 {isApproving ? "Approving..." : `Approve ${fromToken?.symbol}`}
               </Button>
-            )}
-            {(!isSolanaSwap && allowance !== undefined && allowance < parseFloat(amount)) ? null : (
+            ) : (
               <Button onClick={handleConfirm} className="w-full bg-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/90 text-white rounded-[1.5rem] py-6 text-base font-bold uppercase tracking-wider">Confirm Swap</Button>
             )}
             <Button variant="ghost" onClick={() => setStep("form")} className="w-full">Back</Button>

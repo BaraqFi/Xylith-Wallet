@@ -2,7 +2,12 @@ import { useState, useEffect } from "react";
 import { OneInchClient, OneInchQuoteParams, OneInchSwapParams } from "@/lib/1inch/client";
 import { parseUnits, isAddress } from "viem";
 import { Quote, SwapResponse } from "@/lib/1inch/types";
+import { NATIVE_TOKEN_SENTINEL, isNativeTokenAddress } from "@/components/wallet/data";
 // Local debounce used below
+
+// 1inch expects natives as the 0xeeee… sentinel regardless of chain.
+const normalizeTokenAddress = (addr?: string) =>
+    isNativeTokenAddress(addr) ? NATIVE_TOKEN_SENTINEL : (addr as string);
 
 // Simple debounce hook if not exists
 function useLocalDebounce<T>(value: T, delay: number): T {
@@ -73,14 +78,6 @@ export function useSwapQuote({
                     return;
                 }
 
-                // Convert native token address (0x0000...) to 1inch format (0xeeee...)
-                const normalizeTokenAddress = (addr?: string) => {
-                    if (!addr || addr.toLowerCase() === "0x0000000000000000000000000000000000000000") {
-                        return "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-                    }
-                    return addr;
-                };
-
                 const params: OneInchQuoteParams = {
                     src: normalizeTokenAddress(fromToken.contractAddress || fromToken.address),
                     dst: normalizeTokenAddress(toToken.contractAddress || toToken.address),
@@ -135,14 +132,6 @@ export function useSwapQuote({
                 setError("Invalid amount");
                 throw new Error("Invalid amount");
             }
-
-            // Convert native token address (0x0000...) to 1inch format (0xeeee...)
-            const normalizeTokenAddress = (addr?: string) => {
-                if (!addr || addr.toLowerCase() === "0x0000000000000000000000000000000000000000") {
-                    return "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
-                }
-                return addr;
-            };
 
             const params: OneInchSwapParams = {
                 src: normalizeTokenAddress(fromToken.contractAddress || fromToken.address),

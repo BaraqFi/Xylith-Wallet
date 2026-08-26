@@ -2,6 +2,24 @@ export type Chain = "EVM" | "Solana";
 export type EVMChain = "ethereum" | "bsc" | "base" | "arbitrum" | "optimism" | "polygon";
 export type WalletDirection = "in" | "out" | "swap" | "unknown";
 
+/**
+ * Canonical placeholder address for the native token (ETH/BNB/MATIC) on every
+ * EVM chain. This is the 1inch/0x convention, so swap quotes can pass it
+ * through unchanged. Never use a WETH/wrapped address to represent native —
+ * balances shown against it are native balances and must be spent as such.
+ */
+export const NATIVE_TOKEN_SENTINEL = "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+
+/** True when a TokenBalance.contractAddress denotes the chain's native token. */
+export function isNativeTokenAddress(address?: string | null): boolean {
+  if (!address) return true;
+  const lower = address.toLowerCase();
+  return (
+    lower === NATIVE_TOKEN_SENTINEL ||
+    lower === "0x0000000000000000000000000000000000000000"
+  );
+}
+
 export interface ChainBalance {
   label: Chain;
   currencyValue: number;
@@ -102,7 +120,7 @@ function calculateChainBalances(tokens: TokenBalance[]): ChainBalance[] {
 
 export const defaultEvmTokens: TokenBalance[] = [
   // --- Ethereum Mainnet (12 tokens) ---
-  { symbol: "ETH", name: "Ethereum", chain: "EVM", evmChain: "ethereum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x0000000000000000000000000000000000000000", decimals: 18 },
+  { symbol: "ETH", name: "Ethereum", chain: "EVM", evmChain: "ethereum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: NATIVE_TOKEN_SENTINEL, decimals: 18 },
   { symbol: "USDC", name: "USD Coin", chain: "EVM", evmChain: "ethereum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", decimals: 6 },
   { symbol: "USDT", name: "Tether USD", chain: "EVM", evmChain: "ethereum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0xdAC17F958D2ee523a2206206994597C13D831ec7", decimals: 6 },
   { symbol: "WBTC", name: "Wrapped Bitcoin", chain: "EVM", evmChain: "ethereum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599", decimals: 8 },
@@ -116,7 +134,7 @@ export const defaultEvmTokens: TokenBalance[] = [
   { symbol: "PEPE", name: "Pepe", chain: "EVM", evmChain: "ethereum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x6982508145454Ce325dDbE47a25d4ec3d2311933", decimals: 18 },
 
   // --- Base (8 tokens: ETH, USDC + 6 popular/canonical) ---
-  { symbol: "ETH", name: "Ethereum", chain: "EVM", evmChain: "base", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x4200000000000000000000000000000000000006", decimals: 18 },
+  { symbol: "ETH", name: "Ethereum", chain: "EVM", evmChain: "base", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: NATIVE_TOKEN_SENTINEL, decimals: 18 },
   { symbol: "USDC", name: "USD Coin", chain: "EVM", evmChain: "base", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x833589fCD6eDb6E08f4C7C32D4f71b54bdA02913", decimals: 6 },
   { symbol: "WETH", name: "Wrapped Ether", chain: "EVM", evmChain: "base", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x4200000000000000000000000000000000000006", decimals: 18 },
   { symbol: "AERO", name: "Aerodrome Finance", chain: "EVM", evmChain: "base", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x940181a94A35A4569E4529A3CDfB74e38FD98631", decimals: 18 },
@@ -126,7 +144,7 @@ export const defaultEvmTokens: TokenBalance[] = [
   { symbol: "TOSHI", name: "Toshi", chain: "EVM", evmChain: "base", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0xAC1Bd2486aAf3B5C0fc3Fd868558b082a531B2B4", decimals: 18 },
 
   // --- Arbitrum (8 tokens: ETH, USDC + 6 popular/canonical) ---
-  { symbol: "ETH", name: "Ethereum", chain: "EVM", evmChain: "arbitrum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1", decimals: 18 },
+  { symbol: "ETH", name: "Ethereum", chain: "EVM", evmChain: "arbitrum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: NATIVE_TOKEN_SENTINEL, decimals: 18 },
   { symbol: "USDC", name: "USD Coin", chain: "EVM", evmChain: "arbitrum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831", decimals: 6 },
   { symbol: "ARB", name: "Arbitrum", chain: "EVM", evmChain: "arbitrum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x912CE59144191C1204E64559FE8253a0e49E6548", decimals: 18 },
   { symbol: "GMX", name: "GMX", chain: "EVM", evmChain: "arbitrum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0xfc5A1A6EB076a2C7AD06EDb220f40079d2461Cef", decimals: 18 },
@@ -136,7 +154,7 @@ export const defaultEvmTokens: TokenBalance[] = [
   { symbol: "RDNT", name: "Radiant Capital", chain: "EVM", evmChain: "arbitrum", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x3082CC23568eA640225c2467653dB90e9250AaA0", decimals: 18 },
 
   // --- Optimism (7 tokens: ETH, USDC + 5 popular/canonical) ---
-  { symbol: "ETH", name: "Ethereum", chain: "EVM", evmChain: "optimism", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x4200000000000000000000000000000000000006", decimals: 18 },
+  { symbol: "ETH", name: "Ethereum", chain: "EVM", evmChain: "optimism", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: NATIVE_TOKEN_SENTINEL, decimals: 18 },
   { symbol: "USDC", name: "USD Coin", chain: "EVM", evmChain: "optimism", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85", decimals: 6 },
   { symbol: "OP", name: "Optimism", chain: "EVM", evmChain: "optimism", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x4200000000000000000000000000000000000042", decimals: 18 },
   { symbol: "WETH", name: "Wrapped Ether", chain: "EVM", evmChain: "optimism", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x4200000000000000000000000000000000000006", decimals: 18 },
@@ -145,7 +163,7 @@ export const defaultEvmTokens: TokenBalance[] = [
   { symbol: "LDO", name: "Lido DAO", chain: "EVM", evmChain: "optimism", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0xFdb794692724153d148DbffD3996d63FE9C6A582", decimals: 18 },
 
   // --- Polygon (7 tokens: MATIC/POL, USDC + 5 popular/canonical) ---
-  { symbol: "MATIC", name: "Polygon", chain: "EVM", evmChain: "polygon", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x0000000000000000000000000000000000001010", decimals: 18 },
+  { symbol: "MATIC", name: "Polygon", chain: "EVM", evmChain: "polygon", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: NATIVE_TOKEN_SENTINEL, decimals: 18 },
   { symbol: "USDC", name: "USD Coin", chain: "EVM", evmChain: "polygon", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", decimals: 6 },
   { symbol: "POL", name: "Polygon Ecosystem Token", chain: "EVM", evmChain: "polygon", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x455e53CBB86018Ac2B8092FdCd39d8444aFFC3F6", decimals: 18 },
   { symbol: "WETH", name: "Wrapped Ether", chain: "EVM", evmChain: "polygon", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619", decimals: 18 },
@@ -154,7 +172,7 @@ export const defaultEvmTokens: TokenBalance[] = [
   { symbol: "QUICK", name: "QuickSwap", chain: "EVM", evmChain: "polygon", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x831753DD7087CaC61aB5644b308642cc1c33Dc13", decimals: 18 },
 
   // --- BSC (7 tokens: BNB, USDT + 5 popular/canonical/bluechip + meme) ---
-  { symbol: "BNB", name: "BNB", chain: "EVM", evmChain: "bsc", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x0000000000000000000000000000000000000000", decimals: 18 },
+  { symbol: "BNB", name: "BNB", chain: "EVM", evmChain: "bsc", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: NATIVE_TOKEN_SENTINEL, decimals: 18 },
   { symbol: "USDT", name: "Tether USD", chain: "EVM", evmChain: "bsc", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x55d398326f99059fF775485246999027B3197955", decimals: 18 },
   { symbol: "CAKE", name: "PancakeSwap", chain: "EVM", evmChain: "bsc", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82", decimals: 18 },
   { symbol: "ASTER", name: "Aster", chain: "EVM", evmChain: "bsc", amount: 0, pricePerToken: 0, usdValue: 0, contractAddress: "0x000ae314e2a2172a039b26378814c252734f556a", decimals: 18 },

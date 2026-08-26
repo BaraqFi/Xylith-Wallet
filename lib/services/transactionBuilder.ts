@@ -1,6 +1,6 @@
 import { Address, parseUnits, formatUnits, parseAbiItem, encodeFunctionData } from "viem";
 import { createWalletClient, custom } from "viem";
-import { EVMChain, TokenBalance, Chain } from "@/components/wallet/data";
+import { EVMChain, TokenBalance, Chain, isNativeTokenAddress } from "@/components/wallet/data";
 import { getPublicRpcClient } from "./rpcConfig";
 // Note: Alchemy RPC calls should go through /api/alchemy/rpc proxy
 // This file uses centralized public RPC for transaction building
@@ -150,9 +150,7 @@ export async function createTransactionPreview(
   chain: EVMChain,
   fromAddress: Address
 ): Promise<TransactionPreview> {
-  const isNative =
-    !token.contractAddress ||
-    token.contractAddress === "0x0000000000000000000000000000000000000000";
+  const isNative = isNativeTokenAddress(token.contractAddress);
 
   const transactionData = isNative
     ? await buildNativeTransferTransaction(recipient, amount, chain, fromAddress)

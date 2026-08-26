@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { parseAbiItem, Address, isAddress } from "viem";
-import { EVMChain } from "@/components/wallet/data";
+import { EVMChain, isNativeTokenAddress } from "@/components/wallet/data";
 import { getPublicRpcClient, getCustomRpcClient } from "@/lib/services/rpcConfig";
 
 export function useAllowance(
@@ -23,18 +23,18 @@ export function useAllowance(
                 return;
             }
 
+            // Native tokens (ETH/BNB/MATIC) don't need allowance
+            if (isNativeTokenAddress(tokenAddress)) {
+                setAllowance(BigInt("115792089237316195423570985008687907853269984665640564039457584007913129639935")); // Max Uint256
+                return;
+            }
+
             if (
                 !isAddress(userAddress) ||
                 !isAddress(spenderAddress) ||
                 !isAddress(tokenAddress)
             ) {
                 setAllowance(BigInt(0));
-                return;
-            }
-
-            // Native tokens (ETH) don't need allowance
-            if (tokenAddress === "0x0000000000000000000000000000000000000000") {
-                setAllowance(BigInt("115792089237316195423570985008687907853269984665640564039457584007913129639935")); // Max Uint256
                 return;
             }
 

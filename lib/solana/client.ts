@@ -138,6 +138,15 @@ export class SolanaClient {
         }
     }
 
+    // Fetch a recent blockhash (proxied client-side, avoiding CORS/rate limits
+    // on public RPC endpoints)
+    async getLatestBlockhash(): Promise<string> {
+        const result = await this.rpcCall('getLatestBlockhash', [
+            { commitment: 'confirmed' },
+        ]);
+        return result.value.blockhash;
+    }
+
     // Send Raw Transaction
     async sendRawTransaction(base64Tx: string): Promise<string> {
         try {

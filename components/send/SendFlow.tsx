@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useApp } from "../app/AppContext";
-import { TokenBalance } from "../wallet/data";
+import { TokenBalance, isNativeTokenAddress } from "../wallet/data";
 import { groupTokensBySymbol, GroupedToken } from "../wallet/utils";
 import { TokenLogo } from "../wallet/TokenLogo";
 import { ChainLogo } from "../wallet/ChainLogo";
@@ -16,13 +16,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Check, X, Loader2, Search } from "lucide-react";
-import { usePrivy, useWallets, ConnectedWallet } from "@privy-io/react-auth";
-
-interface PrivyAccountWithChain extends ConnectedWallet {
-  chainType?: 'ethereum' | 'solana';
-  signTransaction: (transaction: Transaction) => Promise<Transaction>;
-}
-import { createWalletClient, custom, Address, type Chain, type SendTransactionParameters } from "viem";
+import { usePrivy, useWallets } from "@privy-io/react-auth";
+// Solana wallets are NOT in the main useWallets() (Ethereum-only); they come
+// from the dedicated solana entrypoint.
+import { useWallets as useSolanaWallets } from "@privy-io/react-auth/solana";
+import { pickSolanaWallet, signSolanaTransactionBytes } from "@/lib/solana/privyWallet";
+import { Address } from "viem";
+import { Buffer } from "buffer";
 import { useTransactionBuilder } from "@/hooks/useTransactionBuilder";
 
 interface JupiterToken {
@@ -44,30 +44,24 @@ interface EvmSearchResult {
   logo?: string;
 }
 
-interface FallbackPreview {
-  transactionData: { to: string; value: number; data: "0x" };
-  recipient: string;
-  amount: string;
-  token: TokenBalance;
-  chain: string;
-  gasEstimate: string;
-  gasPrice: string;
-  totalCost: string;
-}
 import { TransactionDetails } from "./TransactionDetails";
 import { solanaClient } from "@/lib/solana/client";
 import { SystemProgram, PublicKey, Transaction } from "@solana/web3.js";
-import { getAssociatedTokenAddress, createTransferInstruction } from "@solana/spl-token";
+import {
+  getAssociatedTokenAddress,
+  createTransferInstruction,
+  createAssociatedTokenAccountIdempotentInstruction,
+} from "@solana/spl-token";
 
 type SendStep = "form" | "confirm" | "loading" | "success" | "error";
 
 const getTokenInstanceKey = (token: TokenBalance): string => {
   const chainId = token.evmChain || 'solana';
-  // Native tokens (like ETH, or MATIC on Polygon) often lack a contract address or use a placeholder.
-  // Their symbol on a given chain is unique.
-  // '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' is a common placeholder for native EVM token addresses.
-  // 'So11111111111111111111111111111111111111112' is the wrapped SOL address, often treated as native.
-  if (!token.contractAddress || token.contractAddress.toLowerCase() === '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee' || token.contractAddress === 'So11111111111111111111111111111111111111112') {
+  // Native tokens are keyed by symbol: the EVM native sentinel is shared across
+  // chains, and 'So111...112' (wrapped SOL) stands in for native SOL.
+  const isEvmNative = token.chain === 'EVM' && isNativeTokenAddress(token.contractAddress);
+  const isSolNative = token.contractAddress === 'So11111111111111111111111111111111111111112';
+  if (!token.contractAddress || isEvmNative || isSolNative) {
     return `${token.chain}-${chainId}-${token.symbol}`;
   }
   // For ERC20s or SPL tokens, the contract address is the unique identifier.
@@ -76,8 +70,9 @@ const getTokenInstanceKey = (token: TokenBalance): string => {
 
 export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
   const { setCurrentView, preselectedToken, setPreselectedToken } = useApp();
-  const { user } = usePrivy();
+  const { user, sendTransaction } = usePrivy();
   const { wallets } = useWallets();
+  const { wallets: solanaWallets } = useSolanaWallets();
   const { buildTransaction, preview, error: buildError, clearPreview } = useTransactionBuilder();
 
   const [step, setStep] = useState<SendStep>("form");
@@ -243,62 +238,43 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
     const hasInsufficientBalance = parseFloat(amount) > selectedToken.amount;
     setInsufficientBalance(hasInsufficientBalance);
 
-    /* Solana block removed */
+    if (isEvm) {
+      const wallet = wallets.find((w) => w.walletClientType === 'privy') || wallets[0];
+      if (!wallet?.address) {
+        setError("Wallet not connected");
+        return;
+      }
 
-    const wallet = wallets.find((w) => w.walletClientType === 'privy') || wallets[0];
-    if (!wallet?.address) {
-      setError("Wallet not connected");
+      if (!hasInsufficientBalance) setError("");
+
+      try {
+        if (selectedToken.evmChain) {
+          await buildTransaction(selectedToken, recipient as Address, amount, selectedToken.evmChain, wallet.address as Address);
+        }
+        setStep("confirm");
+      } catch (err: unknown) {
+        const errorMessage = (err as Error)?.message || "";
+        if (hasInsufficientBalance || errorMessage.toLowerCase().includes("insufficient")) {
+          // Show the confirm screen anyway: the render falls back to a stub
+          // preview and TransactionDetails surfaces the insufficient balance.
+          setError("");
+          setStep("confirm");
+        } else {
+          setError(errorMessage || "Failed to build transaction");
+        }
+      }
       return;
     }
 
-    if (!hasInsufficientBalance) {
-      setError("");
+    // Solana: there is no EVM-style preview to build here — the confirm screen
+    // renders a fallback preview and the transaction is assembled on confirm.
+    const solanaWallet = pickSolanaWallet(solanaWallets);
+    if (!solanaWallet?.address) {
+      setError("Solana wallet not connected");
+      return;
     }
-
-    try {
-      if (isEvm && selectedToken.evmChain) {
-        await buildTransaction(selectedToken, recipient as Address, amount, selectedToken.evmChain, wallet.address as Address);
-      }
-      setStep("confirm");
-    } catch (err: unknown) {
-      const errorMessage = (err as Error)?.message || "";
-      if (hasInsufficientBalance || errorMessage.toLowerCase().includes("insufficient")) {
-        // Create a fallback preview so the user can see the details and the error
-        // Cast to any to bypass strict type checks for the fallback
-        const fallbackPreview: FallbackPreview = {
-          transactionData: { to: recipient, value: 0, data: "0x" },
-          recipient,
-          amount,
-          token: selectedToken!, // We checked !selectedToken earlier in handleNext, so this is safe
-          chain: selectedToken?.evmChain || "Ethereum",
-          gasEstimate: "Unknown",
-          gasPrice: "0",
-          totalCost: "0"
-        };
-
-        // We need to inject this fake preview into the component state.
-        // Since useTransactionBuilder doesn't expose a setter, we'll strip the preview check in the render 
-        // OR we can make buildTransaction return this fallback?
-        // Actually, we can just use a trick: bypass the check in render by checking for error state?
-        // No, TransactionDetails NEEDS data.
-
-        // Best hack: Render it here? No, we need to continue using the component structure.
-        // I will MODIFY the render check in SendFlow to allow this.
-        // Wait, I can't set "preview" state from here because it's inside the hook.
-
-        // Change: I will ignore the hook's preview if it's null AND we have insufficient balance,
-        // and instead pass a constructed object to TransactionDetails.
-
-        // To do that, I need to change lines 242 and 252.
-        // So for THIS block, I will just set the step. I will modify the RENDER logic in another chunk.
-        setError("");
-        setStep("confirm");
-        setStep("confirm");
-      } else {
-        const errorMsg = (err as Error)?.message || "Failed to build transaction";
-        setError(errorMsg);
-      }
-    }
+    if (!hasInsufficientBalance) setError("");
+    setStep("confirm");
   };
 
   // Helper function to get chain ID from token (same as SwapFlow)
@@ -334,34 +310,24 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
     setError("");
 
     try {
-      const wallet = wallets.find((w) => w.walletClientType === 'privy') || wallets[0];
-      if (!wallet?.address) {
-        throw new Error("Wallet not connected");
-      }
-
       if (isEvm && selectedToken.evmChain && preview) {
         // --- EVM Transaction ---
-        const chainId = getChainId(selectedToken);
-        const provider = await wallet.getEthereumProvider();
-        const walletClient = createWalletClient({
-          chain: { id: chainId } as Chain,
-          transport: custom(provider)
-        });
-
-        const hash = await walletClient.sendTransaction({
-          account: wallet.address as Address,
+        // Privy's sendTransaction switches the embedded wallet to the target
+        // chain internally, so cross-chain sends land where they should.
+        const { hash } = await sendTransaction({
           to: preview.transactionData.to,
           value: preview.transactionData.value,
-          data: preview.transactionData.data,
-        } as SendTransactionParameters);
+          data: preview.transactionData.data ?? "0x",
+          chainId: getChainId(selectedToken),
+        });
 
         setTxHash(hash);
         setStep("success");
         clearPreview();
       } else {
         // --- Solana Transaction ---
-        const solanaWallet = wallets.find(w => (w as PrivyAccountWithChain).chainType === 'solana') as PrivyAccountWithChain | undefined;
-        if (!solanaWallet || !solanaWallet.address) {
+        const solanaWallet = pickSolanaWallet(solanaWallets);
+        if (!solanaWallet?.address) {
           throw new Error("Solana wallet not connected");
         }
 
@@ -401,6 +367,14 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
           );
 
           transaction = new Transaction().add(
+            // The recipient may never have held this token; creating their ATA
+            // idempotently is a no-op when it already exists.
+            createAssociatedTokenAccountIdempotentInstruction(
+              fromPubkey,
+              toTokenAccount,
+              toPubkey,
+              mintPubkey
+            ),
             createTransferInstruction(
               fromTokenAccount,
               toTokenAccount,
@@ -410,30 +384,21 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
           );
         }
 
-        // Get recent blockhash
-        const response = await fetch(process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            jsonrpc: '2.0',
-            id: 1,
-            method: 'getLatestBlockhash',
-            params: [{ commitment: 'confirmed' }],
-          }),
-        });
-        const blockhashData = await response.json();
-        if (blockhashData.error) throw new Error(blockhashData.error.message);
-
-        transaction.recentBlockhash = blockhashData.result.value.blockhash;
+        transaction.recentBlockhash = await solanaClient.getLatestBlockhash();
         transaction.feePayer = fromPubkey;
 
-        // Sign transaction
-        const signedTx = await (solanaWallet as PrivyAccountWithChain).signTransaction(transaction);
+        // Wallet-standard signing: serialized bytes in, signed bytes out.
+        const unsignedBytes = transaction.serialize({
+          requireAllSignatures: false,
+          verifySignatures: false,
+        });
+        const signedBytes = await signSolanaTransactionBytes(
+          solanaWallet,
+          new Uint8Array(unsignedBytes)
+        );
 
-        // Send transaction
-        const serializedTx = signedTx.serialize();
         const signature = await solanaClient.sendRawTransaction(
-          Buffer.from(serializedTx).toString('base64')
+          Buffer.from(signedBytes).toString('base64')
         );
 
         setTxHash(signature);
@@ -527,8 +492,9 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
 
 
   if (step === "confirm") {
-    // If we have insufficient balance, we might not have a preview, but we still want to show the confirmation screen with the error.
-    if (!preview && !insufficientBalance) {
+    // Solana sends and insufficient-balance cases have no built preview; the
+    // fallback object below covers them. Only EVM sends still building wait here.
+    if (!preview && !insufficientBalance && selectedToken?.chain !== "Solana") {
       return (
         <div className="wallet-card p-8">{renderHeader("Confirm Transaction")}<div className="py-8 text-center"><p className="text-[color:var(--color-depth)]/60">Loading transaction details...</p></div></div>
       );
