@@ -100,7 +100,15 @@ export async function POST(req: NextRequest) {
       bsc: `https://bsc-mainnet.g.alchemy.com/v2/${apiKey}`,
     };
 
-    const apiUrl = chainMap[chain];
+    // Wallet Server APIs (wallet_prepareCalls, wallet_sendPreparedCalls, …) are
+    // chain-agnostic and served from api.g.alchemy.com — NOT the per-chain node
+    // endpoints, which reject them with a 400. Account Kit's transport does this
+    // split itself when given an apiKey, but a custom rpcUrl (this proxy) makes
+    // it send everything here, so the split has to happen here instead. This was
+    // the root cause of AI activation's client grant step failing.
+    const apiUrl = method.startsWith("wallet_")
+      ? `https://api.g.alchemy.com/v2/${apiKey}`
+      : chainMap[chain];
 
     const upstream = await fetch(apiUrl, {
       method: "POST",
