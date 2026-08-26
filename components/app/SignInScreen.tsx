@@ -80,13 +80,24 @@ export function SignInScreen() {
           ))}
         </ul>
 
-        <a
-          href={site.marketingUrl}
-          className="xy-anim-rise mt-8 text-xs text-[color:var(--color-depth)]/45 transition-colors hover:text-[color:var(--color-accent)]"
+        <div
+          className="xy-anim-rise mt-8 flex items-center gap-4 text-xs text-[color:var(--color-depth)]/45"
           style={{ animation: "xy-rise 0.8s cubic-bezier(0.22,1,0.36,1) 1.05s both" }}
         >
-          What is Xylith?
-        </a>
+          <a
+            href={site.marketingUrl}
+            className="transition-colors hover:text-[color:var(--color-accent)]"
+          >
+            What is Xylith?
+          </a>
+          <span aria-hidden="true" className="h-3 w-px bg-[color:var(--color-border)]" />
+          <a
+            href={`${site.marketingUrl}/privacy`}
+            className="transition-colors hover:text-[color:var(--color-accent)]"
+          >
+            Privacy
+          </a>
+        </div>
       </div>
     </div>
   );
