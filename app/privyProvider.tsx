@@ -4,6 +4,14 @@ import { PrivyProvider } from '@privy-io/react-auth';
 import { mainnet, arbitrum, optimism, polygon, base, bsc } from 'viem/chains';
 import type { ReactNode } from 'react';
 
+/** Match Privy's login UI to whichever theme the app will paint. */
+function resolveTheme(): 'light' | 'dark' {
+  if (typeof window === 'undefined') return 'dark';
+  const explicit = document.documentElement.getAttribute('data-theme');
+  if (explicit === 'light' || explicit === 'dark') return explicit;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+}
+
 // Use server-side RPC proxy for all chains
 // This rotates between Ankr, Infura, Alchemy, and public nodes
 function getRpcUrl(chainName: string): string {
@@ -78,6 +86,16 @@ export default function Providers({ children }: { children: ReactNode }) {
     <PrivyProvider
       appId="cmid35rfp01xlks0cujzvl6wk"
       config={{
+        // Without this Privy renders its own default purple, which fights the
+        // brand accent on the sign-in screen. Resolved once at mount: Privy
+        // remounts its UI tree if the theme prop changes, so this deliberately
+        // does not track live theme toggles.
+        appearance: {
+          theme: resolveTheme(),
+          accentColor: '#62d7dd',
+          walletChainType: 'ethereum-and-solana',
+        },
+
         embeddedWallets: {
           ethereum: { createOnLogin: 'users-without-wallets' },
           solana: { createOnLogin: 'users-without-wallets' },

@@ -226,3 +226,54 @@ body::-webkit-scrollbar {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 12%);
   mask-image: linear-gradient(to bottom, transparent 0%, black 12%);
 }
+/* ── Launch experience ──────────────────────────────────────────────────────
+   Keyframes for the boot splash and sign-in screen. Kept in CSS rather than a
+   motion library: the splash is the very first thing painted, so it must not
+   wait on a JS bundle to animate.                                             */
+
+@keyframes xy-letter-in {
+  from { opacity: 0; transform: translateY(0.42em); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes xy-sheen {
+  /* The sheen element is a third of the wordmark's width, so it needs to travel
+     300% of its own width to fully clear the right edge. Anything less parks it
+     permanently over the last letter, because the animation holds its end
+     state (fill-mode: both). */
+  from { transform: translateX(-140%); }
+  to   { transform: translateX(340%); }
+}
+
+@keyframes xy-track-in {
+  from { letter-spacing: 0.62em; }
+  to   { letter-spacing: 0.26em; }
+}
+
+@keyframes xy-hairline {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
+@keyframes xy-bloom {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50%      { opacity: 0.6;  transform: scale(1.08); }
+}
+
+@keyframes xy-rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.xy-ease { transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* Everything on the launch screens collapses to a plain fade when the user
+   has asked for reduced motion — no travel, no sheen, no tracking shift. */
+@media (prefers-reduced-motion: reduce) {
+  [class*="xy-anim"] {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+    letter-spacing: 0.26em !important;
+  }
+}
