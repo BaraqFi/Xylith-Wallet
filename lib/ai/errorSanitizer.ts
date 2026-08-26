@@ -18,6 +18,8 @@ const ERROR_MAP: [RegExp, string][] = [
     [/reverted|CALL_EXCEPTION/i, "Transaction would fail on-chain. The contract rejected the operation."],
     [/SWAP_UNSUPPORTED_ERC20_SOURCE/, "Swaps from this token aren't supported yet. Try buying with ETH as the source."],
     [/SWAP_MISSING_DEST_TOKEN/, "Please specify the token contract address you want to buy."],
+    [/DELEGATION_NOT_CONFIRMED|DELEGATION_NOT_VISIBLE/, "Smart account setup didn't confirm on-chain. This usually means not enough ETH for gas — top up and try again."],
+    [/must be delegated/i, "Your smart account isn't set up yet. Please run AI activation again."],
     [/timeout|TIMEOUT/i, "The request timed out. Please try again."],
 ];
 

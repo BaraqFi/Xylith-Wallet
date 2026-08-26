@@ -267,15 +267,54 @@ export function AiModePage() {
         signer,
       });
 
-      // Ensure 7702 delegation by sending an empty call set (no-op delegation flow).
-      addLog('SYSTEM', 'Setting up your smart account — approve the signature request(s) that appear.');
-      const prepared = await client.prepareCalls({
-        calls: [],
-        from: evmAddress as `0x${string}`,
-      });
-      const signed = await client.signPreparedCalls(prepared);
-      await client.sendPreparedCalls(signed);
-      addLog('SYSTEM', 'Delegation submitted. Installing the AI session key — one more signature.');
+      // A 7702-delegated EOA carries code of the form 0xef0100 || <implementation>.
+      // Checking first lets a re-activation skip the delegation entirely (no extra
+      // signature, no extra gas) when the account is already set up.
+      const isAccountDelegated = async (): Promise<boolean> => {
+        try {
+          const codeRes = await fetch('/api/rpc?chain=ethereum', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              method: 'eth_getCode',
+              params: [evmAddress, 'latest'],
+            }),
+          });
+          const codeJson = await codeRes.json();
+          return (
+            typeof codeJson.result === 'string' &&
+            codeJson.result.toLowerCase().startsWith('0xef0100')
+          );
+        } catch {
+          return false;
+        }
+      };
+
+      if (await isAccountDelegated()) {
+        addLog('SYSTEM', 'Smart account already set up. Installing the AI session key — one signature.');
+      } else {
+        // Ensure 7702 delegation by sending an empty call set (no-op delegation flow).
+        addLog('SYSTEM', 'Setting up your smart account — approve the signature request(s) that appear.');
+        const prepared = await client.prepareCalls({
+          calls: [],
+          from: evmAddress as `0x${string}`,
+        });
+        const signed = await client.signPreparedCalls(prepared);
+        const sent = await client.sendPreparedCalls(signed);
+
+        // grantPermissions (wallet_createSession) is rejected with "7702 account
+        // must be delegated" until the delegation user-op is actually mined, so
+        // wait for it to land rather than racing it.
+        addLog('SYSTEM', 'Delegation submitted — waiting for on-chain confirmation.');
+        const delegationStatus = await client.waitForCallsStatus({ id: sent.id });
+        if (delegationStatus.status !== 'success') {
+          throw new Error(`DELEGATION_NOT_CONFIRMED_${delegationStatus.status ?? 'unknown'}`);
+        }
+        if (!(await isAccountDelegated())) {
+          throw new Error('DELEGATION_NOT_VISIBLE');
+        }
+        addLog('SYSTEM', 'Smart account ready. Installing the AI session key — one more signature.');
+      }
 
       // Derive the on-chain native-transfer allowance from the user's configured
       // USD limit and the live ETH price. This is the hard cap the session key
