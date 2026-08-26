@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/api/requireAuth";
+import { rateLimit } from "@/lib/api/rateLimit";
 import { summarizeHistory } from "@/lib/ai/geminiService";
 import type { Transaction } from "@/lib/ai/types";
+import { assertAiEnv } from "@/lib/ai/env";
 
 export const runtime = "nodejs";
 
@@ -9,7 +12,13 @@ type SummarizeBody = {
 };
 
 export async function POST(req: NextRequest) {
+    const unauth = await requireAuth(req);
+    if (unauth) return unauth;
+    const limited = await rateLimit(req, { limit: 20, windowSec: 60 });
+    if (limited) return limited;
   try {
+    assertAiEnv();
+
     const body = (await req.json()) as SummarizeBody;
     const history = body.history;
 

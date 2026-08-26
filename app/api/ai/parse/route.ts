@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { requireAuth } from "@/lib/api/requireAuth";
+import { rateLimit } from "@/lib/api/rateLimit";
 import { parseUserCommand } from "@/lib/ai/geminiService";
+import { assertAiEnv } from "@/lib/ai/env";
 
 export const runtime = "nodejs";
 
@@ -9,7 +12,13 @@ type ParseBody = {
 };
 
 export async function POST(req: NextRequest) {
+    const unauth = await requireAuth(req);
+    if (unauth) return unauth;
+    const limited = await rateLimit(req, { limit: 20, windowSec: 60 });
+    if (limited) return limited;
   try {
+    assertAiEnv();
+
     const body = (await req.json()) as ParseBody;
     const userText = body.userText?.trim();
     const evmAddress = body.wallet?.evmAddress?.trim();

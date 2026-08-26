@@ -3,10 +3,18 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallets } from '@privy-io/react-auth';
+// Solana wallets are NOT in the main useWallets() (Ethereum-only); they come
+// from the dedicated solana entrypoint.
+import { useWallets as useSolanaWallets } from '@privy-io/react-auth/solana';
+import { pickSolanaWallet, signSolanaTransactionBytes } from '@/lib/solana/privyWallet';
+import { Buffer } from 'buffer';
 import { AICommand, LogEntry, Transaction, SpendingLimit, Chain, BalanceMap } from "@/lib/ai/types";
-import { getPriceEstimate, getNativeBalance, validateAddress, estimateGasCost, detectChainFromAddress, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
+import { getNativeBalance, validateAddress, estimateGasCost, detectChainFromAddress, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
+import { getLiveUsdPrice } from "@/lib/ai/prices";
 import { sanitizeError } from "@/lib/ai/errorSanitizer";
 import { createWalletClient, custom } from "viem";
+import { SystemProgram, PublicKey, Transaction as SolTransaction } from "@solana/web3.js";
+import { solanaClient } from "@/lib/solana/client";
 import { AiChatMessage as ChatMessage } from "./AiChatMessage";
 import { AiActionCard as ActionCard } from "./AiActionCard";
 import { AiOrb as Orb } from "./AiOrb";
@@ -30,6 +38,7 @@ const COMMANDS = [
 export function AiModePage() {
   const { user, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
+  const { wallets: solanaWallets } = useSolanaWallets();
 
   // --- Derive wallet addresses from Privy user (no ephemeral wallets) ---
   const evmAccount = user?.linkedAccounts?.find(
@@ -210,6 +219,7 @@ export function AiModePage() {
         chain: (await import("viem/chains")).mainnet,
         transport: custom(provider),
       });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- viem/aa-sdk client generic interop
       const signer = new WalletClientSigner(viemWalletClient as any, "wallet");
 
       const client = createSmartWalletClient({
@@ -222,19 +232,39 @@ export function AiModePage() {
       // Ensure 7702 delegation by sending an empty call set (no-op delegation flow).
       const prepared = await client.prepareCalls({
         calls: [],
-        from: evmAddress as any,
+        from: evmAddress as `0x${string}`,
       });
       const signed = await client.signPreparedCalls(prepared);
       await client.sendPreparedCalls(signed);
 
+      // Derive the on-chain native-transfer allowance from the user's configured
+      // USD limit and the live ETH price. This is the hard cap the session key
+      // cannot exceed on-chain. Falls back to a conservative 0.1 ETH if unset.
+      const CONSERVATIVE_ALLOWANCE_WEI = BigInt("0x16345785D8A0000"); // 0.1 ETH
+      let allowanceWei = CONSERVATIVE_ALLOWANCE_WEI;
+      if (spendingLimit.isEnabled && spendingLimit.amount > 0) {
+        const ethPrice = await getLiveUsdPrice("ETH");
+        if (ethPrice > 0) {
+          const ethAmount = spendingLimit.amount / ethPrice;
+          const wei = BigInt(Math.floor(ethAmount * 1e18));
+          if (wei > BigInt(0)) allowanceWei = wei;
+        }
+      }
+      const allowanceHex = `0x${allowanceWei.toString(16)}`;
+
+      // 1inch v6 aggregation router on Ethereum mainnet — allows the session key to
+      // execute swaps (native-input) while native spend stays bounded by the allowance.
+      const ONEINCH_ROUTER_MAINNET = "0x111111125421cA6dc452d289314280a0f8842A65";
+
       const permissions = await client.grantPermissions({
-        account: evmAddress as any,
+        account: evmAddress as `0x${string}`,
         expirySec: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
-        key: { publicKey: sessionKeyAddress as any, type: "secp256k1" },
+        key: { publicKey: sessionKeyAddress as `0x${string}`, type: "secp256k1" },
         permissions: [
-          // NOTE: allowance is in wei; for now use 0.1 ETH cap.
-          { type: "native-token-transfer", data: { allowance: "0x16345785D8A0000" } },
-        ],
+          { type: "native-token-transfer", data: { allowance: allowanceHex } },
+          { type: "contract-access", data: { address: ONEINCH_ROUTER_MAINNET } },
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SDK permission union type
+        ] as any,
       });
 
       const completeRes = await fetch("/api/ai/session", {
@@ -243,6 +273,8 @@ export function AiModePage() {
         body: JSON.stringify({
           sessionPermissions: permissions,
           signerAddress: sessionKeyAddress,
+          spendLimitUsd: spendingLimit.isEnabled ? spendingLimit.amount : 0,
+          spendPeriod: spendingLimit.period,
         }),
       });
       const completeData = await completeRes.json();
@@ -348,7 +380,7 @@ export function AiModePage() {
           return;
         }
 
-        const price = getPriceEstimate(chain);
+        const price = await getLiveUsdPrice(chain);
         const amountToken = amountUSD ? amountUSD / price : 0;
 
         const newTx: Transaction = {
@@ -474,13 +506,54 @@ export function AiModePage() {
     setOrbState('PROCESSING');
 
     try {
-      // For Solana transactions, we can't use session keys (EVM-only).
-      // Surface a message that Solana txs require direct wallet confirmation.
+      // Solana is EVM-7702-incompatible, so autonomous session-key execution does not
+      // apply. Native SOL sends run through the user's Privy Solana wallet (user-signed).
+      // Solana swaps remain a separate design and are surfaced as unsupported for now.
       if (tx.chain === 'SOL') {
-        addLog('SYSTEM', "Solana transactions require direct wallet confirmation. This will be prompted separately.");
-        setActiveTx(prev => prev ? ({ ...prev, status: 'FAILED', error: 'Solana AI auto-execution not yet supported.' }) : null);
-        setOrbState('ERROR');
-        setTimeout(() => setOrbState('IDLE'), 2000);
+        if (tx.type !== 'SEND' || !tx.recipient) {
+          addLog('SYSTEM', "Solana swaps aren't supported in AI mode yet. Try a send, or use manual mode.");
+          setActiveTx(prev => prev ? ({ ...prev, status: 'FAILED', error: 'Solana AI swap not yet supported.' }) : null);
+          setOrbState('ERROR');
+          setTimeout(() => setOrbState('IDLE'), 2000);
+          return;
+        }
+
+        const solWallet = pickSolanaWallet(solanaWallets);
+        if (!solWallet?.address) {
+          throw new Error("Solana wallet not connected");
+        }
+
+        const fromPubkey = new PublicKey(solWallet.address);
+        const toPubkey = new PublicKey(tx.recipient);
+        const lamports = Math.floor(tx.amount * 1e9);
+
+        const transaction = new SolTransaction().add(
+          SystemProgram.transfer({ fromPubkey, toPubkey, lamports })
+        );
+
+        // Recent blockhash (same proxied source as the manual Solana send flow).
+        transaction.recentBlockhash = await solanaClient.getLatestBlockhash();
+        transaction.feePayer = fromPubkey;
+
+        // Wallet-standard signing: serialized bytes in, signed bytes out.
+        const unsignedBytes = transaction.serialize({
+          requireAllSignatures: false,
+          verifySignatures: false,
+        });
+        const signedBytes = await signSolanaTransactionBytes(
+          solWallet,
+          new Uint8Array(unsignedBytes)
+        );
+        const signature = await solanaClient.sendRawTransaction(
+          Buffer.from(signedBytes).toString('base64')
+        );
+
+        const completedTx = { ...tx, status: 'COMPLETED' as const, hash: signature };
+        setActiveTx(completedTx);
+        setTransactions(prev => [...prev, completedTx]);
+        setSpendingLimit(prev => ({ ...prev, currentUsage: prev.currentUsage + tx.amountUSD }));
+        addLog('SUCCESS', `Confirmed. Hash: ${signature.slice(0, 10)}...`);
+        setOrbState('IDLE');
         return;
       }
 
@@ -488,7 +561,7 @@ export function AiModePage() {
       const headers = await getAuthHeaders();
 
       // Build the calls array based on transaction type
-      const calls = [];
+      const calls: Array<{ to: string; value?: string; data?: string }> = [];
       if (tx.type === 'SEND' && tx.recipient) {
         // Native token send
         const valueWei = BigInt(Math.floor(tx.amount * 1e18));
@@ -498,32 +571,71 @@ export function AiModePage() {
           data: '0x',
         });
       } else if (tx.type === 'SWAP' || tx.type === 'BRIDGE') {
-        // For swaps/bridges, the calldata would come from a DEX API (1inch, 0x, etc.)
-        // For now, we build a placeholder call to the contract address
+        // Real swap calldata from the 1inch aggregation API. Supported today:
+        // native ETH -> token (the "buy" path), where the destination token address
+        // is known. ERC-20 source tokens need an approval + erc20 permission and are
+        // surfaced as unsupported rather than sent as an unsafe placeholder.
+        const NATIVE = "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE";
+        const isNativeSource = !tx.token || tx.token.toUpperCase() === 'ETH';
+        const dstToken = tx.contractAddress;
+
+        if (!isNativeSource) {
+          throw new Error("SWAP_UNSUPPORTED_ERC20_SOURCE");
+        }
+        if (!dstToken || !validateAddress('ETH', dstToken)) {
+          throw new Error("SWAP_MISSING_DEST_TOKEN");
+        }
+
+        const amountWei = BigInt(Math.floor(tx.amount * 1e18)).toString();
+        const params = new URLSearchParams({
+          chainId: "1",
+          src: NATIVE,
+          dst: dstToken,
+          amount: amountWei,
+          from: evmAddress,
+          slippage: "1",
+          disableEstimate: "true",
+        });
+        const swapRes = await fetch(`/api/1inch/swap?${params.toString()}`, { headers });
+        const swapData = await swapRes.json();
+        if (!swapRes.ok || !swapData?.tx?.to || !swapData?.tx?.data) {
+          throw new Error(swapData?.error || "Failed to build swap transaction.");
+        }
+        const swapValue = swapData.tx.value ? BigInt(swapData.tx.value) : BigInt(0);
         calls.push({
-          to: tx.contractAddress || tx.recipient || '0x0000000000000000000000000000000000000000',
-          value: `0x${BigInt(Math.floor(tx.amount * 1e18)).toString(16)}`,
-          data: '0x',
+          to: swapData.tx.to,
+          data: swapData.tx.data,
+          value: `0x${swapValue.toString(16)}`,
         });
       }
 
       const res = await fetch("/api/ai/execute", {
         method: "POST",
         headers,
-        body: JSON.stringify({ calls }),
+        body: JSON.stringify({ calls, amountUsd: tx.amountUSD }),
       });
 
       const data = await res.json();
 
       if (res.ok && data.status === 'success') {
-        const hash = data.result?.receipts?.[0]?.transactionHash || data.result?.id || 'pending';
-        const completedTx = { ...tx, status: 'COMPLETED' as const, hash };
+        const receiptHash = data.result?.receipts?.[0]?.transactionHash;
+        const isConfirmed = typeof receiptHash === 'string' && receiptHash.length > 0;
+        const hash = receiptHash || data.result?.id || 'pending';
+        const resolvedTx = {
+          ...tx,
+          status: (isConfirmed ? 'COMPLETED' : 'BROADCASTING') as 'COMPLETED' | 'BROADCASTING',
+          hash,
+        };
 
-        setActiveTx(completedTx);
-        setTransactions(prev => [...prev, completedTx]);
+        setActiveTx(resolvedTx);
+        setTransactions(prev => [...prev, resolvedTx]);
         setSpendingLimit(prev => ({ ...prev, currentUsage: prev.currentUsage + tx.amountUSD }));
 
-        addLog('SUCCESS', `Confirmed. Hash: ${typeof hash === 'string' ? hash.slice(0, 10) : hash}...`);
+        if (isConfirmed) {
+          addLog('SUCCESS', `Confirmed. Hash: ${hash.slice(0, 10)}...`);
+        } else {
+          addLog('SYSTEM', `Submitted. Awaiting confirmation (${String(hash).slice(0, 10)}...)`);
+        }
         setOrbState('IDLE');
       } else {
         throw new Error(data.error || 'Transaction execution failed');

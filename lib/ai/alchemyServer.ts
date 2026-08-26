@@ -15,9 +15,6 @@ import { alchemy, mainnet as alchemyMainnet } from "@account-kit/infra";
 import { LocalAccountSigner } from "@aa-sdk/core";
 import type { Hex } from "viem";
 
-/** Type for the permissions context returned by grantPermissions and consumed by prepareCalls/sendPreparedCalls */
-type PermissionsContext = { context: `0x${string}` } | { signature: `0x${string}`; sessionId: `0x${string}` };
-
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY!;
 
 // Session lifetime: 24 hours
@@ -140,8 +137,16 @@ export async function executeWithSessionKey(
         } as Record<string, unknown>,
     });
 
-    // Poll for status
-    const status = await client.getCallsStatus(result.id);
+    // Wait for a terminal status so "confirmed" reflects a real receipt rather than
+    // an immediate "pending". If waiting times out (slow inclusion within the
+    // serverless budget), fall back to a single status read and report as-is so the
+    // client can show "pending" instead of a false success.
+    let status;
+    try {
+        status = await client.waitForCallsStatus({ id: result.id });
+    } catch {
+        status = await client.getCallsStatus(result.id);
+    }
 
     return {
         id: result.id,
