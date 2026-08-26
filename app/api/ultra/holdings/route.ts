@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 
 const SOLANA_ADDRESS_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
@@ -7,6 +8,8 @@ function isValidSolanaAddress(address: string | null): address is string {
 }
 
 export async function GET(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     const searchParams = req.nextUrl.searchParams;
     const address = searchParams.get("address");
 

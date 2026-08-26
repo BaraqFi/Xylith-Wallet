@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 import { EVMChain } from "@/components/wallet/data";
 
 interface MoralisToken {
@@ -33,6 +34,8 @@ const MORALIS_CHAIN_MAP: Record<EVMChain, string> = {
 };
 
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
   if (!MORALIS_API_KEY) {
     return NextResponse.json(
       { error: "Moralis API key not configured" },

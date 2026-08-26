@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 
 interface JupiterToken {
     id: string;
@@ -19,6 +20,8 @@ function isSafeQuery(query: string): boolean {
 }
 
 export async function GET(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
   const searchParams = req.nextUrl.searchParams;
   const query = searchParams.get("query");
 

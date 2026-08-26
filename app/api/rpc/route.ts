@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 import { executeRpcRequest } from "@/lib/services/serverRpc";
 
 const VALID_CHAINS = [
@@ -81,6 +82,8 @@ function sanitizeParams(params: unknown): unknown[] | null {
 }
 
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     try {
         const searchParams = req.nextUrl.searchParams;
         const chainRaw = searchParams.get("chain");

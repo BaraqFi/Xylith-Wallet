@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 import { isValidContractAddress } from "@/lib/services/tokenMetadataService";
 import { EVMChain } from "@/components/wallet/data";
 
@@ -156,6 +157,8 @@ async function searchCoinGecko(query: string, chain: EVMChain): Promise<TokenSea
 }
 
 export async function GET(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     const { searchParams } = new URL(req.url);
     const query = searchParams.get("query");
     const chain = (searchParams.get("chain") as EVMChain) || "ethereum";

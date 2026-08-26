@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 
 const SOLANA_ADDRESS_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
@@ -23,6 +24,8 @@ function parseReferralFee(raw: string | null): number | null {
 }
 
 export async function GET(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     const searchParams = req.nextUrl.searchParams;
     const inputMint = searchParams.get("inputMint");
     const outputMint = searchParams.get("outputMint");

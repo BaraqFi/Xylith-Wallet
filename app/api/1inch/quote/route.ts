@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 
 export async function GET(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     const searchParams = req.nextUrl.searchParams;
     const chainId = searchParams.get("chainId");
 

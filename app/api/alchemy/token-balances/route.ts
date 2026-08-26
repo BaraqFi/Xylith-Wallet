@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 import { isAddress } from "viem";
 
 interface AlchemyTokenBalance {
@@ -32,6 +33,8 @@ function isSupportedChain(chain: string | null): chain is SupportedAlchemyChain 
  * This prevents API key exposure to client-side code
  */
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
   const apiKey = process.env.ALCHEMY_API_KEY; // Server-side only, no NEXT_PUBLIC_ prefix
   if (!apiKey) {
     return NextResponse.json(

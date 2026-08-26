@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 
 function isLikelyBase64(value: unknown): value is string {
     if (typeof value !== "string" || value.length === 0) return false;
@@ -13,6 +14,8 @@ function isLikelyRequestId(value: unknown): value is string {
 }
 
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     try {
         const body = await req.json();
         const { signedTransaction, requestId } = body ?? {};

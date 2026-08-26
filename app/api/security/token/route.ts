@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 import { analyzeTokenRisk } from "@/lib/services/securityService";
 import { Address, isAddress } from "viem";
 
@@ -6,6 +7,8 @@ import { Address, isAddress } from "viem";
  * Server-side API route for token security analysis
  */
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
   try {
     const { contractAddress, chain } = await req.json();
 

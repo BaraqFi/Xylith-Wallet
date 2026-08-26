@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 import { analyzeSwapRouteRisk } from "@/lib/services/securityService";
 
 function parseSlippage(value: unknown): number | null {
@@ -14,6 +15,8 @@ function parseSlippage(value: unknown): number | null {
  * Server-side API route for swap route security analysis
  */
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
   try {
     const { quote, slippage } = await req.json();
 

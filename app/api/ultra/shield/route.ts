@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 
 const SOLANA_ADDRESS_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
@@ -18,6 +19,8 @@ function parseMintsParam(raw: string | null): string[] | null {
 }
 
 export async function GET(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     const searchParams = req.nextUrl.searchParams;
     const mintsRaw = searchParams.get("mints");
 

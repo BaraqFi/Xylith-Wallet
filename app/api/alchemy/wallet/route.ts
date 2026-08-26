@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 
 type SupportedAlchemyChain =
   | "ethereum"
@@ -62,6 +63,8 @@ function isMethodAllowed(method: unknown): method is string {
  * - This route is intended for Wallet APIs (wallet_*), including EIP-7702 prepare/sign flows.
  */
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
   const apiKey = process.env.ALCHEMY_API_KEY; // server-side only
   if (!apiKey) {
     return NextResponse.json(

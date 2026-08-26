@@ -38,7 +38,9 @@ export async function fetch1inchTokenList(
   }
 
   try {
-    const response = await fetch(`https://tokens.1inch.io/v1.1/${chainId}`);
+    // Served via our proxy so the response is shared-cached (Redis) and same-origin,
+    // instead of every browser fetching tokens.1inch.io fresh on load.
+    const response = await fetch(`/api/1inch/tokens?chainId=${chainId}`);
     if (!response.ok) {
       throw new Error(`1inch API error: ${response.statusText}`);
     }

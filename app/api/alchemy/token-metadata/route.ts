@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
+import { cachedJson } from "@/lib/api/responseCache";
 
 /**
  * Server-side API route for Alchemy token metadata
  */
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
   const apiKey = process.env.ALCHEMY_API_KEY; // Server-side only
   if (!apiKey) {
     return NextResponse.json(
@@ -39,37 +43,41 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const response = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    // Token metadata is immutable per contract -> shared-cache it for 24h.
+    const metadata = await cachedJson(
+      `alchemy:tokenmeta:${chain}:${String(contractAddress).toLowerCase()}`,
+      24 * 60 * 60,
+      async () => {
+        const response = await fetch(apiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            id: 1,
+            jsonrpc: "2.0",
+            method: "alchemy_getTokenMetadata",
+            params: [contractAddress],
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Alchemy API error: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        if (data.error) return null;
+
+        return {
+          name: data.result?.name,
+          symbol: data.result?.symbol,
+          decimals: data.result?.decimals,
+          logo: data.result?.logo,
+        };
       },
-      body: JSON.stringify({
-        id: 1,
-        jsonrpc: "2.0",
-        method: "alchemy_getTokenMetadata",
-        params: [contractAddress],
-      }),
-    });
+    );
 
-    if (!response.ok) {
-      throw new Error(`Alchemy API error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-
-    if (data.error) {
-      return NextResponse.json({ metadata: null });
-    }
-
-    return NextResponse.json({
-      metadata: {
-        name: data.result?.name,
-        symbol: data.result?.symbol,
-        decimals: data.result?.decimals,
-        logo: data.result?.logo,
-      },
-    });
+    return NextResponse.json({ metadata });
   } catch (error: unknown) {
     console.error("Error fetching token metadata:", error);
     let message = "Failed to fetch token metadata";

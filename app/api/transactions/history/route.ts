@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 import { isAddress } from "viem";
 
 interface AlchemyTransfer {
@@ -105,6 +106,8 @@ function setCachedHistory(chain: AlchemyChain, address: string, limit: number, i
  * 1inch History API requires premium tier access and often returns 404
  */
 export async function GET(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     const searchParams = req.nextUrl.searchParams;
     const chainId = searchParams.get("chainId");
     const address = searchParams.get("address");

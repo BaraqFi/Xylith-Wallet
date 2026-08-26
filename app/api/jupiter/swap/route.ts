@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 
 const SOLANA_ADDRESS_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 
@@ -73,6 +74,8 @@ function sanitizeQuoteResponse(raw: unknown): QuoteResponseMinimal | null {
 }
 
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     try {
         const body = await req.json();
         const { quoteResponse, userPublicKey, wrapAndUnwrapSol } = body ?? {};

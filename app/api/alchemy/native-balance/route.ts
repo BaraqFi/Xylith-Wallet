@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 
 /**
  * Server-side API route for Alchemy native balance
  */
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
   const apiKey = process.env.ALCHEMY_API_KEY; // Server-side only
   if (!apiKey) {
     return NextResponse.json(

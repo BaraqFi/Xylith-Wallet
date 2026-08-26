@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 import { getTokenAnalytics } from "@/lib/services/tokenAnalyticsService";
 import { isValidContractAddress } from "@/lib/services/tokenMetadataService";
 import { EVMChain } from "@/components/wallet/data";
@@ -20,6 +21,8 @@ function isValidSymbol(symbol: string | null): symbol is string {
 }
 
 export async function GET(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
   const searchParams = req.nextUrl.searchParams;
   const symbol = searchParams.get("symbol");
   const chainRaw = searchParams.get("chain");

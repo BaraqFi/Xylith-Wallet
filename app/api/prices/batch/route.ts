@@ -1,8 +1,11 @@
 
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 import { getTokenPricesBatch } from "@/lib/services/tokenAnalyticsService";
 
 export async function POST(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     try {
         const body = await req.json();
         const { tokens, currency } = body;

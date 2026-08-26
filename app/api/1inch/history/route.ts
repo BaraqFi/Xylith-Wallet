@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { proxyGuard } from "@/lib/api/proxyGuard";
 import { isAddress } from "viem";
 
 const ALLOWED_FORWARD_PARAMS = new Set(["limit", "offset", "page", "sort"]);
@@ -12,6 +13,8 @@ function isValidChainId(chainId: string | null): chainId is string {
 }
 
 export async function GET(req: NextRequest) {
+    const blocked = await proxyGuard(req);
+    if (blocked) return blocked;
     const searchParams = req.nextUrl.searchParams;
     const chainId = searchParams.get("chainId");
     const address = searchParams.get("address");
