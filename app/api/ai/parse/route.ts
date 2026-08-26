@@ -8,8 +8,18 @@ export const runtime = "nodejs";
 
 type ParseBody = {
   userText?: string;
-  wallet?: { evmAddress?: string; solAddress?: string };
+  wallet?: { evmAddress?: string; solAddress?: string; heldTokens?: unknown };
 };
+
+/** Token vocabulary is client-supplied, so bound and scrub it before prompting. */
+function sanitizeHeldTokens(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((t): t is string => typeof t === "string")
+    .map((t) => t.trim().slice(0, 40))
+    .filter((t) => /^[a-zA-Z0-9 .\-_()]+$/.test(t))
+    .slice(0, 40);
+}
 
 export async function POST(req: NextRequest) {
     const unauth = await requireAuth(req);
@@ -34,7 +44,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const command = await parseUserCommand(userText, { evmAddress, solAddress });
+    const command = await parseUserCommand(userText, {
+      evmAddress,
+      solAddress,
+      heldTokens: sanitizeHeldTokens(body.wallet?.heldTokens),
+    });
     return NextResponse.json(command);
   } catch (error) {
     console.error("AI Parse Proxy Error:", error);

@@ -22,7 +22,11 @@ export interface Transaction {
   token: string;
   targetToken?: string; // For swaps
   recipient?: string; // For sends
-  contractAddress?: string; // For swaps/buys
+  contractAddress?: string; // For swaps/buys: the token being bought
+  /** For token sends: the ERC-20 contract / SPL mint of the asset being sent. */
+  tokenAddress?: string;
+  /** For token sends: decimals of the asset being sent. */
+  tokenDecimals?: number;
   timestamp: number;
   status: 'ANALYZING' | 'ESTIMATING_GAS' | 'NEEDS_APPROVAL' | 'BROADCASTING' | 'COMPLETED' | 'FAILED';
   hash?: string;

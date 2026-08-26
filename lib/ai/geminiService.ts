@@ -74,7 +74,18 @@ Capabilities & Rules:
    - If the user gives no amount at all, leave ALL THREE null. Never invent a
      number, and never put a token quantity in amountUSD.
 
-5. RISK_ASSESSMENT:
+6. TOKEN SELECTION:
+   - Set the token field to the symbol of the asset being SENT or SOLD, exactly
+     as it appears in the held-tokens list when the user refers to one of them.
+     "send half my usdc" -> token: "USDC", amountPercent: 50.
+     "send 5 usdc to 0x..." -> token: "USDC", amountToken: 5.
+   - When no token is named, leave token null; the app uses the chain's native
+     asset (ETH or SOL).
+   - Percentages and quantities always refer to the token field, not to the
+     native asset, unless token is null.
+   - Pick the chain that matches the held token (e.g. an SPL token -> SOL).
+
+7. RISK_ASSESSMENT:
    - "HIGH" if interacting with new contracts or sending > $500.
    - "MEDIUM" if sending > $100.
    - "LOW" otherwise.
@@ -84,13 +95,19 @@ Return JSON matching the schema.
 
 export const parseUserCommand = async (
   userText: string,
-  userWallet: { evmAddress: string; solAddress: string }
+  userWallet: { evmAddress: string; solAddress: string; heldTokens?: string[] }
 ): Promise<AICommand> => {
   try {
     const ai = getAiClient();
+    // The wallet's actual holdings are the token vocabulary. Naming them lets
+    // the model map "usdc"/"my stablecoin" onto something real instead of
+    // inventing a ticker the wallet doesn't hold.
+    const heldTokens = userWallet.heldTokens?.length
+      ? `Tokens currently held (the ONLY tokens that can be sent or sold; use the exact symbol in the token field): ${userWallet.heldTokens.join(", ")}.`
+      : "";
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
-      contents: `Context: { EVM: ${userWallet.evmAddress}, SOL: ${userWallet.solAddress} }. Input: ${userText}`,
+      contents: `Context: { EVM: ${userWallet.evmAddress}, SOL: ${userWallet.solAddress} }. ${heldTokens} Input: ${userText}`,
       config: {
         systemInstruction: systemInstruction,
         responseMimeType: "application/json",

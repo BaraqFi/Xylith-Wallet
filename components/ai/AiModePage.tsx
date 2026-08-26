@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { useWallets, useSign7702Authorization } from '@privy-io/react-auth';
 // Solana wallets are NOT in the main useWallets() (Ethereum-only); they come
@@ -12,7 +12,14 @@ import { AICommand, LogEntry, Transaction, SpendingLimit, Chain, BalanceMap } fr
 import { getNativeBalance, validateAddress, estimateGasCost, detectChainFromAddress, getTransactionHistory, shortenAddress } from "@/lib/ai/cryptoService";
 import { getLiveUsdPrice } from "@/lib/ai/prices";
 import { sanitizeError } from "@/lib/ai/errorSanitizer";
-import { createWalletClient, custom, parseUnits } from "viem";
+import {
+  toAiHoldings,
+  findHolding,
+  holdingsVocabulary,
+  formatHoldingLine,
+} from "@/lib/ai/tokenHoldings";
+import { useTokenBalances } from "@/hooks/useTokenBalances";
+import { createWalletClient, custom, parseUnits, encodeFunctionData, parseAbi } from "viem";
 import { SystemProgram, PublicKey, Transaction as SolTransaction } from "@solana/web3.js";
 import { solanaClient } from "@/lib/solana/client";
 import { AiChatMessage as ChatMessage } from "./AiChatMessage";
@@ -60,6 +67,19 @@ export function AiModePage() {
     (a) => a.type === 'wallet' && 'chainType' in a && a.chainType === 'solana' && 'walletClientType' in a && a.walletClientType === 'privy'
   );
   const solAddress = solAccount && 'address' in solAccount ? (solAccount.address as string) : undefined;
+
+  // Token holdings on the chains AI mode supports. These are the ONLY tokens the
+  // agent can name or act on — reusing the manual wallet's balance hook (and its
+  // caching) rather than a second fetching path.
+  const { balances: evmTokenBalances } = useTokenBalances('EVM', 'ethereum');
+  const { balances: solTokenBalances } = useTokenBalances('Solana', 'ethereum');
+  const holdings = useMemo(
+    () => [
+      ...toAiHoldings(evmTokenBalances, 'ETH'),
+      ...toAiHoldings(solTokenBalances, 'SOL'),
+    ],
+    [evmTokenBalances, solTokenBalances],
+  );
 
   // --- State ---
   const [, setBalances] = useState<BalanceMap>({ ETH: { native: 0 }, BASE: { native: 0 }, ARB: { native: 0 }, SOL: { native: 0 } });
@@ -344,6 +364,31 @@ export function AiModePage() {
       // execute swaps (native-input) while native spend stays bounded by the allowance.
       const ONEINCH_ROUTER_MAINNET = "0x111111125421cA6dc452d289314280a0f8842A65";
 
+      // Authorize transfers of the ERC-20s the wallet currently holds, capped per
+      // token at the same USD limit. Without a per-token erc20-token-transfer
+      // permission the session key cannot move that token at all. Tokens acquired
+      // after activation are covered on the next activation (sessions last 24h).
+      const erc20Permissions = holdings
+        .filter((h) => h.chain === 'ETH' && !h.isNative && h.address)
+        .slice(0, 20) // keep the grant payload bounded
+        .map((h) => {
+          const capUsd = spendingLimit.isEnabled && spendingLimit.amount > 0
+            ? spendingLimit.amount
+            : 0;
+          // Cap at the USD limit where a price is known, else the held balance.
+          const capTokens = capUsd > 0 && h.pricePerToken > 0
+            ? Math.min(capUsd / h.pricePerToken, h.amount)
+            : h.amount;
+          const allowance = toBaseUnits(capTokens, h.decimals);
+          return {
+            type: "erc20-token-transfer",
+            data: {
+              allowance: `0x${allowance.toString(16)}`,
+              address: h.address as `0x${string}`,
+            },
+          };
+        });
+
       const permissions = await client.grantPermissions({
         account: evmAddress as `0x${string}`,
         expirySec: Math.floor(Date.now() / 1000) + 24 * 60 * 60,
@@ -351,9 +396,13 @@ export function AiModePage() {
         permissions: [
           { type: "native-token-transfer", data: { allowance: allowanceHex } },
           { type: "contract-access", data: { address: ONEINCH_ROUTER_MAINNET } },
+          ...erc20Permissions,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any -- SDK permission union type
         ] as any,
       });
+      if (erc20Permissions.length > 0) {
+        addLog('SYSTEM', `Authorized AI transfers for ${erc20Permissions.length} token${erc20Permissions.length === 1 ? '' : 's'} you hold.`);
+      }
 
       const completeRes = await fetch("/api/ai/session", {
         method: "POST",
@@ -427,7 +476,11 @@ export function AiModePage() {
         headers,
         body: JSON.stringify({
           userText: cmd,
-          wallet: { evmAddress, solAddress: solAddress || '' }
+          wallet: {
+            evmAddress,
+            solAddress: solAddress || '',
+            heldTokens: holdingsVocabulary(holdings),
+          }
         })
       });
 
@@ -466,9 +519,36 @@ export function AiModePage() {
           return;
         }
 
-        const price = await getLiveUsdPrice(chain);
         const nativeSymbol = chain === 'SOL' ? 'SOL' : 'ETH';
         const ownerAddress = chain === 'SOL' ? (solAddress || '') : evmAddress;
+
+        // Which asset is moving? A named token must be one the wallet actually
+        // holds; anything else is refused rather than guessed at.
+        const namedToken = command.token && command.token.toUpperCase() !== nativeSymbol
+          ? command.token
+          : undefined;
+        const holding = namedToken
+          ? findHolding(holdings, namedToken, chain) ?? findHolding(holdings, namedToken)
+          : undefined;
+
+        if (namedToken && !holding) {
+          addLog('ERROR', `You don't hold any ${namedToken} on ${chain === 'SOL' ? 'Solana' : 'Ethereum'}. Try /balance to see what's in your wallet.`);
+          setOrbState('ERROR');
+          setTimeout(() => setOrbState('IDLE'), 2000);
+          return;
+        }
+
+        // A held token can live on the other supported chain (e.g. an SPL token
+        // when the parser guessed ETH) — follow the holding.
+        if (holding && holding.chain !== chain) {
+          chain = holding.chain;
+        }
+
+        const isTokenTransfer = !!holding && !holding.isNative;
+        const assetSymbol = holding?.symbol ?? nativeSymbol;
+        const price = isTokenTransfer && holding.pricePerToken > 0
+          ? holding.pricePerToken
+          : await getLiveUsdPrice(chain);
 
         // Resolve the amount. The parser expresses it as a share of balance, a
         // token quantity, or a dollar figure — resolved here in that order,
@@ -476,19 +556,13 @@ export function AiModePage() {
         let amountToken = 0;
 
         if (typeof command.amountPercent === 'number' && command.amountPercent > 0) {
-          // Shares are of the NATIVE balance; AI mode does not hold ERC-20 balances.
-          const requestedToken = (command.token || nativeSymbol).toUpperCase();
-          if (requestedToken !== nativeSymbol) {
-            addLog('ERROR', `Percentage amounts are only supported for ${nativeSymbol} right now.`);
-            setOrbState('ERROR');
-            setTimeout(() => setOrbState('IDLE'), 2000);
-            return;
-          }
-
           const pct = Math.min(command.amountPercent, 100);
-          const balance = await getNativeBalance(ownerAddress, chain);
+          const balance = isTokenTransfer
+            ? holding.amount
+            : await getNativeBalance(ownerAddress, chain);
+
           if (!Number.isFinite(balance) || balance <= 0) {
-            addLog('ERROR', `Could not read your ${nativeSymbol} balance, or it is empty.`);
+            addLog('ERROR', `Could not read your ${assetSymbol} balance, or it is empty.`);
             setOrbState('ERROR');
             setTimeout(() => setOrbState('IDLE'), 2000);
             return;
@@ -497,27 +571,38 @@ export function AiModePage() {
           amountToken = balance * (pct / 100);
 
           // Native sends must leave gas behind, or the transaction cannot be
-          // paid for. Matters most for "send everything".
-          const gasTarget = command.recipient || ownerAddress;
-          const gasCost = parseFloat(await estimateGasCost(chain, ownerAddress, gasTarget, 0)) || 0;
-          const reserve = gasCost * 1.2; // headroom for gas-price drift
-          if (amountToken + reserve > balance) {
-            amountToken = Math.max(balance - reserve, 0);
-            addLog('SYSTEM', `Reserving ~${reserve.toFixed(6)} ${nativeSymbol} for gas.`);
+          // paid for. Token transfers pay gas in the native asset, so their full
+          // balance stays spendable.
+          if (!isTokenTransfer) {
+            const gasTarget = command.recipient || ownerAddress;
+            const gasCost = parseFloat(await estimateGasCost(chain, ownerAddress, gasTarget, 0)) || 0;
+            const reserve = gasCost * 1.2; // headroom for gas-price drift
+            if (amountToken + reserve > balance) {
+              amountToken = Math.max(balance - reserve, 0);
+              addLog('SYSTEM', `Reserving ~${reserve.toFixed(6)} ${assetSymbol} for gas.`);
+            }
           }
 
           if (amountToken <= 0) {
-            addLog('ERROR', `Your ${nativeSymbol} balance is too low to cover this send plus gas.`);
+            addLog('ERROR', `Your ${assetSymbol} balance is too low to cover this send plus gas.`);
             setOrbState('ERROR');
             setTimeout(() => setOrbState('IDLE'), 2000);
             return;
           }
 
-          addLog('SYSTEM', `${pct}% of your ${nativeSymbol} balance = ${amountToken.toFixed(6)} ${nativeSymbol}.`);
+          addLog('SYSTEM', `${pct}% of your ${assetSymbol} balance = ${amountToken.toFixed(6)} ${assetSymbol}.`);
         } else if (typeof command.amountToken === 'number' && command.amountToken > 0) {
           amountToken = command.amountToken;
         } else if (amountUSD) {
-          amountToken = amountUSD / price;
+          amountToken = price > 0 ? amountUSD / price : 0;
+        }
+
+        // Don't build a transfer the balance can't cover.
+        if (isTokenTransfer && amountToken > holding.amount) {
+          addLog('ERROR', `You only have ${holding.amount.toFixed(6)} ${assetSymbol}.`);
+          setOrbState('ERROR');
+          setTimeout(() => setOrbState('IDLE'), 2000);
+          return;
         }
 
         // Buys default to the configured amount when none was given.
@@ -550,10 +635,12 @@ export function AiModePage() {
           targetChain: command.targetChain,
           amount: amountToken,
           amountUSD: amountUSD || 0,
-          token: command.token || (chain === 'SOL' ? 'SOL' : 'ETH'),
+          token: assetSymbol,
           targetToken: command.targetToken,
           recipient: command.recipient,
           contractAddress: command.contractAddress,
+          tokenAddress: isTokenTransfer ? holding.address : undefined,
+          tokenDecimals: isTokenTransfer ? holding.decimals : undefined,
           timestamp: Date.now(),
           status: 'ESTIMATING_GAS',
           riskLevel: command.riskAssessment,
@@ -577,12 +664,35 @@ export function AiModePage() {
             chain = "ETH";
             addLog('SYSTEM', "AI mode currently supports only ETH and SOL. Defaulting to ETH.");
           }
-          const addr = command.recipient || (chain === 'SOL' ? (solAddress || '') : evmAddress);
-          try {
-            const bal = await getNativeBalance(addr, chain);
-            addLog('AGENT', `Current balance: ${bal.toFixed(4)} ${chain}`);
-          } catch {
-            addLog('ERROR', "Could not fetch balance.");
+          // Someone else's address: only the native balance is knowable.
+          if (command.recipient) {
+            try {
+              const bal = await getNativeBalance(command.recipient, chain);
+              addLog('AGENT', `${shortenAddress(command.recipient)} holds ${bal.toFixed(4)} ${chain}.`);
+            } catch {
+              addLog('ERROR', "Could not fetch balance.");
+            }
+          } else if (command.token) {
+            // A specific token in the user's own wallet.
+            const wanted = findHolding(holdings, command.token, chain) ?? findHolding(holdings, command.token);
+            if (wanted) {
+              addLog('AGENT', `You hold ${formatHoldingLine(wanted)}.`);
+            } else {
+              addLog('AGENT', `No ${command.token} in your wallet.`);
+            }
+          } else {
+            // Everything the wallet holds, richest first.
+            const owned = command.chain
+              ? holdings.filter((h) => h.chain === chain)
+              : holdings;
+            if (owned.length === 0) {
+              addLog('AGENT', "Your wallet is empty on the chains AI mode covers (Ethereum and Solana).");
+            } else {
+              const total = owned.reduce((sum, h) => sum + h.usdValue, 0);
+              const lines = owned.slice(0, 12).map((h) => `• ${formatHoldingLine(h)}`);
+              if (total > 0) lines.push(`Total: ~$${total.toFixed(2)}`);
+              addLog('AGENT', lines.join('\n'));
+            }
           }
         } else if (command.intent === 'HISTORY') {
           addLog('AGENT', command.reply || "Fetching transaction history...");
@@ -685,11 +795,41 @@ export function AiModePage() {
 
         const fromPubkey = new PublicKey(solWallet.address);
         const toPubkey = new PublicKey(tx.recipient);
-        const lamports = Number(toBaseUnits(tx.amount, 9));
 
-        const transaction = new SolTransaction().add(
-          SystemProgram.transfer({ fromPubkey, toPubkey, lamports })
-        );
+        const transaction = new SolTransaction();
+        if (tx.tokenAddress) {
+          // SPL token transfer: mirrors the manual flow, including creating the
+          // recipient's associated token account when they've never held it.
+          const { getAssociatedTokenAddress, createTransferInstruction, createAssociatedTokenAccountIdempotentInstruction } =
+            await import("@solana/spl-token");
+          const mintPubkey = new PublicKey(tx.tokenAddress);
+          const decimals = tx.tokenDecimals ?? 9;
+          const fromTokenAccount = await getAssociatedTokenAddress(mintPubkey, fromPubkey);
+          const toTokenAccount = await getAssociatedTokenAddress(mintPubkey, toPubkey);
+
+          transaction.add(
+            createAssociatedTokenAccountIdempotentInstruction(
+              fromPubkey,
+              toTokenAccount,
+              toPubkey,
+              mintPubkey,
+            ),
+            createTransferInstruction(
+              fromTokenAccount,
+              toTokenAccount,
+              fromPubkey,
+              Number(toBaseUnits(tx.amount, decimals)),
+            ),
+          );
+        } else {
+          transaction.add(
+            SystemProgram.transfer({
+              fromPubkey,
+              toPubkey,
+              lamports: Number(toBaseUnits(tx.amount, 9)),
+            }),
+          );
+        }
 
         // Recent blockhash (same proxied source as the manual Solana send flow).
         transaction.recentBlockhash = await solanaClient.getLatestBlockhash();
@@ -723,13 +863,28 @@ export function AiModePage() {
       // Build the calls array based on transaction type
       const calls: Array<{ to: string; value?: string; data?: string }> = [];
       if (tx.type === 'SEND' && tx.recipient) {
-        // Native token send
-        const valueWei = toBaseUnits(tx.amount, 18);
-        calls.push({
-          to: tx.recipient,
-          value: `0x${valueWei.toString(16)}`,
-          data: '0x',
-        });
+        if (tx.tokenAddress) {
+          // ERC-20 send: call transfer() on the token itself. The session key can
+          // only do this when the grant carries an erc20-token-transfer permission
+          // for this token (installed at activation from the held balances).
+          const data = encodeFunctionData({
+            abi: parseAbi(['function transfer(address to, uint256 amount) returns (bool)']),
+            functionName: 'transfer',
+            args: [
+              tx.recipient as `0x${string}`,
+              toBaseUnits(tx.amount, tx.tokenDecimals ?? 18),
+            ],
+          });
+          calls.push({ to: tx.tokenAddress, value: '0x0', data });
+        } else {
+          // Native token send
+          const valueWei = toBaseUnits(tx.amount, 18);
+          calls.push({
+            to: tx.recipient,
+            value: `0x${valueWei.toString(16)}`,
+            data: '0x',
+          });
+        }
       } else if (tx.type === 'SWAP' || tx.type === 'BRIDGE') {
         // Real swap calldata from the 1inch aggregation API. Supported today:
         // native ETH -> token (the "buy" path), where the destination token address
