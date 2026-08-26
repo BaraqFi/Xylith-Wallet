@@ -34,9 +34,10 @@ export interface Transaction {
 }
 
 /**
- * AI session info stored in Privy user metadata.
- * No private keys — Alchemy Signer handles all key material in Turnkey enclaves.
- * The sessionReference is an opaque identifier pointing to the session Alchemy manages.
+ * AI session info returned to the client.
+ * The session key is a server-held `LocalAccountSigner` (a documented Alchemy pattern);
+ * its encrypted private key + permissions live in the server-side session store, while
+ * Privy metadata keeps the session reference (address + expiry). See lib/ai/sessionStore.ts.
  */
 export interface AiSessionInfo {
   /** The Alchemy session permissions object returned by grantPermissions() */

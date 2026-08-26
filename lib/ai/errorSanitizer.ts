@@ -16,6 +16,8 @@ const ERROR_MAP: [RegExp, string][] = [
     [/spending.*cap|SPENDING_LIMIT/i, "This transaction would exceed your spending limit."],
     [/invalid.*address/i, "The address provided is not valid."],
     [/reverted|CALL_EXCEPTION/i, "Transaction would fail on-chain. The contract rejected the operation."],
+    [/SWAP_UNSUPPORTED_ERC20_SOURCE/, "Swaps from this token aren't supported yet. Try buying with ETH as the source."],
+    [/SWAP_MISSING_DEST_TOKEN/, "Please specify the token contract address you want to buy."],
     [/timeout|TIMEOUT/i, "The request timed out. Please try again."],
 ];
 
