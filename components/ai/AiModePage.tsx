@@ -230,12 +230,14 @@ export function AiModePage() {
       });
 
       // Ensure 7702 delegation by sending an empty call set (no-op delegation flow).
+      addLog('SYSTEM', 'Setting up your smart account — approve the signature request(s) that appear.');
       const prepared = await client.prepareCalls({
         calls: [],
         from: evmAddress as `0x${string}`,
       });
       const signed = await client.signPreparedCalls(prepared);
       await client.sendPreparedCalls(signed);
+      addLog('SYSTEM', 'Delegation submitted. Installing the AI session key — one more signature.');
 
       // Derive the on-chain native-transfer allowance from the user's configured
       // USD limit and the live ETH price. This is the hard cap the session key
@@ -282,10 +284,14 @@ export function AiModePage() {
         setAiSessionStatus("active");
         if (completeData.message) addLog('SYSTEM', completeData.message);
       } else {
+        console.error("AI activation completion failed:", completeData);
         addLog('ERROR', sanitizeError(completeData.error || "Failed to activate AI mode."));
       }
     } catch (error) {
-      addLog('ERROR', sanitizeError(error));
+      // The chat surfaces a sanitized message; keep the real error in the
+      // console so live failures are diagnosable.
+      console.error("AI activation failed:", error);
+      addLog('ERROR', `Activation failed: ${sanitizeError(error)}`);
     } finally {
       setOrbState('IDLE');
     }
