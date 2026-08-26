@@ -332,7 +332,7 @@ function TransactionList({
   transactions: ManualWalletState["transactions"];
   activeChain: Chain;
 }) {
-  const { setCurrentView, setSelectedTransactionId } = useApp();
+  const { setCurrentView, setSelectedTransaction } = useApp();
   const filteredTransactions = transactions
     .filter((tx) => tx.chain === activeChain)
     .slice(0, 3);
@@ -363,7 +363,7 @@ function TransactionList({
               <button
                 key={tx.id}
                 onClick={() => {
-                  setSelectedTransactionId(tx.id);
+                  setSelectedTransaction(tx);
                   setCurrentView("receipt");
                 }}
                 className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"
@@ -581,7 +581,7 @@ export default function ManualWallet({ tokens, isLoading }: { tokens: TokenBalan
 }
 
 function RecentTransactionList({ activeChain, evmChainFilter }: { activeChain: Chain, evmChainFilter: EVMChain | "all" }) {
-  const { setCurrentView, setSelectedTransactionId } = useApp();
+  const { setCurrentView, setSelectedTransaction } = useApp();
   // Use selected EVM chain or default to ethereum if "all"
   const targetEvmChain = evmChainFilter === "all" ? "ethereum" : evmChainFilter;
   const { transactions, isLoading } = useTransactionHistory(activeChain, targetEvmChain);
@@ -617,7 +617,7 @@ function RecentTransactionList({ activeChain, evmChainFilter }: { activeChain: C
               <button
                 key={tx.id}
                 onClick={() => {
-                  setSelectedTransactionId(tx.id);
+                  setSelectedTransaction(tx);
                   setCurrentView("receipt");
                 }}
                 className="flex items-center justify-between rounded-xl px-4 py-3 text-left transition-colors hover:bg-[color:var(--color-depth)]/5"

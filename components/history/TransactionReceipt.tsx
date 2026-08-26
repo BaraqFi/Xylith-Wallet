@@ -1,16 +1,11 @@
 "use client";
 
 import { useApp } from "../app/AppContext";
-import { manualWalletState, WalletTransaction } from "../wallet/data";
 import { TokenLogo } from "../wallet/TokenLogo";
 import { ChainLogo } from "../wallet/ChainLogo";
 
 export function TransactionReceipt() {
-  const { setCurrentView, selectedTransactionId } = useApp();
-
-  const transaction = manualWalletState.transactions.find(
-    (tx) => tx.id === selectedTransactionId
-  ) as WalletTransaction | undefined;
+  const { setCurrentView, selectedTransaction: transaction } = useApp();
 
   if (!transaction) {
     return (

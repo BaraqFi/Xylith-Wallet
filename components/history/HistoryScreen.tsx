@@ -60,7 +60,7 @@ const directionColors: Record<
 };
 
 export function HistoryScreen() {
-  const { setCurrentView, setSelectedTransactionId, activeChain } = useApp();
+  const { setCurrentView, setSelectedTransaction, activeChain } = useApp();
 
   // Default to 'ethereum' for EVM history in this MVP. 
   // Ideally we would aggregate or have a network selector.
@@ -102,7 +102,7 @@ export function HistoryScreen() {
   }, [transactions]);
 
   const handleTransactionClick = (tx: WalletTransaction) => {
-    setSelectedTransactionId(tx.id);
+    setSelectedTransaction(tx);
     setCurrentView("receipt");
   };
 

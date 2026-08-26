@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, ReactNode } from "react";
-import { TokenBalance, Chain } from "@/components/wallet/data";
+import { TokenBalance, Chain, WalletTransaction } from "@/components/wallet/data";
 
 export type WalletMode = "manual" | "ai";
 
@@ -16,8 +16,11 @@ interface AppState {
   setCurrentView: (view: AppState["currentView"]) => void;
   selectedTokenDetails: TokenBalance | null;
   setSelectedTokenDetails: (token: TokenBalance | null) => void;
-  selectedTransactionId: string | null;
-  setSelectedTransactionId: (id: string | null) => void;
+  // The full transaction object, not an id: history is fetched per-screen by
+  // useTransactionHistory, so there is no shared list a receipt could resolve
+  // an id against later.
+  selectedTransaction: WalletTransaction | null;
+  setSelectedTransaction: (tx: WalletTransaction | null) => void;
   darkMode: boolean;
   setDarkMode: (dark: boolean) => void;
   preselectedToken: TokenBalance | null;
@@ -36,7 +39,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [dontShowAiAlert, setDontShowAiAlert] = useState(false);
   const [currentView, setCurrentView] = useState<AppState["currentView"]>("wallet");
   const [selectedTokenDetails, setSelectedTokenDetails] = useState<TokenBalance | null>(null);
-  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<WalletTransaction | null>(null);
   const [darkMode, setDarkMode] = useState(true);
   const [preselectedToken, setPreselectedToken] = useState<TokenBalance | null>(null);
   const [slippage, setSlippage] = useState<number>(0.5);
@@ -53,8 +56,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setDontShowAiAlert,
         currentView,
         setCurrentView,
-        selectedTransactionId,
-        setSelectedTransactionId,
+        selectedTransaction,
+        setSelectedTransaction,
         darkMode,
         setDarkMode,
         preselectedToken,
