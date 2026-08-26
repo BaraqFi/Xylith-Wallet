@@ -35,6 +35,8 @@ const nextConfig: NextConfig = {
     if (!isServer) {
       config.resolve.alias['qrcode/lib/renderer/terminal'] = false;
       config.resolve.alias['qrcode/lib/renderer/utf8'] = false;
+      // Optional Privy peer for Farcaster mini-apps — not a feature we ship.
+      config.resolve.alias['@farcaster/mini-app-solana'] = false;
     }
     return config;
   },
@@ -42,6 +44,7 @@ const nextConfig: NextConfig = {
     resolveAlias: {
       'qrcode/lib/renderer/terminal': '',
       'qrcode/lib/renderer/utf8': '',
+      '@farcaster/mini-app-solana': '',
     },
   },
 };
