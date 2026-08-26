@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useWallets } from '@privy-io/react-auth';
+import { useWallets, useSign7702Authorization } from '@privy-io/react-auth';
 // Solana wallets are NOT in the main useWallets() (Ethereum-only); they come
 // from the dedicated solana entrypoint.
 import { useWallets as useSolanaWallets } from '@privy-io/react-auth/solana';
@@ -39,6 +39,7 @@ export function AiModePage() {
   const { user, getAccessToken } = usePrivy();
   const { wallets } = useWallets();
   const { wallets: solanaWallets } = useSolanaWallets();
+  const { signAuthorization: signPrivyAuthorization } = useSign7702Authorization();
 
   // --- Derive wallet addresses from Privy user (no ephemeral wallets) ---
   const evmAccount = user?.linkedAccounts?.find(
@@ -220,7 +221,44 @@ export function AiModePage() {
         transport: custom(provider),
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- viem/aa-sdk client generic interop
-      const signer = new WalletClientSigner(viemWalletClient as any, "wallet");
+      const baseSigner = new WalletClientSigner(viemWalletClient as any, "wallet");
+
+      // viem cannot sign EIP-7702 authorizations with a JSON-RPC account
+      // (AccountTypeNotSupportedError) — the embedded key lives in Privy's
+      // enclave, so authorization signing must go through Privy's dedicated
+      // hook. Messages and typed data still sign through the wallet client.
+      const signer = {
+        signerType: baseSigner.signerType,
+        inner: baseSigner.inner,
+        getAddress: () => baseSigner.getAddress(),
+        signMessage: (message: Parameters<typeof baseSigner.signMessage>[0]) =>
+          baseSigner.signMessage(message),
+        signTypedData: (params: Parameters<typeof baseSigner.signTypedData>[0]) =>
+          baseSigner.signTypedData(params),
+        signAuthorization: async (unsignedAuth: {
+          address?: `0x${string}`;
+          contractAddress?: `0x${string}`;
+          chainId: number;
+          nonce: number;
+        }) => {
+          const contractAddress = (unsignedAuth.address ??
+            unsignedAuth.contractAddress) as `0x${string}`;
+          const signed = await signPrivyAuthorization({
+            contractAddress,
+            chainId: unsignedAuth.chainId,
+            nonce: unsignedAuth.nonce,
+          });
+          return {
+            ...unsignedAuth,
+            address: contractAddress,
+            r: signed.r,
+            s: signed.s,
+            v: (signed as { v?: bigint }).v,
+            yParity: (signed as { yParity?: number }).yParity,
+          };
+        },
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- structural SmartAccountSigner
+      } as any;
 
       const client = createSmartWalletClient({
         // IMPORTANT: No Alchemy API key on the client. We use a server-side JSON-RPC proxy.
