@@ -4,6 +4,15 @@
  */
 
 const ERROR_MAP: [RegExp, string][] = [
+    // Bundler/account-abstraction prefund failures. A 7702 user operation costs
+    // several times a plain transfer, so an account that can afford the amount
+    // can still be unable to pay for the operation carrying it.
+    [
+        /AA21|didn't pay prefund|prefund|insufficient balance for gas|precheck failed/i,
+        "Not enough ETH to cover network fees for this transaction. AI transactions cost more gas than a plain send — top up or send a smaller amount.",
+    ],
+    [/AA1[0-9]|AA2[0-9]|AA3[0-9]|AA4[0-9]|AA5[0-9]/, "The transaction was rejected by the network's account layer. Please re-activate AI mode and try again."],
+    [/session.*key.*not.*found|invalid.*permission|permission.*denied|unauthorized.*session/i, "This action isn't covered by your AI session's permissions. Re-activate AI mode to refresh them."],
     [/insufficient funds|INSUFFICIENT_FUNDS/i, "Not enough balance to complete this transaction."],
     [/nonce.*too low|NONCE_EXPIRED/i, "A previous transaction is still processing. Please wait a moment and try again."],
     [/gas required exceeds allowance|UNPREDICTABLE_GAS_LIMIT/i, "This transaction may fail on-chain. Please check amounts and try again."],

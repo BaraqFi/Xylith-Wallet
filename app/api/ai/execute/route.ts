@@ -11,6 +11,7 @@ import { assertAiEnv } from "@/lib/ai/env";
 import { rateLimit } from "@/lib/api/rateLimit";
 import { getSession, putSession } from "@/lib/ai/sessionStore";
 import { getTokenPricesBatch } from "@/lib/services/tokenAnalyticsService";
+import { executeRpcRequest } from "@/lib/services/serverRpc";
 import { LocalAccountSigner } from "@aa-sdk/core";
 import { isAddress, isHex, type Hex } from "viem";
 
@@ -28,6 +29,19 @@ const PERIOD_SECONDS: Record<string, number> = {
     DAILY: 24 * 60 * 60,
     WEEKLY: 7 * 24 * 60 * 60,
 };
+
+/** Read a mainnet balance in wei through the internal RPC stack, or null. */
+async function getNativeBalanceWei(address: Hex): Promise<bigint | null> {
+    try {
+        const hex = await executeRpcRequest("ethereum", "eth_getBalance", [
+            address,
+            "latest",
+        ]);
+        return typeof hex === "string" ? BigInt(hex) : null;
+    } catch {
+        return null;
+    }
+}
 
 /**
  * POST /api/ai/execute
@@ -205,6 +219,32 @@ export async function POST(req: NextRequest) {
             sessionKeyPrivateKey as Hex,
         );
 
+        // Preflight: a 7702 user operation costs several times a plain transfer,
+        // so an account that can afford the amount may still not afford the
+        // operation carrying it. Catching that here gives an actionable message
+        // instead of an opaque bundler rejection surfacing as a 500.
+        try {
+            const balance = await getNativeBalanceWei(evmAddress as Hex);
+            if (balance !== null) {
+                const spend = formattedCalls.reduce(
+                    (sum, call) => sum + BigInt(call.value),
+                    BigInt(0),
+                );
+                if (balance <= spend) {
+                    return NextResponse.json(
+                        {
+                            error:
+                                "Not enough ETH to cover this transaction plus network fees. Try a smaller amount or top up.",
+                        },
+                        { status: 400 },
+                    );
+                }
+            }
+        } catch (preflightError) {
+            // Never block execution on a preflight read failure.
+            console.warn("Execute preflight balance check failed:", preflightError);
+        }
+
         const result = await executeWithSessionKey(
             evmAddress as Hex,
             sessionKeySigner,
@@ -234,10 +274,21 @@ export async function POST(req: NextRequest) {
             },
         });
     } catch (error) {
-        console.error("AI Execute error:", error);
+        // Log the full error server-side: the client only ever receives a
+        // sanitized message, which made bundler rejections indistinguishable
+        // from genuine server faults.
+        const detail = error instanceof Error ? error.message : String(error);
+        console.error("AI Execute error:", detail, error);
+
+        const friendly = sanitizeError(error);
+        // A rejected transaction is the caller's problem to act on, not a server
+        // fault — return 400 so it reads as "this didn't go through, here's why".
+        const isTransactionRejection =
+            /AA\d\d|prefund|insufficient|permission|session|reverted|gas/i.test(detail);
+
         return NextResponse.json(
-            { error: sanitizeError(error) },
-            { status: 500 }
+            { error: friendly },
+            { status: isTransactionRejection ? 400 : 500 }
         );
     }
 }

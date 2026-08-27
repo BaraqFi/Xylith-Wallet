@@ -785,7 +785,14 @@ export function AiModePage() {
             } catch {
               // keep the conservative default
             }
-            const reserve = gasCost * 1.2; // headroom for gas-price drift
+            // EVM AI sends execute as a 7702 user operation, not a plain
+            // transfer: verification and bundler overhead cost several times
+            // the 21k an EOA send is quoted at. Reserving only the quoted
+            // amount left the account unable to pay for the operation.
+            const USER_OP_GAS_MULTIPLE = 5;
+            const reserve = chain === 'SOL'
+              ? gasCost * 1.2
+              : gasCost * USER_OP_GAS_MULTIPLE;
             if (amountToken + reserve > balance) {
               amountToken = Math.max(balance - reserve, 0);
               addLog('SYSTEM', `Reserving ~${reserve.toFixed(6)} ${assetSymbol} for gas.`);
