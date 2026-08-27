@@ -227,7 +227,7 @@ function HomeContent() {
     <AuthGate>
       <div className={isAi
         ? "h-[100dvh] bg-[color:var(--color-surface)] overflow-hidden"
-        : "min-h-screen bg-[color:var(--color-surface)] px-4 py-6 sm:px-8 sm:py-10 overflow-y-auto no-scrollbar"
+        : "min-h-[100dvh] bg-[color:var(--color-surface)] px-4 py-6 sm:px-8 sm:py-10 overflow-y-auto no-scrollbar"
       }>
         <main className={isAi ? "h-full" : "mx-auto w-full"}>
           {!isAi && <Header />}

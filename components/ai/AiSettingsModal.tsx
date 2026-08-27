@@ -61,10 +61,10 @@ export const AiSettingsModal: React.FC<SettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="glass-card rounded-2xl w-full max-w-md transform transition-all scale-100 text-[color:var(--color-depth)]">
+      <div className="glass-card rounded-2xl w-full max-w-md max-h-[90dvh] flex flex-col transform transition-all scale-100 text-[color:var(--color-depth)]">
 
         {/* Header */}
-        <div className="flex justify-between items-center p-6 border-b border-[color:var(--color-border)]">
+        <div className="flex justify-between items-center p-4 sm:p-6 border-b border-[color:var(--color-border)]">
           <h2 className="text-xl font-bold text-[color:var(--color-depth)] flex items-center gap-2">
             Settings
           </h2>
@@ -73,7 +73,7 @@ export const AiSettingsModal: React.FC<SettingsModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-8 max-h-[70vh] overflow-y-auto custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 sm:p-6 space-y-8">
 
           {/* Spending Limits Section */}
           <div className="relative border border-[color:var(--color-border)] rounded-xl p-4 bg-[color:var(--color-depth)]/5">
@@ -82,7 +82,7 @@ export const AiSettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <div className="space-y-4 mt-2">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-[color:var(--color-depth)]/60 mb-1">Max Spend (USD)</label>
                   <input
@@ -165,7 +165,7 @@ export const AiSettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-6 pt-0">
+        <div className="p-4 sm:p-6 pt-0 shrink-0">
           <button
             onClick={handleSave}
             disabled={!hasChanges}

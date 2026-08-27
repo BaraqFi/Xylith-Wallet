@@ -110,7 +110,7 @@ export function TokenDetailsModal({
           </DialogClose>
         </DialogHeader>
 
-        <div className="max-h-[70vh] overflow-y-auto space-y-6 p-1 pr-4">
+        <div className="max-h-[70dvh] overflow-y-auto space-y-6 p-1 pr-4">
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-lg border border-[color:var(--color-border)] p-4">
               <p className="text-sm text-[color:var(--color-depth)]/60">

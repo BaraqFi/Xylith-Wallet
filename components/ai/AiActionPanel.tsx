@@ -51,7 +51,7 @@ export const AiActionPanel: React.FC<ActionPanelProps> = ({ activeTx, onConfirm,
         </div>
 
         {/* Diagnostics Grid */}
-        <div className="grid grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-6">
           <div className="bg-slate-900/50 border border-slate-800 p-3 rounded">
             <div className="text-[10px] text-slate-500 uppercase mb-1 flex items-center gap-1"><Zap size={10} /> Est. Gas</div>
             <div className="text-sm text-cyan-300">{activeTx.gasEstimate || "CALCULATING..."}</div>

@@ -33,15 +33,15 @@ export const AiHelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                             Executes instantly on the source chain.
                         </p>
                         <div className="space-y-2">
-                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex items-center justify-between">
+                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                 <code className="text-xs font-bold text-[color:var(--color-depth)]/80">&quot;Swap SOL to USDC&quot;</code>
                                 <span className="text-[10px] text-[color:var(--color-depth)]/50 font-mono">SOLANA MAINNET</span>
                             </div>
-                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex items-center justify-between">
+                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                 <code className="text-xs font-bold text-[color:var(--color-depth)]/80">&quot;Swap ETH to DAI&quot;</code>
                                 <span className="text-[10px] text-[color:var(--color-depth)]/50 font-mono">ETHEREUM MAINNET</span>
                             </div>
-                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex items-center justify-between">
+                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                 <code className="text-xs font-bold text-[color:var(--color-depth)]/80">&quot;Buy {`{Contract_Address}`}&quot;</code>
                                 <span className="text-[10px] text-[color:var(--color-depth)]/50 font-mono">AUTO-DETECT</span>
                             </div>
@@ -57,11 +57,11 @@ export const AiHelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                             To bridge assets, specify the destination chain or use a token native to another chain.
                         </p>
                         <div className="space-y-2">
-                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex items-center justify-between">
+                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                 <code className="text-xs font-bold text-[color:var(--color-depth)]/80">&quot;Swap SOL to ETH on Ethereum&quot;</code>
                                 <span className="text-[10px] text-[color:var(--color-accent)] font-bold font-mono">BRIDGE</span>
                             </div>
-                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex items-center justify-between">
+                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                 <code className="text-xs font-bold text-[color:var(--color-depth)]/80">&quot;Swap ETH to {`{Solana_Address}`}&quot;</code>
                                 <span className="text-[10px] text-[color:var(--color-accent)] font-bold font-mono">BRIDGE</span>
                             </div>
@@ -77,15 +77,15 @@ export const AiHelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                             Fetch real on-chain history for your wallet or any public address.
                         </p>
                         <div className="space-y-2">
-                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex items-center justify-between">
+                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                 <code className="text-xs font-bold text-[color:var(--color-depth)]/80">&quot;Show history&quot;</code>
                                 <span className="text-[10px] text-[color:var(--color-depth)]/50 font-mono">DEFAULT: LAST 5 ALL CHAINS</span>
                             </div>
-                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex items-center justify-between">
+                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                 <code className="text-xs font-bold text-[color:var(--color-depth)]/80">&quot;Show history for Solana&quot;</code>
                                 <span className="text-[10px] text-[color:var(--color-accent)] font-bold font-mono">SOL ONLY</span>
                             </div>
-                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex items-center justify-between">
+                            <div className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                                 <code className="text-xs font-bold text-[color:var(--color-depth)]/80">&quot;History for {`{Address}`}&quot;</code>
                                 <span className="text-[10px] text-[color:var(--color-accent)] font-bold font-mono">ANY WALLET</span>
                             </div>
@@ -108,7 +108,7 @@ export const AiHelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                                 { cmd: '/history', desc: 'Recent on-chain activity' },
                                 { cmd: '/clear', desc: 'Clear the chat' },
                             ].map((c) => (
-                                <div key={c.cmd} className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex items-center justify-between gap-3">
+                                <div key={c.cmd} className="bg-[color:var(--color-depth)]/5 px-3 py-2 rounded-lg border border-[color:var(--color-border)] flex flex-wrap items-center justify-between gap-x-3 gap-y-1 gap-3">
                                     <code className="text-xs font-bold text-[color:var(--color-depth)]/80">{c.cmd}</code>
                                     <span className="text-[10px] text-[color:var(--color-depth)]/50 text-right">{c.desc}</span>
                                 </div>
@@ -121,7 +121,7 @@ export const AiHelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                         <h3 className="text-xs font-bold text-[color:var(--color-depth)] uppercase tracking-widest mb-3 flex items-center gap-2 border-b border-[color:var(--color-border)] pb-2">
                             <Cpu size={14} className="text-[color:var(--color-accent)]" /> Parameters
                         </h3>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="text-sm text-[color:var(--color-depth)]/70">
                                 <span className="font-bold text-[color:var(--color-depth)]">Default Buy Amount</span>
                                 <p className="text-xs text-[color:var(--color-depth)]/60 mt-1">

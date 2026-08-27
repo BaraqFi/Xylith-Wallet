@@ -532,34 +532,34 @@ export default function ManualWallet({ tokens, isLoading }: { tokens: TokenBalan
           <Button
             variant="ghost"
             onClick={() => setCurrentView("send")}
-            className="flex flex-col items-center justify-center gap-2 h-20 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
+            className="flex flex-col items-center justify-center gap-1.5 sm:gap-2 h-[4.5rem] sm:h-20 px-1 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
           >
             <ArrowUp className="h-5 w-5 text-[color:var(--color-accent)]" />
-            <span className="text-sm font-medium text-[color:var(--color-depth)]">Send</span>
+            <span className="text-xs sm:text-sm font-medium text-[color:var(--color-depth)]">Send</span>
           </Button>
           <Button
             variant="ghost"
             onClick={() => setCurrentView("receive")}
-            className="flex flex-col items-center justify-center gap-2 h-20 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
+            className="flex flex-col items-center justify-center gap-1.5 sm:gap-2 h-[4.5rem] sm:h-20 px-1 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
           >
             <ArrowDown className="h-5 w-5 text-[color:var(--color-accent)]" />
-            <span className="text-sm font-medium text-[color:var(--color-depth)]">Receive</span>
+            <span className="text-xs sm:text-sm font-medium text-[color:var(--color-depth)]">Receive</span>
           </Button>
           <Button
             variant="ghost"
             onClick={() => setCurrentView("swap")}
-            className="flex flex-col items-center justify-center gap-2 h-20 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
+            className="flex flex-col items-center justify-center gap-1.5 sm:gap-2 h-[4.5rem] sm:h-20 px-1 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
           >
             <ArrowRightLeft className="h-5 w-5 text-[color:var(--color-accent)]" />
-            <span className="text-sm font-medium text-[color:var(--color-depth)]">Swap</span>
+            <span className="text-xs sm:text-sm font-medium text-[color:var(--color-depth)]">Swap</span>
           </Button>
           <Button
             variant="ghost"
             onClick={() => setCurrentView("history")}
-            className="flex flex-col items-center justify-center gap-2 h-20 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
+            className="flex flex-col items-center justify-center gap-1.5 sm:gap-2 h-[4.5rem] sm:h-20 px-1 rounded-2xl bg-[color:var(--color-accent)]/10 hover:bg-[color:var(--color-accent)]/20 border border-[color:var(--color-border)] transition-colors"
           >
             <History className="h-5 w-5 text-[color:var(--color-accent)]" />
-            <span className="text-sm font-medium text-[color:var(--color-depth)]">History</span>
+            <span className="text-xs sm:text-sm font-medium text-[color:var(--color-depth)]">History</span>
           </Button>
         </div>
       </div>

@@ -113,11 +113,37 @@ html {
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", "Roboto", "Helvetica Neue", Arial, sans-serif;
+  /* dvh tracks mobile browser chrome as it collapses; vh is the fallback. */
   min-height: 100vh;
+  min-height: 100dvh;
   overflow-x: hidden;
   transition: background-color 0.3s ease, color 0.3s ease;
   width: 100%;
   max-width: 100vw;
+}
+
+/*
+ * iOS Safari zooms the viewport when a focused input's font is under 16px, and
+ * never zooms back out — which shifts fixed elements (the AI chat dock most
+ * visibly) and leaves the layout looking broken. Enforce the floor on touch
+ * screens only, so desktop keeps its smaller control text.
+ */
+@media (max-width: 767px) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1rem);
+  }
+}
+
+/*
+ * Long addresses, token names and amounts are user/chain supplied. Flex and grid
+ * children default to min-width:auto, so any one of them can push a row wider
+ * than the screen. This keeps overflow inside the scroll container that owns it.
+ */
+.min-w-0,
+.truncate {
+  min-width: 0;
 }
 
 #__next,

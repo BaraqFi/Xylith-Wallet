@@ -1261,13 +1261,13 @@ export function AiModePage() {
 
       {/* ── ORB — z-0 background ── */}
       <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none opacity-80">
-        <div className="relative w-[min(110vw,520px)] h-[min(110vw,520px)] max-h-[70vh] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] -translate-y-[10%] sm:-translate-y-[8%] md:-translate-y-[6%]">
+        <div className="relative w-[min(110vw,520px)] h-[min(110vw,520px)] max-h-[70dvh] sm:w-[min(70vw,680px)] sm:h-[min(70vw,680px)] md:w-[800px] md:h-[800px] -translate-y-[10%] sm:-translate-y-[8%] md:-translate-y-[6%]">
           <Orb state={orbState} />
         </div>
       </div>
 
       {/* ── TOP BAR — absolute top ── */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 pt-1 pb-2 sm:px-6 sm:pt-2">
+      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between gap-2 px-4 pt-[max(0.25rem,env(safe-area-inset-top))] pb-2 sm:px-6">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setIsHelpOpen(true)}
@@ -1290,10 +1290,14 @@ export function AiModePage() {
         <ActionCard tx={activeTx} onConfirm={handleExecuteTx} onCancel={handleCancelTx} />
       )}
 
-      {/* ── CHAT STREAM — fills between top bar and input dock ── */}
-      <div className="absolute top-14 bottom-14 left-0 right-0 z-10 px-4 sm:px-6 pointer-events-none">
+      {/* ── CHAT STREAM — fills between top bar and input dock ──
+           The dock is ~68px tall before safe-area padding, so the old 56px
+           offset let the last message sit underneath it on phones. */}
+      <div className="absolute top-[calc(3.5rem+env(safe-area-inset-top))] bottom-[calc(5rem+env(safe-area-inset-bottom))] left-0 right-0 z-10 px-4 sm:px-6 pointer-events-none">
         <div className="h-full max-w-2xl mx-auto flex flex-col justify-end">
-          <div className="overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar pb-2" ref={scrollRef}>
+          {/* min-h-0 lets this child actually scroll inside the flex column
+              rather than growing past it. */}
+          <div className="min-h-0 overflow-y-auto fade-mask pointer-events-auto scroll-smooth no-scrollbar pb-2" ref={scrollRef}>
             {logs.map(log => <ChatMessage key={log.id} entry={log} />)}
             {orbState === 'THINKING' && (
               <div className="text-center text-xs text-[color:var(--color-depth)]/50 animate-pulse tracking-widest uppercase mb-2">
@@ -1345,7 +1349,11 @@ export function AiModePage() {
                 }
               }}
               placeholder="Type / for commands..."
-              className="flex-1 bg-transparent border-none outline-none text-[color:var(--color-depth)] placeholder:text-[color:var(--color-depth)]/40 font-medium text-sm sm:text-base"
+              // text-base (16px) on mobile is deliberate: anything smaller makes
+              // iOS Safari zoom on focus and knock the docked bar out of place.
+              // min-w-0 lets long input scroll inside the pill instead of
+              // stretching it past the screen edge.
+              className="min-w-0 flex-1 bg-transparent border-none outline-none text-[color:var(--color-depth)] placeholder:text-[color:var(--color-depth)]/40 font-medium text-base sm:text-sm"
               disabled={orbState !== 'IDLE'}
             />
             <button

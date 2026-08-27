@@ -169,7 +169,7 @@ export function TokenSelectModal({
       onClick={onClose}
     >
       <div
-        className="bg-[color:var(--color-surface)] w-full max-w-sm h-[80vh] sm:h-[680px] flex flex-col rounded-[2rem] p-5 shadow-2xl border border-[color:var(--color-border)] relative"
+        className="bg-[color:var(--color-surface)] w-full max-w-sm h-[80dvh] sm:h-[680px] flex flex-col rounded-[2rem] p-5 shadow-2xl border border-[color:var(--color-border)] relative"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

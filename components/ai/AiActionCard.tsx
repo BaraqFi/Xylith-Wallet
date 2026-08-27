@@ -84,7 +84,7 @@ export const AiActionCard: React.FC<ActionCardProps> = ({ tx, onConfirm, onCance
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 gap-4 mb-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-6 sm:mb-8">
             <div>
               <div className="text-[10px] text-[color:var(--color-depth)]/50 uppercase">Estimated Gas</div>
               <div className="text-sm font-medium text-[color:var(--color-depth)]/80">{tx.gasEstimate || "Calculating..."}</div>

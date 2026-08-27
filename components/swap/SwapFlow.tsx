@@ -921,17 +921,17 @@ export function SwapFlow({
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <Input
               type="number"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
               placeholder="0.00"
-              className="bg-transparent text-4xl font-semibold outline-none w-full border-none p-0 focus-visible:ring-0 placeholder:text-[color:var(--color-depth)]/10 h-auto focus-visible:border-none focus-visible:ring-0 focus-visible:ring-offset-0"
+              className="min-w-0 flex-1 bg-transparent text-3xl sm:text-4xl font-semibold outline-none w-full border-none p-0 focus-visible:ring-0 placeholder:text-[color:var(--color-depth)]/10 h-auto focus-visible:border-none focus-visible:ring-0 focus-visible:ring-offset-0"
             />
             <button
               onClick={() => setShowFromTokenModal(true)}
-              className="flex items-center gap-2 bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 py-2 pl-2 pr-4 rounded-full border border-[color:var(--color-depth)]/5 transition-all min-w-[120px]"
+              className="flex items-center gap-2 bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 py-2 pl-2 pr-4 rounded-full border border-[color:var(--color-depth)]/5 transition-all shrink-0 min-w-[104px] sm:min-w-[120px]"
             >
               {fromToken ? (
                 <>
@@ -980,17 +980,17 @@ export function SwapFlow({
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <Input
               type="text"
               readOnly
               value={estimatedAmount}
               placeholder="0.00"
-              className="bg-transparent text-4xl font-semibold outline-none w-full border-none p-0 focus-visible:ring-0 placeholder:text-[color:var(--color-depth)]/10 h-auto text-[color:var(--color-depth)]/50"
+              className="min-w-0 flex-1 bg-transparent text-3xl sm:text-4xl font-semibold outline-none w-full border-none p-0 focus-visible:ring-0 placeholder:text-[color:var(--color-depth)]/10 h-auto text-[color:var(--color-depth)]/50"
             />
             <button
               onClick={() => setShowToTokenModal(true)}
-              className="flex items-center gap-2 bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 py-2 pl-2 pr-4 rounded-full border border-[color:var(--color-depth)]/5 transition-all min-w-[120px]"
+              className="flex items-center gap-2 bg-[color:var(--color-depth)]/5 hover:bg-[color:var(--color-depth)]/10 py-2 pl-2 pr-4 rounded-full border border-[color:var(--color-depth)]/5 transition-all shrink-0 min-w-[104px] sm:min-w-[120px]"
             >
               {toToken ? (
                 <>

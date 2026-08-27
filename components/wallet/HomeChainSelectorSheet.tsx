@@ -72,7 +72,7 @@ export function HomeChainSelectorSheet({
                         <SheetTitle>Select Network</SheetTitle>
                     </div>
                 </SheetHeader>
-                <div className="p-4 grid gap-2 max-h-[70vh] overflow-y-auto">
+                <div className="p-4 grid gap-2 max-h-[70dvh] overflow-y-auto">
                     {includeAllOption && (
                         <Button
                             key="all-networks"
