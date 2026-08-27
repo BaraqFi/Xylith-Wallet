@@ -46,6 +46,13 @@ interface EvmSearchResult {
 
 import { TransactionDetails } from "./TransactionDetails";
 import { solanaClient } from "@/lib/solana/client";
+import {
+  estimateSolanaTransferFee,
+  lamportsToSol,
+  SIGNATURE_FEE_LAMPORTS,
+  LAMPORTS_PER_SOL,
+  type SolanaFeeEstimate,
+} from "@/lib/solana/fees";
 import { SystemProgram, PublicKey, Transaction } from "@solana/web3.js";
 import {
   getAssociatedTokenAddress,
@@ -68,7 +75,14 @@ const getTokenInstanceKey = (token: TokenBalance): string => {
   return `${token.chain}-${chainId}-${token.contractAddress}`;
 };
 
-export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
+export function SendFlow({
+  tokens,
+  onTransactionSettled,
+}: {
+  tokens: TokenBalance[];
+  /** Refresh balances once a transaction lands, so the wallet isn't stale. */
+  onTransactionSettled?: () => void;
+}) {
   const { setCurrentView, preselectedToken, setPreselectedToken } = useApp();
   const { user, sendTransaction } = usePrivy();
   const { wallets } = useWallets();
@@ -88,6 +102,39 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
   const [selectedChainFilter, setSelectedChainFilter] = useState<"EVM" | "Solana" | "all">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [remoteSearchResults, setRemoteSearchResults] = useState<TokenBalance[]>([]);
+  const [activePercent, setActivePercent] = useState<number | null>(null);
+  const [solanaFee, setSolanaFee] = useState<SolanaFeeEstimate | null>(null);
+  /** Submitted but not yet confirmed within the wait window. */
+  const [solanaPending, setSolanaPending] = useState(false);
+
+  /** True when the selected asset pays this chain's gas — MAX must leave some behind. */
+  const isNativeSelected = selectedToken
+    ? selectedToken.chain === 'Solana'
+      ? !selectedToken.contractAddress ||
+        selectedToken.contractAddress === 'So11111111111111111111111111111111111111112'
+      : isNativeTokenAddress(selectedToken.contractAddress)
+    : false;
+
+  /**
+   * Set the amount to a share of the balance. Sending 100% of the gas token
+   * would leave nothing to pay fees with, so MAX keeps a small reserve.
+   */
+  const applyPercentage = (pct: number) => {
+    if (!selectedToken) return;
+    const balance = selectedToken.amount;
+    if (!Number.isFinite(balance) || balance <= 0) return;
+
+    let next = balance * (pct / 100);
+    if (pct === 100 && isNativeSelected) {
+      const reserve = selectedToken.chain === 'Solana' ? 0.00002 : 0.0005;
+      next = Math.max(balance - reserve, 0);
+    }
+
+    const decimals = selectedToken.decimals ?? (selectedToken.chain === 'Solana' ? 9 : 18);
+    setAmount(next > 0 ? next.toFixed(Math.min(decimals, 8)).replace(/\.?0+$/, '') : '0');
+    setActivePercent(pct);
+    setError("");
+  };
 
   // Log build errors to console (not displayed in UI)
   useEffect(() => {
@@ -266,14 +313,37 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
       return;
     }
 
-    // Solana: there is no EVM-style preview to build here — the confirm screen
-    // renders a fallback preview and the transaction is assembled on confirm.
+    // Solana: no EVM-style gas estimate applies, but the fee is knowable —
+    // one signature, plus token-account rent when the recipient has never held
+    // this token. Compute it so the summary shows real numbers.
     const solanaWallet = pickSolanaWallet(solanaWallets);
     if (!solanaWallet?.address) {
       setError("Solana wallet not connected");
       return;
     }
     if (!hasInsufficientBalance) setError("");
+
+    try {
+      let recipientTokenAccount: string | undefined;
+      const isNativeSol = !selectedToken.contractAddress ||
+        selectedToken.contractAddress === "So11111111111111111111111111111111111111112";
+
+      if (!isNativeSol && selectedToken.contractAddress) {
+        recipientTokenAccount = (
+          await getAssociatedTokenAddress(
+            new PublicKey(selectedToken.contractAddress),
+            new PublicKey(recipient),
+          )
+        ).toBase58();
+      }
+
+      const fee = await estimateSolanaTransferFee(recipientTokenAccount);
+      setSolanaFee(fee);
+    } catch (err) {
+      console.warn("Solana fee estimation failed:", err);
+      setSolanaFee({ lamports: SIGNATURE_FEE_LAMPORTS, createsRecipientAccount: false });
+    }
+
     setStep("confirm");
   };
 
@@ -324,6 +394,7 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         setTxHash(hash);
         setStep("success");
         clearPreview();
+        onTransactionSettled?.();
       } else {
         // --- Solana Transaction ---
         const solanaWallet = pickSolanaWallet(solanaWallets);
@@ -401,7 +472,18 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
           Buffer.from(signedBytes).toString('base64')
         );
 
+        // Submitted is not landed: wait for a terminal status so a failed
+        // transaction isn't reported as a success.
         setTxHash(signature);
+        const confirmation = await solanaClient.confirmTransaction(signature);
+        onTransactionSettled?.();
+
+        if (confirmation.status === 'failed') {
+          setError(`Transaction failed on-chain${confirmation.error ? `: ${confirmation.error}` : ''}`);
+          setStep("error");
+          return;
+        }
+        setSolanaPending(confirmation.status === 'pending');
         setStep("success");
       }
     } catch (err: unknown) {
@@ -454,11 +536,19 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
       <div className="wallet-card p-8">
         <div className="flex flex-col items-center justify-center gap-4 py-12">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-[color:var(--color-accent)]/15">
-            <Check className="h-8 w-8 text-[color:var(--color-accent)]" />
+            {solanaPending ? (
+              <Loader2 className="h-8 w-8 animate-spin text-[color:var(--color-accent)]" />
+            ) : (
+              <Check className="h-8 w-8 text-[color:var(--color-accent)]" />
+            )}
           </div>
-          <p className="text-lg font-semibold text-[color:var(--color-depth)]">Transaction successful!</p>
+          <p className="text-lg font-semibold text-[color:var(--color-depth)]">
+            {solanaPending ? "Transaction submitted" : "Transaction successful!"}
+          </p>
           <p className="text-sm text-center text-[color:var(--color-depth)]/60">
-            {amount} {selectedToken?.symbol} has been sent to {recipient.slice(0, 6)}...{recipient.slice(-4)}
+            {solanaPending
+              ? `${amount} ${selectedToken?.symbol} is on its way to ${recipient.slice(0, 6)}...${recipient.slice(-4)} — still confirming.`
+              : `${amount} ${selectedToken?.symbol} has been sent to ${recipient.slice(0, 6)}...${recipient.slice(-4)}`}
           </p>
           {txHash && (
             <p className="text-xs text-center text-[color:var(--color-depth)]/50 font-mono break-all">
@@ -509,10 +599,18 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
             amount,
             token: selectedToken!,
             chain: selectedToken?.evmChain || (selectedToken?.chain === 'Solana' ? 'Solana' : "Ethereum"),
-            gasEstimate: "Unknown",
-            gasPrice: "0",
-            totalCost: "0"
+            // Solana fees are deterministic, so the summary shows the real cost
+            // rather than "Unknown".
+            gasEstimate: solanaFee ? "1 signature" : "Unknown",
+            gasPrice: solanaFee ? lamportsToSol(solanaFee.lamports) : "0",
+            totalCost: solanaFee
+              ? (
+                  solanaFee.lamports / LAMPORTS_PER_SOL +
+                  (isNativeSelected ? parseFloat(amount || "0") : 0)
+                ).toFixed(9).replace(/\.?0+$/, "")
+              : "0",
           } as any}
+          createsRecipientAccount={solanaFee?.createsRecipientAccount}
           selectedToken={selectedToken}
           insufficientBalance={insufficientBalance}
           onEdit={() => { clearPreview(); setStep("form"); setInsufficientBalance(false); }}
@@ -615,14 +713,41 @@ export function SendFlow({ tokens }: { tokens: TokenBalance[] }) {
         </div>
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-[color:var(--color-depth)]">Amount</label>
-          <div className="flex gap-2">
-            <Input type="number" value={amount} onChange={(e) => { setAmount(e.target.value); setError(""); }} placeholder="0.00" step="any" />
-            {selectedToken && (<Button variant="secondary" onClick={() => setAmount(selectedToken.amount.toString())}>Max</Button>)}
+          <div className="mb-2 flex items-center justify-between">
+            <label className="block text-sm font-medium text-[color:var(--color-depth)]">Amount</label>
+            {selectedToken && (
+              <span className="text-xs text-[color:var(--color-depth)]/50">
+                Balance: {selectedToken.amount.toLocaleString(undefined, { maximumFractionDigits: 6 })} {selectedToken.symbol}
+              </span>
+            )}
           </div>
+          <Input type="number" value={amount} onChange={(e) => { setAmount(e.target.value); setError(""); setActivePercent(null); }} placeholder="0.00" step="any" />
+
+          {selectedToken && selectedToken.amount > 0 && (
+            <div className="mt-3 flex gap-2">
+              {[25, 50, 75, 100].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() => applyPercentage(pct)}
+                  className={`flex-1 rounded-lg border px-2 py-1.5 text-xs font-semibold transition-colors ${
+                    activePercent === pct
+                      ? "border-[color:var(--color-accent)]/40 bg-[color:var(--color-accent)]/10 text-[color:var(--color-accent)]"
+                      : "border-[color:var(--color-border)] bg-[color:var(--color-depth)]/5 text-[color:var(--color-depth)]/60 hover:bg-[color:var(--color-depth)]/10"
+                  }`}
+                >
+                  {pct === 100 ? "MAX" : `${pct}%`}
+                </button>
+              ))}
+            </div>
+          )}
+
           {selectedToken && amount && selectedToken.pricePerToken && (
             <p className="mt-2 text-sm text-[color:var(--color-depth)]/60">
               ≈ ${(parseFloat(amount) * selectedToken.pricePerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2, })}
+              {activePercent === 100 && isNativeSelected && (
+                <span className="ml-2 text-xs text-[color:var(--color-depth)]/40">gas reserved</span>
+              )}
             </p>
           )}
         </div>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { proxyGuard } from "@/lib/api/proxyGuard";
+import { cachedJson } from "@/lib/api/responseCache";
 
 interface JupiterToken {
     id: string;
@@ -36,35 +37,38 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      // Search Mode
-      const response = await fetch(
-        `${JUPITER_V2_API}/search?query=${encodeURIComponent(
-          query
-        )}&limit=20`,
-        {
-          headers: { Accept: "application/json" },
-          next: { revalidate: 60 }, // Cache search for 1 min
-        }
+      // Search Mode — shared 5-minute cache, so a popular query is fetched once
+      // for everyone rather than once per user.
+      tokens = await cachedJson<JupiterToken[]>(
+        `jupiter:search:${query.toLowerCase()}`,
+        5 * 60,
+        async () => {
+          const response = await fetch(
+            `${JUPITER_V2_API}/search?query=${encodeURIComponent(query)}&limit=20`,
+            { headers: { Accept: "application/json" } },
+          );
+          if (!response.ok) {
+            throw new Error(`Jupiter Search API error: ${response.status}`);
+          }
+          return response.json();
+        },
       );
-
-      if (!response.ok) {
-        throw new Error(`Jupiter Search API error: ${response.status}`);
-      }
-      tokens = await response.json();
     } else {
-      // Default Mode: Top Verified Tokens
-      const response = await fetch(
-        `${JUPITER_V2_API}/tag?query=verified`,
-        {
-          headers: { Accept: "application/json" },
-          next: { revalidate: 3600 }, // Cache list for 1 hour
-        }
+      // Default Mode: Top Verified Tokens. Shared 24h cache — the verified list
+      // barely moves, and every user pulling it fresh is wasted upstream load.
+      const allTokens = await cachedJson<JupiterToken[]>(
+        "jupiter:tokens:verified",
+        24 * 60 * 60,
+        async () => {
+          const response = await fetch(`${JUPITER_V2_API}/tag?query=verified`, {
+            headers: { Accept: "application/json" },
+          });
+          if (!response.ok) {
+            throw new Error(`Jupiter Tag API error: ${response.status}`);
+          }
+          return response.json();
+        },
       );
-
-      if (!response.ok) {
-        throw new Error(`Jupiter Tag API error: ${response.status}`);
-      }
-      const allTokens: JupiterToken[] = await response.json();
 
       // Filter and Sort
       tokens = allTokens

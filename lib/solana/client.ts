@@ -147,6 +147,62 @@ export class SolanaClient {
         return result.value.blockhash;
     }
 
+    // Does an account exist on-chain? Used to tell whether an SPL transfer must
+    // also create (and pay rent for) the recipient's associated token account.
+    async accountExists(address: string): Promise<boolean> {
+        try {
+            const result = await this.rpcCall('getAccountInfo', [
+                address,
+                { encoding: 'base64' },
+            ]);
+            return !!result?.value;
+        } catch (error) {
+            console.warn('Could not check account existence:', error);
+            // Assume it exists: the idempotent create instruction is a no-op if it
+            // does, and over-stating the fee is better than under-stating it.
+            return true;
+        }
+    }
+
+    /**
+     * Poll until a signature reaches a terminal state.
+     *
+     * A submitted signature is not a landed transaction — it can still be
+     * dropped or fail on-chain — so callers must not report success on the
+     * send alone. Returns 'pending' if it hasn't settled within the timeout,
+     * which is a real outcome rather than a failure.
+     */
+    async confirmTransaction(
+        signature: string,
+        timeoutMs = 30000,
+    ): Promise<{ status: 'confirmed' | 'failed' | 'pending'; error?: string }> {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+            try {
+                const result = await this.rpcCall('getSignatureStatuses', [
+                    [signature],
+                    { searchTransactionHistory: true },
+                ]);
+                const info = result?.value?.[0];
+                if (info) {
+                    if (info.err) {
+                        return { status: 'failed', error: JSON.stringify(info.err) };
+                    }
+                    if (
+                        info.confirmationStatus === 'confirmed' ||
+                        info.confirmationStatus === 'finalized'
+                    ) {
+                        return { status: 'confirmed' };
+                    }
+                }
+            } catch (error) {
+                console.warn('Signature status check failed:', error);
+            }
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+        return { status: 'pending' };
+    }
+
     // Send Raw Transaction
     async sendRawTransaction(base64Tx: string): Promise<string> {
         try {

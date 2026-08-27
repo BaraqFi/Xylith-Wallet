@@ -45,6 +45,36 @@ const toBaseUnits = (amount: number, decimals: number): bigint =>
 /** Client-only preferences (the spend limit itself lives server-side). */
 const PREFS_STORAGE_KEY = 'xylith_ai_prefs';
 
+/** Relative age of a transaction, e.g. "2h ago". */
+function timeAgo(timestampSeconds?: number): string {
+  if (!timestampSeconds) return '';
+  // History sources report seconds (Solana) or milliseconds (EVM route).
+  const ms = timestampSeconds > 1e12 ? timestampSeconds : timestampSeconds * 1000;
+  const diff = Date.now() - ms;
+  if (diff < 0 || !Number.isFinite(diff)) return '';
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return days < 30 ? `${days}d ago` : new Date(ms).toLocaleDateString();
+}
+
+/**
+ * One readable line per transaction. The old output was a bare truncated hash,
+ * which told the user nothing about what actually happened.
+ */
+function formatHistoryLine(tx: { hash: string; timestamp?: number; success: boolean; value: number; chain: Chain }): string {
+  const when = timeAgo(tx.timestamp);
+  const status = tx.success ? 'confirmed' : 'failed';
+  const amount = tx.value > 0
+    ? `${formatTokenAmount(tx.value)} ${tx.chain === 'SOL' ? 'SOL' : 'ETH'}`
+    : '';
+  const parts = [amount, status, when].filter(Boolean).join(' · ');
+  return `  • ${shortenAddress(tx.hash)}${parts ? ` — ${parts}` : ''}`;
+}
+
 // --- Slash Commands Config ---
 const COMMANDS = [
   { id: 'balance', label: '/balance', desc: 'Check funds', prompt: 'Check my balance' },
@@ -888,18 +918,19 @@ export function AiModePage() {
             const targetAddr = command.recipient || (chain === 'SOL' ? (solAddress || '') : evmAddress);
             const txs = await getTransactionHistory(chain, targetAddr, limit);
             if (txs.length === 0) {
-              results.push(`${chain}: No recent transactions found.`);
+              results.push(`No recent ${chain} transactions.`);
             } else {
-              results.push(`${chain} History (${targetAddr.slice(0, 6)}...):`);
-              txs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)} | ${tx.success ? 'OK' : 'FAIL'}`));
+              results.push(`Last ${txs.length} on ${chain === 'SOL' ? 'Solana' : 'Ethereum'}:`);
+              txs.forEach(tx => results.push(formatHistoryLine(tx)));
             }
           } else {
             if (command.recipient) {
               const detected = detectChainFromAddress(command.recipient);
               if (detected) {
                 const txs = await getTransactionHistory(detected, command.recipient, limit);
-                results.push(`${detected} History for ${shortenAddress(command.recipient)}:`);
-                txs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)}`));
+                results.push(`${shortenAddress(command.recipient)} on ${detected === 'SOL' ? 'Solana' : 'Ethereum'}:`);
+                if (txs.length) txs.forEach(tx => results.push(formatHistoryLine(tx)));
+                else results.push("  No transactions found.");
               } else {
                 results.push("Could not identify chain for provided address.");
               }
@@ -909,13 +940,14 @@ export function AiModePage() {
                 getTransactionHistory('ETH', evmAddress, limit)
               ]);
 
-              results.push(`SOL History (${limit} latest):`);
-              if (solTxs.length) solTxs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)}`));
-              else results.push("No transactions.");
+              results.push(`Ethereum — last ${ethTxs.length || 0}:`);
+              if (ethTxs.length) ethTxs.forEach(tx => results.push(formatHistoryLine(tx)));
+              else results.push("  No transactions.");
 
-              results.push(`ETH History (${limit} latest):`);
-              if (ethTxs.length) ethTxs.forEach(tx => results.push(`• ${shortenAddress(tx.hash)}`));
-              else results.push("No transactions.");
+              results.push("");
+              results.push(`Solana — last ${solTxs.length || 0}:`);
+              if (solTxs.length) solTxs.forEach(tx => results.push(formatHistoryLine(tx)));
+              else results.push("  No transactions.");
             }
           }
 
@@ -941,6 +973,9 @@ export function AiModePage() {
       }
 
     } catch (error) {
+      // Keep the real error in the console: the chat only ever shows a sanitized
+      // message, which made "Something went wrong" impossible to diagnose.
+      console.error("AI command failed:", error);
       addLog('ERROR', sanitizeError(error));
       setOrbState('ERROR');
       setTimeout(() => setOrbState('IDLE'), 2000);
@@ -1027,11 +1062,35 @@ export function AiModePage() {
           Buffer.from(signedBytes).toString('base64')
         );
 
-        const completedTx = { ...tx, status: 'COMPLETED' as const, hash: signature };
-        setActiveTx(completedTx);
-        setTransactions(prev => [...prev, completedTx]);
+        // Submitted is not landed — wait for a terminal status before claiming
+        // success, so a dropped or reverted transfer is reported honestly.
+        addLog('SYSTEM', `Submitted ${signature.slice(0, 10)}… — confirming.`);
+        const confirmation = await solanaClient.confirmTransaction(signature);
+
+        if (confirmation.status === 'failed') {
+          const failedTx = { ...tx, status: 'FAILED' as const, hash: signature, error: confirmation.error };
+          setActiveTx(failedTx);
+          setTransactions(prev => [...prev, failedTx]);
+          addLog('ERROR', `Transaction failed on-chain. Hash: ${signature.slice(0, 10)}…`);
+          setOrbState('ERROR');
+          setTimeout(() => setOrbState('IDLE'), 2000);
+          return;
+        }
+
+        const settledTx = {
+          ...tx,
+          status: (confirmation.status === 'confirmed' ? 'COMPLETED' : 'BROADCASTING') as 'COMPLETED' | 'BROADCASTING',
+          hash: signature,
+        };
+        setActiveTx(settledTx);
+        setTransactions(prev => [...prev, settledTx]);
         setSpendingLimit(prev => ({ ...prev, currentUsage: prev.currentUsage + tx.amountUSD }));
-        addLog('SUCCESS', `Confirmed. Hash: ${signature.slice(0, 10)}...`);
+        addLog(
+          confirmation.status === 'confirmed' ? 'SUCCESS' : 'SYSTEM',
+          confirmation.status === 'confirmed'
+            ? `Confirmed. Hash: ${signature.slice(0, 10)}...`
+            : `Still pending after 30s. Hash: ${signature.slice(0, 10)}… — it may still land.`,
+        );
         setOrbState('IDLE');
         return;
       }

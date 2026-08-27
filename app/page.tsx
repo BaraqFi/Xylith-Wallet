@@ -20,12 +20,29 @@ import { defaultEvmTokens, defaultSolanaTokens, TokenBalance } from "@/component
 function WalletContent() {
   const { mode, currentView, activeChain, selectedTokenDetails } = useApp();
 
-  // Lift useTokenBalances to the common ancestor
-  // A more advanced implementation might pass the specific evmChain from context
-  const { balances: realBalances, isLoading: isLoadingBalances } = useTokenBalances(
-    activeChain,
-    'ethereum' // Defaulting to ethereum for the hook
-  );
+  // Both chains are fetched, not just the active one: the send flow's chain
+  // filter and the cross-chain token list need real balances for both, and
+  // filling the inactive chain from the zero-balance defaults made "All" look
+  // like the user held nothing there.
+  const {
+    balances: evmBalances,
+    isLoading: isLoadingEvm,
+    refresh: refreshEvmBalances,
+  } = useTokenBalances('EVM', 'ethereum');
+  const {
+    balances: solBalances,
+    isLoading: isLoadingSol,
+    refresh: refreshSolBalances,
+  } = useTokenBalances('Solana', 'ethereum');
+
+  const realBalances = activeChain === 'EVM' ? evmBalances : solBalances;
+  const isLoadingBalances = activeChain === 'EVM' ? isLoadingEvm : isLoadingSol;
+
+  /** Re-read balances on both chains — called after a transaction settles. */
+  const refreshAllBalances = () => {
+    refreshEvmBalances();
+    refreshSolBalances();
+  };
 
   // FIX: Merge logic to ensure we always have both EVM and Solana tokens available
   // regardless of which chain is "active". This enables the "Send" flow to see all tokens
@@ -122,13 +139,13 @@ function WalletContent() {
     allTokens.length = 0;
     allTokens.push(...Array.from(uniqueTokens.values()));
 
-    // 2. Add Default Solana Tokens (since inactive)
-    allTokens.push(...defaultSolanaTokens);
+    // 2. Solana holdings (real, even though it is the inactive chain)
+    allTokens.push(...(solBalances.length > 0 ? solBalances : defaultSolanaTokens));
 
   } else {
     // ACTIVE: Solana
-    // 1. Add Default EVM Tokens (since inactive)
-    allTokens.push(...defaultEvmTokens); // If we wanted caching for inactive, we'd need separate stores.
+    // 1. EVM holdings (real, even though it is the inactive chain)
+    allTokens.push(...(evmBalances.length > 0 ? evmBalances : defaultEvmTokens));
 
     // 2. Process Solana from realBalances
     // useTokenBalances(Solana) returns the fully merged list (Defaults + Discovered)
@@ -149,10 +166,10 @@ function WalletContent() {
   }
   if (currentView === "send") {
     // Pass ALL tokens to SendFlow so it can filter by chain
-    return <SendFlow tokens={allTokens} />;
+    return <SendFlow tokens={allTokens} onTransactionSettled={refreshAllBalances} />;
   }
   if (currentView === "swap") {
-    return <SwapFlow />;
+    return <SwapFlow onTransactionSettled={refreshAllBalances} />;
   }
   if (currentView === "history") {
     return <HistoryScreen />;

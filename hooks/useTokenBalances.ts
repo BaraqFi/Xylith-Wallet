@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { formatUnits, Address } from "viem";
 import { usePrivy } from "@privy-io/react-auth";
 import {
@@ -53,11 +53,18 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
     const [balances, setBalances] = useState<TokenBalance[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    // Bumped by refresh() to force a re-fetch that ignores the freshness window —
+    // used right after a transaction, when the cached balance is known stale.
+    const [refreshNonce, setRefreshNonce] = useState(0);
 
-    // Use ref to track if we're currently fetching to prevent duplicate requests
-    const fetchingRef = useRef(false);
+    // The cache key currently being fetched, so a duplicate request for the SAME
+    // key is skipped while a switch to a DIFFERENT chain still goes through.
+    const fetchingKeyRef = useRef<string | null>(null);
+    // The most recently requested key; a response for anything else is stale and
+    // must not overwrite the balances the user is now looking at.
+    const activeKeyRef = useRef<string | null>(null);
     // Use ref to track last fetch time per address+chain combo
-    const lastFetchRef = useRef<{ key: string; timestamp: number } | null>(null);
+    const lastFetchRef = useRef<{ key: string; timestamp: number; nonce: number } | null>(null);
 
     useEffect(() => {
         async function fetchBalances() {
@@ -71,6 +78,9 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
             // v2: native rows now use the 0xeeee… sentinel instead of WETH addresses;
             // the version bump keeps stale v1 rows from resurfacing via cache.
             const cacheKey = `xylith_cache_balances_v2_${address.toLowerCase()}_${chainKey}`;
+            // Mark this as the view the user is on, so late responses for a chain
+            // they've switched away from are discarded rather than painted.
+            activeKeyRef.current = cacheKey;
 
             // 1. Check Cache (Stale-While-Revalidate)
             // We pass a very long TTL here because we WANT stale data immediately
@@ -95,15 +105,18 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
             // - Last fetch was older than TTL (2 mins)
             const shouldFetch = !lastFetch ||
                 lastFetch.key !== cacheKey ||
-                (now - lastFetch.timestamp > BALANCE_CACHE_TTL);
+                (now - lastFetch.timestamp > BALANCE_CACHE_TTL) ||
+                lastFetch.nonce !== refreshNonce;
 
-            if (!shouldFetch || fetchingRef.current) {
-                // If we have cached data and it's fresh enough, just turn off loading and exit
+            // Skip only when this exact key is already in flight. Bailing on ANY
+            // in-flight fetch meant switching chains mid-request abandoned the new
+            // chain entirely — balances sat at 0 until the user toggled again.
+            if (!shouldFetch || fetchingKeyRef.current === cacheKey) {
                 if (cached && !shouldFetch) setIsLoading(false);
                 return;
             }
 
-            fetchingRef.current = true;
+            fetchingKeyRef.current = cacheKey;
             setError(null);
 
             try {
@@ -527,14 +540,20 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                     ...newBalances.filter(t => t.usdValue === 0)
                 ];
 
-                setBalances(sortedTokens);
-
-                // Update Cache
+                // Cache regardless — the data is valid for its own key even if the
+                // user has since switched away.
                 setCachedData(cacheKey, sortedTokens);
                 lastFetchRef.current = {
                     key: cacheKey,
                     timestamp: Date.now(),
+                    nonce: refreshNonce,
                 };
+
+                // Only paint if this is still the chain being viewed, so a slow
+                // response for the previous chain can't overwrite the current one.
+                if (activeKeyRef.current === cacheKey) {
+                    setBalances(sortedTokens);
+                }
 
             } catch (err) {
                 console.error("Error fetching balances:", err);
@@ -543,14 +562,21 @@ export function useTokenBalances(activeChain: Chain, currentEvmChain: EVMChain) 
                     setError("Failed to load balances");
                 }
             } finally {
-                setIsLoading(false);
-                fetchingRef.current = false;
+                if (activeKeyRef.current === cacheKey) {
+                    setIsLoading(false);
+                }
+                if (fetchingKeyRef.current === cacheKey) {
+                    fetchingKeyRef.current = null;
+                }
             }
         }
 
         fetchBalances();
-    }, [address, activeChain, currentEvmChain]); // Depend on address and chain
+    }, [address, activeChain, currentEvmChain, refreshNonce]); // Depend on address, chain, and manual refresh
 
-    return { balances, isLoading, error };
+    /** Force a fresh fetch, bypassing the freshness window (post-transaction). */
+    const refresh = useCallback(() => setRefreshNonce((n) => n + 1), []);
+
+    return { balances, isLoading, error, refresh };
 }
 

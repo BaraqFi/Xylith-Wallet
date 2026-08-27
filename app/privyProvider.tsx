@@ -3,6 +3,8 @@
 import { PrivyProvider } from '@privy-io/react-auth';
 import { mainnet, arbitrum, optimism, polygon, base, bsc } from 'viem/chains';
 import type { ReactNode } from 'react';
+// Side-effect import: installs the Buffer global that @solana/web3.js needs.
+import '@/lib/solana/bufferPolyfill';
 
 /** Match Privy's login UI to whichever theme the app will paint. */
 function resolveTheme(): 'light' | 'dark' {

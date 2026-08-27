@@ -28,6 +28,27 @@ export interface TransactionPreview {
 /**
  * Build a native token transfer transaction
  */
+/**
+ * Effective price per gas unit.
+ *
+ * On EIP-1559 chains the legacy `eth_gasPrice` understates what a transaction
+ * actually pays, so the total shown to the user came out low. Prefer
+ * maxFeePerGas (base + priority) and fall back to gasPrice on chains or
+ * providers that don't support the fee-history call.
+ */
+async function getEffectiveGasPrice(client: PublicClientLike): Promise<bigint> {
+  try {
+    const fees = await client.estimateFeesPerGas();
+    if (fees?.maxFeePerGas) return fees.maxFeePerGas;
+    if (fees?.gasPrice) return fees.gasPrice;
+  } catch {
+    // provider doesn't support 1559 fee estimation — fall through
+  }
+  return client.getGasPrice();
+}
+
+type PublicClientLike = ReturnType<typeof getPublicRpcClient>;
+
 export async function buildNativeTransferTransaction(
   recipient: Address,
   amount: string,
@@ -40,15 +61,10 @@ export async function buildNativeTransferTransaction(
 
   const value = parseUnits(amount, targetChain?.nativeCurrency?.decimals ?? 18);
 
-  // Estimate gas
-  const gasEstimate = await client.estimateGas({
-    account: fromAddress,
-    to: recipient,
-    value,
-  });
-
-  // Get gas price
-  const gasPrice = await client.getGasPrice();
+  const [gasEstimate, gasPrice] = await Promise.all([
+    client.estimateGas({ account: fromAddress, to: recipient, value }),
+    getEffectiveGasPrice(client),
+  ]);
 
   const totalCost = gasEstimate * gasPrice + value;
 
@@ -91,15 +107,14 @@ export async function buildERC20TransferTransaction(
     args: [recipient, value],
   });
 
-  // Estimate gas
-  const gasEstimate = await client.estimateGas({
-    account: fromAddress,
-    to: token.contractAddress as Address,
-    data,
-  });
-
-  // Get gas price
-  const gasPrice = await client.getGasPrice();
+  const [gasEstimate, gasPrice] = await Promise.all([
+    client.estimateGas({
+      account: fromAddress,
+      to: token.contractAddress as Address,
+      data,
+    }),
+    getEffectiveGasPrice(client),
+  ]);
 
   const totalCost = gasEstimate * gasPrice;
 

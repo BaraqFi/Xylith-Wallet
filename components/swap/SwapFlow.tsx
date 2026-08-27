@@ -148,7 +148,12 @@ function SlippageSettings({
 
 
 
-export function SwapFlow() {
+export function SwapFlow({
+  onTransactionSettled,
+}: {
+  /** Refresh balances once a swap lands, so the wallet isn't stale. */
+  onTransactionSettled?: () => void;
+} = {}) {
   const { setCurrentView, preselectedToken, setPreselectedToken, slippage, setSlippage, activeChain: appActiveChain } = useApp();
 
   // Initialize selectedChain based on preselectedToken or appActiveChain
@@ -555,6 +560,7 @@ export function SwapFlow() {
 
         console.log("Solana Ultra Swap Executed:", executeResponse?.signature || executeResponse);
         setStep("success");
+        onTransactionSettled?.();
       } else {
         const txData = await fetchEvmSwap();
         if (!txData || !txData.tx) throw new Error("Failed to prepare transaction");
@@ -566,6 +572,7 @@ export function SwapFlow() {
         });
         console.log("EVM Swap Executed:", hash);
         setStep("success");
+        onTransactionSettled?.();
       }
     } catch (err: any) {
       console.error("Swap Failed:", err);

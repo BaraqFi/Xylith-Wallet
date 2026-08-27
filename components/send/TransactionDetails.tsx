@@ -11,6 +11,8 @@ interface TransactionDetailsProps {
   preview: TransactionPreview;
   selectedToken: TokenBalance | null;
   insufficientBalance?: boolean;
+  /** Solana only: the transfer opens (and pays rent for) the recipient's token account. */
+  createsRecipientAccount?: boolean;
   onEdit: () => void;
   onConfirm: () => void;
   isConfirming?: boolean;
@@ -20,6 +22,7 @@ export function TransactionDetails({
   preview,
   selectedToken,
   insufficientBalance = false,
+  createsRecipientAccount = false,
   onEdit,
   onConfirm,
   isConfirming = false,
@@ -132,28 +135,68 @@ export function TransactionDetails({
         </div>
       )}
 
-      {/* Gas Information */}
-      <div className="rounded-xl border border-[color:var(--color-depth)]/10 p-4 space-y-2">
-        <p className="text-sm text-[color:var(--color-depth)]/60">Gas Information</p>
-        <div className="flex justify-between text-sm">
-          <span className="text-[color:var(--color-depth)]/70">Estimated Gas:</span>
-          <span className="font-semibold">{gasEstimate} Units</span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-[color:var(--color-depth)]/70">Gas Price:</span>
-          <span className="font-semibold">
-            {chain === 'Solana'
-              ? `${parseFloat(gasPrice).toFixed(9)} SOL`
-              : `${(parseFloat(gasPrice) * 1e9).toFixed(2)} Gwei`}
-          </span>
-        </div>
-        <div className="pt-2 border-t border-[color:var(--color-depth)]/10">
-          <div className="flex justify-between">
-            <span className="text-sm font-semibold text-[color:var(--color-depth)]">Total Cost:</span>
-            <span className="text-sm font-semibold">{parseFloat(totalCost).toFixed(6)} {chain === 'Solana' ? 'SOL' : (token.evmChain === 'bsc' ? 'BNB' : (token.evmChain === 'polygon' ? 'MATIC' : 'ETH'))}</span>
+      {/* Fee information — Solana fees are a flat per-signature charge plus any
+          account rent, so the EVM gas-units/gwei breakdown doesn't apply there. */}
+      {(() => {
+        const isSolana = chain === 'Solana';
+        const feeSymbol = isSolana
+          ? 'SOL'
+          : token.evmChain === 'bsc'
+            ? 'BNB'
+            : token.evmChain === 'polygon'
+              ? 'MATIC'
+              : 'ETH';
+        const feeKnown = gasEstimate !== 'Unknown' && parseFloat(gasPrice) > 0;
+
+        return (
+          <div className="rounded-xl border border-[color:var(--color-depth)]/10 p-4 space-y-2">
+            <p className="text-sm text-[color:var(--color-depth)]/60">
+              {isSolana ? 'Network Fee' : 'Gas Information'}
+            </p>
+
+            {!feeKnown ? (
+              <p className="text-sm text-[color:var(--color-depth)]/50">
+                Fee estimate unavailable — the network will charge its standard rate.
+              </p>
+            ) : isSolana ? (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[color:var(--color-depth)]/70">Transaction fee:</span>
+                  <span className="font-semibold">{gasPrice} SOL</span>
+                </div>
+                {createsRecipientAccount && (
+                  <p className="text-xs text-[color:var(--color-depth)]/60 leading-relaxed">
+                    Includes a one-time deposit to open this token account for the
+                    recipient. It is refundable if the account is ever closed.
+                  </p>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[color:var(--color-depth)]/70">Estimated Gas:</span>
+                  <span className="font-semibold">{gasEstimate} Units</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-[color:var(--color-depth)]/70">Gas Price:</span>
+                  <span className="font-semibold">{(parseFloat(gasPrice) * 1e9).toFixed(2)} Gwei</span>
+                </div>
+              </>
+            )}
+
+            {feeKnown && (
+              <div className="pt-2 border-t border-[color:var(--color-depth)]/10">
+                <div className="flex justify-between">
+                  <span className="text-sm font-semibold text-[color:var(--color-depth)]">Total Cost:</span>
+                  <span className="text-sm font-semibold">
+                    {parseFloat(totalCost).toFixed(6)} {feeSymbol}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Action Buttons */}
       <div className="flex gap-3 pt-4">
