@@ -2,7 +2,8 @@
 
 import { PrivyProvider } from '@privy-io/react-auth';
 import { mainnet, arbitrum, optimism, polygon, base, bsc } from 'viem/chains';
-import type { ReactNode } from 'react';
+import { useMemo, type ReactNode } from 'react';
+import { createSolanaRpc, createSolanaRpcSubscriptions } from '@solana/kit';
 // Side-effect import: installs the Buffer global that @solana/web3.js needs.
 import '@/lib/solana/bufferPolyfill';
 
@@ -84,10 +85,36 @@ const bscWithRpc = {
 };
 
 export default function Providers({ children }: { children: ReactNode }) {
+  /**
+   * Privy's Solana standard-wallet hooks resolve an RPC per chain and THROW
+   * during render when one is missing ("No RPC configuration found for chain
+   * solana:mainnet") — which took down the whole page the moment the signer
+   * opened. Reads go through our own proxy so provider keys stay server-side;
+   * the subscriptions endpoint is a public WS because it needs no key and our
+   * flows sign locally and broadcast themselves rather than using Privy's
+   * send-and-confirm.
+   */
+  const solanaConfig = useMemo(() => {
+    if (typeof window === 'undefined') return undefined;
+    const httpUrl = `${window.location.origin}/api/rpc?chain=solana`;
+    const wsUrl =
+      process.env.NEXT_PUBLIC_SOLANA_WS_URL || 'wss://api.mainnet-beta.solana.com';
+    return {
+      rpcs: {
+        'solana:mainnet': {
+          rpc: createSolanaRpc(httpUrl),
+          rpcSubscriptions: createSolanaRpcSubscriptions(wsUrl),
+          blockExplorerUrl: 'https://explorer.solana.com',
+        },
+      },
+    };
+  }, []);
+
   return (
     <PrivyProvider
       appId="cmid35rfp01xlks0cujzvl6wk"
       config={{
+        ...(solanaConfig ? { solana: solanaConfig } : {}),
         // Without this Privy renders its own default purple, which fights the
         // brand accent on the sign-in screen. Resolved once at mount: Privy
         // remounts its UI tree if the theme prop changes, so this deliberately
